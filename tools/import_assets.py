@@ -23,6 +23,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets")
 UI = "kenney_interface-sounds/Audio/"
 IMP = "kenney_impact-sounds/Audio/"
 JIN = "kenney_music-jingles/Audio/"
+RPG = "kenney_rpg-audio/Audio/"
 
 
 def impact(name, n=5):
@@ -67,6 +68,9 @@ SFX = {
     "reload": (ui("drop", [1]), None),
     "clear": ([JIN + "Pizzicato jingles/jingles_PIZZI10.ogg"], None),
     "lose": ([JIN + "Pizzicato jingles/jingles_PIZZI14.ogg"], None),
+    # enemy evasion: hook sliding along the rail, string creaking up
+    "slide": ([RPG + "drawKnife%d.ogg" % i for i in (1, 2, 3)], 0.3),
+    "creak": ([RPG + "creak%d.ogg" % i for i in (1, 2, 3)], 0.4),
 }
 
 TARGET_RMS_DB = -20.0     # loudness of the active part of every sound

@@ -26,6 +26,8 @@ By Kenney (www.kenney.nl), public domain (CC0 1.0):
 - Impact Sounds — plate, soft, glass, metal, wood, punch impacts
 - Music Jingles — Pizzicato and Steel jingles (intro, reveal, clear, record,
   lose, boss)
+- RPG Audio — drawKnife (a hook sliding along the rail) and creak (a string
+  pulled up) for enemy evasion
 
 → `assets/sfx/*.ogg`. The whoosh (`assets/sfx/whoosh_*.ogg`) is generated
 by `tools/import_assets.py`.

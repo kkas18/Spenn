@@ -420,40 +420,35 @@ func _pace(delta: float) -> void:
 		_beat_t = 0.0
 
 
-## Pupils follow the nearest ball in flight (or the pouch while aiming);
-## the target nearest the aim line squints, and a Vakt there may dodge.
+## Pupils follow the nearest ball in flight (or the pouch while aiming).
+## Every target reads the predicted shot: how squarely the path crosses it,
+## which side of the path it is on, and whether a ball already in flight
+## will pass close with time to react. It also learns how far its hook may
+## slide along the rail before it would run into a neighbour.
 func _update_eyes() -> void:
 	var aiming := slingshot.is_aiming() and slingshot.power >= Slingshot.MIN_POWER
-	var squinter: Target = null
 	var o := layout.pouch_rest()
-	if aiming:
-		var best := INF
-		for t in targets:
-			if not t.is_hittable():
-				continue
-			var rel := t.pos - o
-			if rel.dot(slingshot.aim_dir) <= 0.0:
-				continue
-			var off := absf(rel.cross(slingshot.aim_dir))
-			if off < best:
-				best = off
-				squinter = t
+	var path := slingshot.predict() if aiming and slingshot.power > 0.3 else PackedVector2Array()
+	var flights: Array[PackedVector2Array] = []
+	for b in balls:
+		if b.active:
+			flights.append(_flight(b))
 	for t in targets:
 		if t.phase == Target.Phase.OFF:
 			continue
-		t.squint = t == squinter
-		t.aimed = t == squinter and slingshot.power > 0.35
-		t.dodge_dir = signf(slingshot.aim_dir.cross(t.pos - o)) * -1.0
-		if t.dodge_dir == 0.0:
-			t.dodge_dir = 1.0
 		t.threat = o
+		# Targets that have hung around learn as the run heats up.
+		t.aggression = maxf(t.aggression, director.aggression())
+		_read_threat(t, path)
+		t.aimed = t.threat_lvl > 0.45 and t.is_hittable()
 		t.alarm = false
-		for b in balls:
-			if b.active and b.pos.distance_to(t.pos) < 280.0 * layout.scale and b.vel.dot(t.pos - b.pos) > 0.0:
-				t.alarm = true
+		t.incoming = false
+		for f in flights:
+			_read_flight(t, f)
 		t.has_cover = false
 		if t.aimed and t.kind == Target.Kind.RING:
 			_find_cover(t, o)
+		_slide_room(t)
 		var nearest := INF
 		t.has_look = false
 		for b in balls:
@@ -466,6 +461,81 @@ func _update_eyes() -> void:
 		if not t.has_look:
 			t.look_at = slingshot.pouch
 			t.has_look = true
+	# Everything in the line of fire narrows its eye: it is watching you.
+	for t in targets:
+		t.squint = t.aimed or (t.threat_lvl > 0.2 and t.is_hittable())
+
+
+func _read_threat(t: Target, path: PackedVector2Array) -> void:
+	t.threat_lvl = 0.0
+	if path.is_empty() or not t.is_hittable():
+		return
+	var best := INF
+	var bi := 0
+	for i in path.size():
+		var d := path[i].distance_squared_to(t.pos)
+		if d < best:
+			best = d
+			bi = i
+	var r := t.radius + Ball.RADIUS
+	t.threat_lvl = clampf(1.0 - (sqrt(best) - r) / (r * 1.5), 0.0, 1.0)
+	if t.threat_lvl <= 0.0:
+		return
+	# Dodge away from the path; dead-centre, away from the path's lean.
+	var bp := path[bi]
+	var side := t.pos.x - bp.x
+	if absf(side) < 3.0:
+		var lean := path[mini(bi + 1, path.size() - 1)].x - path[maxi(bi - 1, 0)].x
+		side = -lean if absf(lean) > 0.5 else (1.0 if t.pos.x < layout.center_x else -1.0)
+	t.dodge_dir = signf(side)
+
+
+## A ball's next 0.6 s (gravity only), sampled at 30 Hz.
+func _flight(b: Ball) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var p := b.pos
+	var v := b.vel
+	var dt := 1.0 / 30.0
+	for i in 18:
+		v.y += Ball.GRAVITY * dt
+		p += v * dt
+		out.append(p)
+	return out
+
+
+func _read_flight(t: Target, f: PackedVector2Array) -> void:
+	if not t.is_hittable():
+		return
+	var r := t.radius + Ball.RADIUS
+	for i in f.size():
+		var p := f[i]
+		if p.distance_squared_to(t.pos) < (r * 2.2) * (r * 2.2):
+			t.alarm = true
+			# Only a ball that is still ~0.2 s away can be dodged.
+			if i >= 6 and p.distance_squared_to(t.pos) < (r * 1.4) * (r * 1.4):
+				t.incoming = true
+				var side := t.pos.x - p.x
+				t.dodge_dir = signf(side) if absf(side) > 2.0 else (1.0 if t.pos.x < layout.center_x else -1.0)
+			return
+
+
+## How far the hook may slide: up to the screen margin, and short of any
+## neighbour hanging at an overlapping height.
+func _slide_room(t: Target) -> void:
+	var lo := layout.margin + t.radius
+	var hi := layout.size.x - layout.margin - t.radius
+	for o in targets:
+		if o == t or o.phase != Target.Phase.HANGING or o.delay > 0.0:
+			continue
+		if absf(o.pos.y - t.pos.y) > o.radius + t.radius + 24.0:
+			continue
+		var gap := o.radius + t.radius + 10.0
+		if o.anchor.x <= t.anchor.x:
+			lo = maxf(lo, o.anchor.x + gap)
+		else:
+			hi = minf(hi, o.anchor.x - gap)
+	t.slide_lo = lo
+	t.slide_hi = hi
 
 
 ## Cover for a Vakt: the x at its height where a lower target sits on the

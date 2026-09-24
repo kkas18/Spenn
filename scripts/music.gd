@@ -15,7 +15,7 @@ extends Node
 
 enum Mode { SILENT, MENU, PLAY, PAUSE, DEATH }
 
-const LEVEL_DB := [-80.0, -23.0, -17.0, -12.0]
+const LEVEL_DB := [-80.0, -33.0, -27.0, -21.0]
 const SILENT_DB := -80.0
 
 var mode := Mode.SILENT

@@ -540,3 +540,66 @@ med innspilte og tegnede ressurser med fri lisens.
   kreditering) → nedtelling → død (røyk og strekgnister) → game over med ny rekord →
   omstart.
 - APK-størrelsen øker med ca. 3,4 MB (musikk 2,7 MB, lyd 0,66 MB, teksturer 48 KB).
+
+---
+
+# v5.2 – Smartere fiender og dempet lyd
+
+**Tilbakemelding:** du likte at fiendene trekker seg tilbake, og ønsket at de skal skjønne
+når du sikter og flytte seg både opp og sidelengs. Lyd og musikk var for høyt.
+
+## Fiendene leser skuddet ditt
+- **Hele banen:** mens du sikter, beregnes den faktiske skuddbanen med tyngdekraft og
+  veggsprett (`Slingshot.predict`). Hver fiende måler hvor midt i banen den står
+  (`threat_lvl`) og hvilken side av banen den er på. Tidligere var det bare den ene
+  fienden nærmest en rett linje som reagerte.
+- **Ball i luften:** en ball som allerede er skutt, følges 0,6 s frem i tid. Fiender den
+  vil passere nær, med minst ~0,2 s margin, kan rykke unna. Det krever høyere aggresjon,
+  og bevegelsen er kortere.
+- **Signal før handling:** alt som står i skuddlinjen, smalner øyet først, så du ser at
+  det følger med. Deretter kommer bevegelsen, og så en nedkjølingstid (2,6 → 1,1 s),
+  slik at det alltid finnes et vindu å treffe i.
+- **Glir sidelengs:** kroken glir langs skinnen bort fra banen, med myk start og stopp.
+  Kroppen henger etter på snora som en ekte pendel.
+  - Rommet begrenses av skjermkanten og naboer i samme høyde, så fiender aldri glir inn i
+    hverandre.
+  - Er de stengt inne på den ene siden, skjærer de tilbake på tvers av skuddet (ved høy
+    aggresjon).
+- **Trekker seg opp:** er det ikke plass, eller på høyere nivå i tillegg, drar de seg opp
+  langs snora. De senker seg igjen når det har vært rolig en stund.
+- **Egen stil per fiende** (`EVADE`-tabellen):
+
+  | Fiende | Reaksjon |
+  |---|---|
+  | Vakt | Gjemmer seg bak andre (glir nå langs skinnen), ellers glir den og hopper |
+  | Tungvekt | Treg og kort bevegelse |
+  | Splitter | Rask og lang bevegelse |
+  | Pendel | Glir mens den svinger |
+  | Vokter | Glir og snur skjoldet |
+  | Snelle | Vinsjer seg opp og glir |
+  | Dykker | Dukker under skuddet ved å stupe tidlig |
+  | Skygge | Blekner ut tidlig når den blir siktet på |
+  | Spinneren | Spinner platene raskere |
+
+- **Læring:** fiender som har hengt lenge, blir smartere etter hvert som runden blir
+  vanskeligere, fordi aggresjonen oppdateres hver frame.
+- **Lyder:** en metallisk gli-lyd og en knirkende snor (Kenney RPG Audio, CC0), lavt i
+  miksen.
+
+**Balansering:** testet med en bot som sikter som et menneske (holder siktet i 0,4–0,8 s
+og følger målet med siktet). Tallene er snitt av 4 runder:
+
+| Versjon | Overlevelse (snitt) | Treff |
+|---|---|---|
+| v5.1 | 166 s | 95 % |
+| v5.2 | 149 s | 89 % |
+
+Merkbart vanskeligere, men fortsatt rettferdig.
+
+## Lyd og musikk mer subtilt
+- **Effekter:** ca. 9 dB lavere på alle nivåer (middels: −4 → −13 dB).
+- **Store aksenter:** død, brudd, rekord, tap, logo, clear og boss er i tillegg senket med
+  2–4 dB.
+- **Kompressor:** strammere (−22 dB, 3,5:1), så toppene tas ned.
+- **Musikk:** 10 dB lavere (middels: −17 → −27 dB). Den ligger nå som et teppe under
+  spillet.

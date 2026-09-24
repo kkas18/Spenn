@@ -408,6 +408,31 @@ func _draw_aim_dots() -> void:
 			i += 1
 
 
+## The shot the current aim would fire: a point every 1/60 s, with the
+## ball's gravity and wall bounce, until it reaches the rail. Targets read
+## this to see whether they are in the line of fire.
+func predict(max_t := 1.2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var p := l.pouch_rest()
+	var v := aim_dir * launch_speed()
+	var dt := 1.0 / 60.0
+	var t := 0.0
+	while t < max_t:
+		t += dt
+		v.y += Ball.GRAVITY * dt
+		p += v * dt
+		if p.x < Ball.RADIUS:
+			p.x = Ball.RADIUS
+			v.x = absf(v.x) * Ball.WALL_BOUNCE
+		elif p.x > l.size.x - Ball.RADIUS:
+			p.x = l.size.x - Ball.RADIUS
+			v.x = -absf(v.x) * Ball.WALL_BOUNCE
+		out.append(p)
+		if p.y < l.rail_y + Ball.RADIUS:
+			break
+	return out
+
+
 func launch_speed() -> float:
 	return lerpf(950.0, 2150.0, power) * l.scale
 

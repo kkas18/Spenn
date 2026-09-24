@@ -9,7 +9,7 @@ extends Node
 
 const POOL := 10
 const MIN_GAP := 0.05           # same sound can't retrigger faster than this
-const LEVEL_DB := [-80.0, -10.0, -4.0, 0.0]    # off, low, medium, high
+const LEVEL_DB := [-80.0, -19.0, -13.0, -8.0]   # off, low, medium, high
 const DIR := "res://assets/sfx/"
 
 # name: [gain dB, pitch drift (±), takes]
@@ -32,15 +32,15 @@ const MIX := {
 	"reload": [-18.0, 0.04, 1],
 	"beat": [-13.0, 0.0, 5],
 	# accents: rarer, allowed to speak
-	"breach": [-5.0, 0.04, 5],
-	"death": [-3.0, 0.0, 5],
+	"breach": [-8.0, 0.04, 5],
+	"death": [-7.0, 0.0, 5],
 	"streak": [-13.0, 0.0, 3],
-	"boss": [-9.0, 0.0, 1],
+	"boss": [-11.0, 0.0, 1],
 	"intro": [-11.0, 0.0, 1],
-	"clear": [-9.0, 0.0, 1],
-	"record": [-5.0, 0.0, 1],
-	"lose": [-7.0, 0.0, 1],
-	"reveal": [-8.0, 0.0, 1],
+	"clear": [-11.0, 0.0, 1],
+	"record": [-8.0, 0.0, 1],
+	"lose": [-10.0, 0.0, 1],
+	"reveal": [-10.0, 0.0, 1],
 	# interface
 	"click": [-15.0, 0.03, 4],
 	"panel": [-17.0, 0.03, 3],
@@ -50,6 +50,9 @@ const MIX := {
 	"count": [-22.0, 0.0, 2],
 	"restart": [-13.0, 0.0, 1],
 	"deny": [-13.0, 0.0, 1],
+	# enemy evasion (Kenney RPG Audio)
+	"slide": [-21.0, 0.06, 3],
+	"creak": [-20.0, 0.05, 3],
 }
 
 var _takes := {}
@@ -77,8 +80,8 @@ func _ready() -> void:
 	shelf.gain = 0.6
 	AudioServer.add_bus_effect(_bus, shelf)
 	var comp := AudioEffectCompressor.new()
-	comp.threshold = -16.0
-	comp.ratio = 3.0
+	comp.threshold = -22.0
+	comp.ratio = 3.5
 	comp.attack_us = 3000.0
 	comp.release_ms = 160.0
 	AudioServer.add_bus_effect(_bus, comp)

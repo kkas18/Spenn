@@ -24,6 +24,18 @@ const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
 const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
 const ANG_K := 55.0            # angular spring back to the string angle (1/s²)
 const ANG_C := 2.6             # angular damping (1/s)
+# Evasion profile per kind: [reaction s (at aggression 0), slide px,
+# slide speed px/s, hop px, aggression needed]. Reactions shorten and moves
+# grow with aggression; every move is telegraphed by a narrowed, watching
+# eye first, and followed by a cooldown, so it can be read and punished.
+const EVADE := {
+	Kind.RING: [0.7, 110.0, 330.0, 55.0, 0.0],
+	Kind.HEAVY: [0.95, 60.0, 150.0, 0.0, 0.35],
+	Kind.SPLIT: [0.55, 130.0, 390.0, 0.0, 0.2],
+	Kind.ROD: [0.75, 90.0, 260.0, 0.0, 0.3],
+	Kind.SHIELD: [0.9, 70.0, 210.0, 0.0, 0.5],
+	Kind.REEL: [0.5, 85.0, 300.0, 0.0, 0.25],
+}
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0}
 
 var kind: Kind = Kind.RING
@@ -73,6 +85,15 @@ var _shade_t := 0.0
 var _shade_hidden := false
 var _aim_t := 0.0
 var _dodge_cd := 0.0
+# Threat reading (set by the game each frame from the predicted shot).
+var threat_lvl := 0.0          # 0..1, how squarely the shot path crosses it
+var incoming := false          # a ball in flight will pass close, with time to react
+var slide_lo := 0.0            # the anchor may slide within [lo, hi] on the rail
+var slide_hi := 0.0
+var _slide_to := NAN
+var _slide_speed := 0.0
+var _hop_left := 0.0
+var _hopped := 0.0
 var _brain_t := 3.0
 var _minion_t := 4.0
 var _lunge_left := 0.0
@@ -126,6 +147,13 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	shield_ang = PI * 0.5
 	_aim_t = 0.0
 	_dodge_cd = 1.0
+	threat_lvl = 0.0
+	incoming = false
+	slide_lo = anchor_pos.x
+	slide_hi = anchor_pos.x
+	_slide_to = NAN
+	_hop_left = 0.0
+	_hopped = 0.0
 	_brain_t = randf_range(2.5, 5.0)
 	_minion_t = 4.0
 	_lunge_left = 0.0
@@ -332,6 +360,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				length += descent * SPEED_MUL[kind] * _speed_bonus * dt
 				goal_length = length
 			_brain(dt)
+			_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
 				length += step_len
@@ -359,36 +388,44 @@ func _brain(dt: float) -> void:
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
 	match kind:
 		Kind.RING:
-			# Vakt: with cover available it slides in behind another target;
-			# otherwise it sidesteps a held aim after a readable reaction time.
-			if aimed and has_cover and a > 0.12:
+			# Vakt: with cover available it slides its hook along the rail to
+			# hang behind another target; otherwise it evades like the rest.
+			if aimed and has_cover and a > 0.12 and _dodge_cd <= 0.0:
 				_aim_t += dt
 				if _aim_t > lerpf(0.6, 0.25, a):
-					var pull := clampf((cover_x - pos.x) / 60.0, -1.0, 1.0)
-					vel.x += pull * lerpf(260.0, 520.0, a) * dt
-			elif aimed and a > 0.12 and _dodge_cd <= 0.0:
-				_aim_t += dt
-				if _aim_t > lerpf(0.75, 0.3, a):
-					vel.x += dodge_dir * lerpf(150.0, 300.0, a) / MASS[kind]
-					ang_vel += dodge_dir * 3.0
-					_dodge_cd = lerpf(2.6, 1.2, a)
+					_slide(anchor.x + (cover_x - pos.x), EVADE[kind][2] * 0.8)
+					_dodge_cd = lerpf(2.4, 1.2, a)
 					_aim_t = 0.0
-					startle_t = 0.35
-			elif not aimed:
-				_aim_t = maxf(0.0, _aim_t - dt * 2.0)
+					startle_t = 0.3
+			else:
+				_evade(dt)
+		Kind.HEAVY, Kind.SPLIT:
+			if not enraged:
+				_evade(dt)
 		Kind.ROD:
+			_evade(dt)
 			# Pendel: pumps its own swing up to a cap, so it is never still.
 			var swing := atan2(pos.x - anchor.x, pos.y - anchor.y)
 			if absf(swing) < lerpf(0.28, 0.5, a):
 				var dir := signf(vel.x) if absf(vel.x) > 4.0 else (1.0 if randf() < 0.5 else -1.0)
 				vel.x += dir * lerpf(40.0, 95.0, a) * dt
 		Kind.DROP:
+			# Dykker: when it sees the shot coming it ducks under it early.
+			if (aimed or incoming) and a > 0.3 and tele_t <= 0.0 and _lunge_left <= 0.0 and _dodge_cd <= 0.0:
+				_aim_t += dt
+				if _aim_t > lerpf(0.6, 0.25, a) or incoming:
+					tele_t = 0.2
+					_brain_t = lerpf(4.5, 2.2, a)
+					_dodge_cd = lerpf(3.0, 1.6, a)
+					_aim_t = 0.0
 			_lunge_brain(dt, lerpf(4.5, 2.2, a), 50.0)
 		Kind.SHIELD:
 			# Vokter: the plate turns toward the slingshot with some lag.
+			_evade(dt)
 			var want := (threat - pos).angle()
 			shield_ang = rotate_toward(shield_ang, want, lerpf(1.6, 3.6, a) * dt)
 		Kind.REEL:
+			_evade(dt)
 			# Snelle: winches up toward the rail when threatened, lets itself
 			# back down once it has been calm for a moment.
 			if alarm or aimed:
@@ -409,6 +446,13 @@ func _brain(dt: float) -> void:
 			# Skygge: visible for a while, then fades out (shots pass through),
 			# then back. Only its eye and its string stay readable.
 			_shade_t -= dt
+			# Seen in the line of fire, it fades out early (once in a while).
+			if aimed and not _shade_hidden and a > 0.3 and _dodge_cd <= 0.0:
+				_aim_t += dt
+				if _aim_t > lerpf(0.7, 0.3, a):
+					_shade_t = 0.0
+					_dodge_cd = lerpf(4.0, 2.2, a)
+					_aim_t = 0.0
 			if _shade_t <= 0.0:
 				_shade_hidden = not _shade_hidden
 				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * randf_range(0.85, 1.2)
@@ -416,12 +460,91 @@ func _brain(dt: float) -> void:
 					Sfx.play("fade", randf_range(0.95, 1.05))
 			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
-			orbit += lerpf(1.0, 1.7, a) * (1.35 if enraged else 1.0) * dt
+			# Spinneren: aimed at, it spins its plates faster to close the gap.
+			orbit += lerpf(1.0, 1.7, a) * (1.35 if enraged else 1.0) * (lerpf(1.4, 2.2, a) if aimed else 1.0) * dt
 			_minion_t -= dt
 			if _minion_t <= 0.0:
 				_minion_t = lerpf(6.0, 3.5, a)
 				wants_minion = true
 			_lunge_brain(dt, lerpf(10.0, 6.0, a), 40.0)
+
+
+## Common evasion: watch the shot (narrowed eye) for a reaction time, then
+## slide the hook along the rail away from the path, or retreat up the
+## string if there is no room. A ball already in flight is read faster but
+## answered with a shorter move. Cooldown after every move.
+func _evade(dt: float) -> void:
+	var a := aggression
+	var prof: Array = EVADE[kind]
+	var threatened := aimed or incoming
+	if not threatened:
+		_aim_t = maxf(0.0, _aim_t - dt * 2.0)
+		return
+	if _dodge_cd > 0.0 or a < prof[4]:
+		return
+	_aim_t += dt
+	var react: float = prof[0] * lerpf(1.0, 0.4, a)
+	if incoming and not aimed:
+		if a < 0.4:
+			return
+		react *= 0.35
+	if _aim_t < react:
+		return
+	var sc := _screen_h / 1280.0
+	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0)
+	var speed: float = prof[2] * lerpf(1.0, 1.4, a) * sc
+	var room_fwd := (slide_hi - anchor.x) if dodge_dir > 0.0 else (anchor.x - slide_lo)
+	var room_back := (anchor.x - slide_lo) if dodge_dir > 0.0 else (slide_hi - anchor.x)
+	var moved := false
+	if room_fwd > 28.0 * sc:
+		_slide(anchor.x + dodge_dir * minf(reach, room_fwd), speed)
+		moved = true
+	elif room_back > reach * 0.8 and a > 0.45:
+		# Boxed in on the far side: cut back across the shot instead.
+		_slide(anchor.x - dodge_dir * minf(reach * 1.3, room_back), speed * 1.15)
+		moved = true
+	var hop: float = prof[3]
+	if (not moved or (hop > 0.0 and a > 0.35)) and length > 90.0 * sc:
+		_hop_left += maxf(hop, 45.0) * sc * lerpf(0.8, 1.3, a)
+		Sfx.play("creak", randf_range(0.95, 1.1))
+	ang_vel += dodge_dir * 2.5
+	startle_t = 0.3
+	_dodge_cd = lerpf(2.6, 1.1, a) * (1.3 if kind == Kind.HEAVY else 1.0)
+	_aim_t = 0.0
+
+
+func _slide(x: float, speed: float) -> void:
+	x = clampf(x, minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
+	if absf(x - anchor.x) < 4.0:
+		return
+	_slide_to = x
+	_slide_speed = speed
+	Sfx.play("slide", randf_range(0.92, 1.08))
+
+
+## The hook glides along the rail (eased in and out); the body follows on
+## its string with a natural lag. Hops pull the string up, then it pays
+## back out once things are calm.
+func _move_anchor(dt: float) -> void:
+	if not is_nan(_slide_to):
+		var d := _slide_to - anchor.x
+		var sp := _slide_speed * clampf(absf(d) / 40.0, 0.35, 1.0)
+		var step_x := signf(d) * minf(absf(d), sp * dt)
+		anchor.x += step_x
+		if absf(_slide_to - anchor.x) < 0.5:
+			_slide_to = NAN
+	if _hop_left > 0.0:
+		var u := minf(_hop_left, 320.0 * dt)
+		u = minf(u, maxf(0.0, length - 60.0))
+		length -= u
+		goal_length = length
+		_hopped += u
+		_hop_left = 0.0 if u <= 0.0 else _hop_left - u
+	elif _hopped > 0.0 and not aimed and not incoming and _dodge_cd < 0.6:
+		var back := minf(_hopped, 110.0 * dt)
+		length += back
+		goal_length = length
+		_hopped -= back
 
 
 ## Tremble and squint for 0.45 s, then drop by `drop` px (scaled).
