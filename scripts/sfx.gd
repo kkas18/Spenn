@@ -53,6 +53,11 @@ const MIX := {
 	# enemy evasion (Kenney RPG Audio)
 	"slide": [-21.0, 0.06, 3],
 	"creak": [-20.0, 0.05, 3],
+	# materials: jelly (freesound CC0) and rigid shells (Kenney)
+	"squish": [-11.0, 0.06, 5],
+	"splat": [-10.0, 0.05, 3],
+	"wood": [-12.0, 0.05, 5],
+	"metal": [-12.0, 0.05, 5],
 }
 
 var _takes := {}

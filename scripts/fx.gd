@@ -53,6 +53,7 @@ var _next_ring := 0
 var _shards: Array[Dictionary] = []
 var _next_shard := 0
 var _rng := RandomNumberGenerator.new()
+var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _puffs: Array[Dictionary] = []
 var _next_puff := 0
 
@@ -139,6 +140,11 @@ func ring(at: Vector2, col: Color, size := 30.0) -> void:
 	r.r = size
 
 
+## Runs `cb` after `delay` seconds of game time (slowed by hit-stop).
+func after(delay: float, cb: Callable) -> void:
+	_later.append({"t": delay, "cb": cb})
+
+
 ## Soft smoke that blooms and drifts up from a break, a breach or the end
 ## of a run: tinted toward the background so it stays matte, never glows.
 func puff(at: Vector2, col: Color, count: int, size: float, alpha := 0.3) -> void:
@@ -204,6 +210,9 @@ func _frag(type: int, pos: Vector2, vel: Vector2, col: Color, life := FRAG_LIFE)
 ## rays. Matte, local and short; all pooled data.
 func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_vel: Vector2) -> void:
 	var inherit := base_vel * 0.35
+	if Target.is_soft_kind(kind):
+		_splash(at, radius, col, inherit)
+		return
 	match kind:
 		Target.Kind.RING, Target.Kind.HEAVY, Target.Kind.SHIELD, Target.Kind.REEL:
 			var pieces := 6 if kind != Target.Kind.HEAVY else 8
@@ -254,6 +263,22 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 		# Staged: two more rings of rays follow the first.
 		_queued.append({"t": 0.14, "at": at, "r": radius * 1.5, "col": col})
 		_queued.append({"t": 0.3, "at": at, "r": radius * 2.1, "col": col})
+
+
+## Jelly bursts into blobs: a ring of droplets of mixed size flung out and
+## falling, a few slow heavy ones, and a soft wet splash ring. No rays.
+func _splash(at: Vector2, radius: float, col: Color, inherit: Vector2) -> void:
+	var n := 14 if not Prefs.reduced_motion else 7
+	for i in n:
+		var a := i * TAU / n + _rng.randf_range(-0.2, 0.2)
+		var sp := _rng.randf_range(110.0, 300.0)
+		var f := _frag(Frag.DOT, at + Vector2.from_angle(a) * radius * 0.55, inherit + Vector2.from_angle(a) * sp + Vector2(0, -90), col.lightened(_rng.randf_range(0.0, 0.15)), _rng.randf_range(0.5, 0.8))
+		f.r = _rng.randf_range(2.5, 6.0) * radius / 30.0
+	for i in 3:
+		var a := _rng.randf() * TAU
+		var f := _frag(Frag.DOT, at + Vector2.from_angle(a) * radius * 0.2, inherit + Vector2.from_angle(a) * 70.0 + Vector2(0, -40), col.darkened(0.1), 0.9)
+		f.r = _rng.randf_range(6.0, 9.0) * radius / 30.0
+	ring(at, col.lightened(0.1), radius * 1.3)
 
 
 ## Gold grains arc from a kill to the score counter (gold = points/power).
@@ -360,6 +385,7 @@ func clear() -> void:
 	for k in _tokens:
 		k.t = -1.0
 	_queued.clear()
+	_later.clear()
 	for d in _puffs:
 		d.t = -1.0
 	for s in _sparks:
@@ -406,6 +432,11 @@ func _process(delta: float) -> void:
 			Sfx.play("token", _rng.randf_range(0.95, 1.2))
 		else:
 			any = true
+	for q in _later.duplicate():
+		q.t -= delta
+		if q.t <= 0.0:
+			_later.erase(q)
+			q.cb.call()
 	for q in _queued.duplicate():
 		q.t -= delta
 		if q.t <= 0.0:
@@ -523,7 +554,15 @@ func _draw() -> void:
 					draw_circle(f.pos - d2 + o, f.w, lc, true, -1.0, true)
 					draw_circle(f.pos + d2 + o, f.w, lc, true, -1.0, true)
 			Frag.DOT:
-				draw_circle(f.pos, f.r, Color(c, alpha), true, -1.0, true)
+				# Droplets stretch along their flight, like liquid does.
+				var v: Vector2 = f.vel
+				var st := 1.0 + minf(v.length() / 500.0, 0.9)
+				draw_set_transform(f.pos + Pal.SHADOW_OFFSET * 0.5, v.angle(), Vector2(st, 1.0 / sqrt(st)))
+				draw_circle(Vector2.ZERO, f.r, Color(0, 0, 0, 0.25 * alpha), true, -1.0, true)
+				draw_set_transform(f.pos, v.angle(), Vector2(st, 1.0 / sqrt(st)))
+				draw_circle(Vector2.ZERO, f.r, Color(c, alpha), true, -1.0, true)
+				draw_circle(Vector2(-f.r * 0.3, -f.r * 0.3).rotated(-v.angle()), f.r * 0.35, Color(c.lightened(0.35), alpha * 0.6), true, -1.0, true)
+				draw_set_transform(Vector2.ZERO)
 			Frag.RAY:
 				# Rays run outward: inner end chases the outer end.
 				var e := 1.0 - pow(1.0 - k, 3.0)

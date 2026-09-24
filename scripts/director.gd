@@ -89,7 +89,7 @@ func spawn_interval(boss_alive: bool) -> float:
 
 
 func reload_time() -> float:
-	return maxf(0.72, 1.05 - 0.06 * intensity())
+	return maxf(0.6, 0.88 - 0.05 * intensity())
 
 
 ## Returns an event when one is due; formation and rush alternate and every

@@ -603,3 +603,90 @@ Merkbart vanskeligere, men fortsatt rettferdig.
 - **Kompressor:** strammere (−22 dB, 3,5:1), så toppene tas ned.
 - **Musikk:** 10 dB lavere (middels: −17 → −27 dB). Den ligger nå som et teppe under
   spillet.
+
+---
+
+# v5.3 – Myke og stive kropper, ekte ballfysikk, personligheter og farger
+
+**Tilbakemelding:** fiendene skal være både stive og myke kropper, med lyder deretter.
+De skal oppføre seg mer variert, tau og fiender skal være mer fargerike, og ballen traff
+flere fiender, noe som ikke virket fysisk riktig.
+
+## Ballfysikk (`game.gd`)
+- **Impulsbasert kollisjon:** kollisjonen regnes ut fra masser og relativ fart. Ballen
+  har masse 1, og en fiende har 6 × sin egen masse. Retur (restitusjon) og friksjon
+  avhenger av materialet:
+
+  | Materiale | Retur | Friksjon |
+  |---|---|---|
+  | Gelé | 0,12 | 0,45 |
+  | Stivt skall | 0,5 | 0,12 |
+  | Skjoldplate | 0,7 | 0,08 |
+
+- **Hvor mye ballen mister:** gelé sluker nesten hele slaget. Et stivt skall sender
+  ballen tilbake med redusert fart. Fienden får den faktiske impulsen, ikke et fast
+  dytt.
+- **Taket:** ballen som treffer taket, er brukt opp. Den mister mesteparten av farten,
+  treffer ingenting mer og blekner på 0,35 s. Før kom den tilbake og traff fiender på
+  vei ned.
+- **Resultat:** kombinasjoner er nå ekte rikosjett-skudd du må sikte for. Gjennomslag
+  (pierce) går fortsatt gjennom, men mister 15 % fart per kropp.
+
+## Myke kropper (Vakt, Splitter, Dykker, Skygge)
+- **Fjærring:** en ring med 18 radielle fjærer. Kontaktpunktet bulker inn, resten buler
+  ut (arealet bevares), og bulken brer seg som bølger rundt kroppen.
+- **Treghet:** når kroppen svinger eller glir, slurper geleen etter.
+- **Tegning:** ring, sekskant (også kantene bøyer seg), dråpe og halvmåne følger alle
+  overflaten.
+- **Ved dødelig treff:** geleen klemmes flat i 80 ms, så sprekker den i dråper av ulik
+  størrelse. Dråpene strekker seg i fartsretningen og har en fuktig sprutring. Kroppen
+  er borte, og tauet trekker seg tilbake.
+- **Kontakt:** myke fiender som dunker borti hverandre, bulker også inn.
+- **Lyder:** «squish» ved treff og «splat» når de sprekker (freesound, CC0). Tonehøyden
+  følger størrelsen, og volumet følger slagkraften.
+
+## Stive kropper (Tungvekt, Pendel, Vokter, Snelle, Spinneren)
+- **Ingen deformasjon:** i stedet vibrerer de kort og stivt langs slaget (160 ms),
+  vugger og spinner fra friksjon.
+- **Lyder etter materiale:** Pendel = tre, Vokter/Snelle = metallklang, Spinneren =
+  tungt metall, Tungvekt = plate. Volumet følger slagkraften.
+- **Knusing:** kroppen brekker i sin egen form (buer, kanter, halvdeler), med skår og
+  røyk.
+
+## Personlighet og variasjon (`Temper`)
+Hver fiende får et tilfeldig temperament. Blandingen blir livligere når aggresjonen
+stiger.
+
+| Temperament | Reaksjon | Særtrekk | På tomgang |
+|---|---|---|---|
+| Forsiktig | ×0,7 | Unnviker lenger og drar seg alltid opp | Skjelver lett, holder seg i ro |
+| Dristig | ×1,35 | 35 % sjanse for at den står imot og bare trasser (en sjanse for deg) | Patruljerer bredt og svinger seg |
+| Uberegnelig | ×0,9 | Fint: et kort rykk feil vei (60 % sjanse), deretter ekte unnvikelse | Rykker ofte |
+| Rolig | ×1 | – | Driver av og til litt langs skinnen |
+
+- **Følger kroken:** kroppen drar seg aktivt tilbake under kroken, så lange tau ikke
+  henger på skrå i flere sekunder. Pendel er unntatt.
+
+## Farger
+- **Fiender:** rikere juveltoner. Vakt asurblå, Tungvekt smaragd, Splitter turkis,
+  Pendel fiolett, Dykker himmelblå, Vokter stålblå, Spinneren orkidé, Snelle lime,
+  Skygge rosa. Lysheten er fortsatt spredt, så typene skilles i gråtoner.
+- **Variasjon:** hver fiende får en liten tilfeldig nyansevariasjon innen typen.
+- **Tau:** fiendens farge. Myke henger i en farget snor (2,4 px), stive i en mørkere
+  tonet wire (1,8 px).
+- **Tauets bøyestivhet:** raske glid gir en glatt bølge nedover tauet, ikke sikksakk.
+
+## Balansering
+Ballen tar nå bare én fiende per skudd, uten gratis-kombinasjoner. Det er kompensert
+med:
+- raskere omlading: 0,88 → 0,6 s (før 1,05 → 0,72 s);
+- en knute hvert 1500. poeng (før 3000).
+
+Menneskelignende bot, snitt av 4 runder:
+
+| Versjon | Overlevelse (snitt) |
+|---|---|
+| v5.2 | 149 s |
+| v5.3 | 135 s |
+
+Poengene er lavere, fordi kombinasjoner nå må fortjenes.

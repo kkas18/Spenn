@@ -6,8 +6,10 @@ const RADIUS := 13.0
 const GRAVITY := 320.0
 const WALL_BOUNCE := 0.85
 const MAX_AGE := 4.0
+const SPENT_FADE := 0.35       # a ball that hit the rail fades out over this
 
 var active := false
+var _spent := 0.0
 var special := false           # pierce ball: passes through targets and armour
 var shot_id := 0               # balls of one release (a triple fan) share it
 var cut_any := false
@@ -36,6 +38,8 @@ func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	shot_id = shot
 	cut_any = false
 	hit_rail = false
+	_spent = 0.0
+	modulate.a = 1.0
 	pos = p
 	vel = v
 	age = 0.0
@@ -91,8 +95,15 @@ func step(dt: float, l: Layout) -> bool:
 		vel.x = -absf(vel.x) * WALL_BOUNCE
 	if pos.y < l.rail_y + RADIUS + 3.0 and vel.y < 0.0:
 		pos.y = l.rail_y + RADIUS + 3.0
-		vel.y = -vel.y * 0.55
+		# The rail soaks up most of the blow; the ball is spent and fades.
+		vel.y = -vel.y * 0.3
+		vel.x *= 0.6
 		hit_rail = true
+	if hit_rail:
+		_spent += dt
+		modulate.a = clampf(1.0 - _spent / SPENT_FADE, 0.0, 1.0)
+		if _spent >= SPENT_FADE:
+			return false
 	return age < MAX_AGE and pos.y < l.size.y + RADIUS * 2.0
 
 

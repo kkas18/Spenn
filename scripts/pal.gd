@@ -27,16 +27,16 @@ const STRING := Color("59616D")
 # Target hues: silhouettes carry identity, hue + lightness second. Hues sit
 # ≥40° apart (spec hues nudged ≤15° so blue/teal/green clear 40°), and
 # luma steps of ~0.11 keep every type apart in greyscale.
-const GREEN := Color("3F6C52")   # 145°, luma .36 – heavy (double ring)
-const PURPLE := Color("826AA5")  # 265°, luma .47 – rod
-const BLUE := Color("7C93D6")    # 225°, luma .58 – ring
-const TEAL := Color("84C9CF")    # 185°, luma .71 – splitter (hexagon)
-const DROP := Color("D1D8F0")    # 225° pale, luma .85 – fast drop
+const GREEN := Color("2FA66A")   # 145°, luma .45 – heavy (double ring), emerald
+const PURPLE := Color("9A6BFF")   # 260°, luma .50 – rod, violet
+const BLUE := Color("4F8BFF")   # 220°, luma .55 – ring, azure
+const TEAL := Color("33D1C6")   # 175°, luma .66 – splitter (hexagon), turquoise
+const DROP := Color("8FE3FF")   # 195°, luma .82 – fast drop, sky
 const CORAL := Color("E98462")   # 15° – danger only
-const ARMOR := Color("9AA2AD")   # neutral – Vokter body (silhouette: ring + plate)
-const BOSS := Color("C9CED6")    # neutral pale – Spinneren (filled hexagon)
-const REEL := Color("B7C3CF")    # pale steel – Snelle (spoked reel)
-const SHADE := Color("B9B1D6")   # pale lavender – Skygge (crescent)
+const ARMOR := Color("7E9CC9")   # 215°, luma .60 – Vokter body (ring + plate), steel blue
+const BOSS := Color("D05BE0")   # 290°, luma .52 – Spinneren (filled hexagon), orchid
+const REEL := Color("9FD85A")   # 90°, luma .73 – Snelle (spoked reel), lime
+const SHADE := Color("FF7FB6")   # 335°, luma .64 – Skygge (crescent), rose
 const EYE := Color("E4E7EC")
 const PUPIL := Color("0E1015")
 

@@ -10,10 +10,18 @@ const MAX_TARGETS := 28
 const MAX_BALLS := 6
 const AMMO_CAP := 5
 const SUBSTEP := 1.0 / 120.0
-const BALL_BOUNCE := 0.7
+# Ball vs body: an impulse exchange between masses. The ball is mass 1; a
+# target is K_MASS × its own mass. Jelly swallows the blow (low restitution,
+# high grip); rigid shells send the ball back (higher restitution, slick).
+const K_MASS := 6.0
+const SOFT_E := 0.12
+const SOFT_MU := 0.45
+const RIGID_E := 0.5
+const RIGID_MU := 0.12
+const PLATE_E := 0.7
 const LIVES := 3
 const CUT_SPEED := 1400.0      # a rising ball this fast severs a string near its hook
-const EXTRA_LIFE_EVERY := 3000
+const EXTRA_LIFE_EVERY := 1500
 const CHAIN_WINDOW := 1.2
 const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const MAX_MINIONS := 3
@@ -625,6 +633,8 @@ func _target_contacts() -> void:
 			var contact := a.pos + nrm * a.contact_radius()
 			a.push(-nrm * j_imp, contact)
 			c.push(nrm * j_imp, contact)
+			a.dent(contact, closing * 0.8)
+			c.dent(contact, closing * 0.8)
 			if closing > 140.0 and _knock_sfx_cd <= 0.0:
 				_knock_sfx_cd = 0.08
 				Sfx.play("knock", randf_range(0.9, 1.1), linear_to_db(clampf(closing / 600.0, 0.15, 0.7)))
@@ -658,6 +668,10 @@ func _spawn_minions() -> void:
 
 func _collide(b: Ball) -> void:
 	var cut_speed := CUT_SPEED * layout.scale
+	if b.hit_rail:
+		# Spent against the rail: it drops out of play instead of raining
+		# back down through the field.
+		return
 	for t in targets:
 		if not t.is_hittable():
 			continue
@@ -699,23 +713,36 @@ func _collide(b: Ball) -> void:
 			return
 
 
-func _reflect(b: Ball, n: Vector2, cp: Vector2, rr: float, bounce: float) -> Vector2:
-	var slide := b.vel - n * b.vel.dot(n)
-	var vn := b.vel.dot(n)
-	if vn < 0.0:
-		b.vel -= (1.0 + bounce) * vn * n
-		b.vel -= slide * 0.12
-		b.impact(n)
+## Impulse-based contact against a moving body of mass `m` (target units).
+## Updates the ball; returns the impulse to hand the target (its `hit` and
+## `push` divide by the target's own mass). Also reports the closing speed.
+func _resolve(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float, e: float, mu: float) -> Array:
 	b.pos = cp + n * (rr + 0.5)
-	return slide
+	var rel := b.vel - t.vel
+	var vn := rel.dot(n)
+	if vn >= 0.0:
+		return [Vector2.ZERO, 0.0]
+	var inv := 1.0 + 1.0 / (t.mass() * K_MASS)
+	var j := -(1.0 + e) * vn / inv
+	var tang := rel - n * vn
+	var tl := tang.length()
+	var jt := minf(mu * j, tl / inv)
+	var imp := n * j - (tang / tl * jt if tl > 0.01 else Vector2.ZERO)
+	b.vel += imp
+	# Never left sitting inside the body: a little separation speed.
+	if b.vel.dot(n) < 40.0:
+		b.vel += n * (40.0 - b.vel.dot(n))
+	b.impact(n)
+	return [-imp / K_MASS, -vn]
 
 
 ## Armour: the ball glances off, the target rocks, nothing breaks.
 func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	b.touch(t.get_instance_id())
-	var slide := _reflect(b, n, cp, rr, 0.85)
+	var res := _resolve(b, t, n, cp, rr, PLATE_E, 0.08)
 	var contact := b.pos - n * Ball.RADIUS
-	t.push(-n * 140.0 + slide * 0.1, contact)
+	t.push(res[0], contact)
+	t.dent(contact, res[1])
 	fx.sparks(contact, Pal.METAL_LIGHT, 6)
 	fx.ring(contact, Pal.METAL_LIGHT, 14.0)
 	fx.popup(Loc.t("popup.blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
@@ -729,13 +756,17 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	_mark_hit(b)
 	var impulse: Vector2
 	var contact := b.pos - n * Ball.RADIUS
+	var closing := b.vel.length()
 	if b.special:
-		var slide_p := b.vel - n * b.vel.dot(n)
-		impulse = b.vel.normalized() * 200.0 + slide_p * 0.05
+		# Pierce: punches through, losing some speed to each body.
+		impulse = b.vel.normalized() * 200.0
+		b.vel *= 0.85
 	else:
-		# Friction: the ball's sliding speed along the surface spins the target.
-		var slide := _reflect(b, n, cp, rr, BALL_BOUNCE)
-		impulse = -n * 260.0 + slide * 0.14
+		var res := _resolve(b, t, n, cp, rr, SOFT_E if t.soft else RIGID_E, SOFT_MU if t.soft else RIGID_MU)
+		impulse = res[0]
+		closing = res[1]
+	t.dent(contact, closing * (1.7 if t.hp <= 1 else 1.0))
+	var loud := linear_to_db(clampf(closing / 1300.0, 0.3, 1.0))
 	var kind := t.kind
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
@@ -761,12 +792,28 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if b.hits >= 2:
 		fx.shake(2.0 + minf(b.hits - 2, 1))
 	if killed:
-		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
-		fx.shards(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.vel)
-		fx.puff(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.radius * (1.8 if kind == Target.Kind.BOSS else 1.3), 0.32)
-		Sfx.play("burst", randf_range(0.92, 1.08))
-		Sfx.play("hit", 1.0 + 0.08 * (b.hits - 1))
-		Sfx.play("snap", randf_range(0.95, 1.1), -6.0)
+		if t.soft:
+			# The jelly squashes for a moment, then bursts.
+			var at := t.pos
+			var rot := t.body_rot
+			var r := t.radius
+			fx.after(Target.POP_TIME, func() -> void:
+				fx.burst(kind, at, rot, r, col, Vector2.ZERO)
+				fx.puff(at, col, 2, r * 1.3, 0.32))
+		else:
+			fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
+		if not t.soft:
+			fx.shards(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.vel)
+		if not t.soft:
+			fx.puff(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.radius * (1.8 if kind == Target.Kind.BOSS else 1.3), 0.32)
+		if t.soft:
+			# Jelly bursts wetly; the smaller it is, the higher it sounds.
+			Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+			Sfx.play("squish", 1.1, loud - 6.0)
+		else:
+			Sfx.play("burst", randf_range(0.92, 1.08), loud)
+			_material_knock(t, b.hits, loud)
+		Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
 		Sfx.haptic(18, 0.5)
 		if kind == Target.Kind.BOSS:
 			fx.shake(3.0)
@@ -776,10 +823,27 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		if kind == Target.Kind.SPLIT:
 			_split(t)
 	else:
-		Sfx.play("thud", 1.0 + 0.05 * (b.hits - 1))
-		Sfx.haptic(12, 0.35)
+		if t.soft:
+			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		else:
+			_material_knock(t, b.hits, loud)
+		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
 	if b.hits == 2:
 		_grant(Ammo.PIERCE)
+
+
+## Rigid shells each sound like what they are made of.
+func _material_knock(t: Target, hits: int, loud: float) -> void:
+	var p := 1.0 + 0.06 * (hits - 1)
+	match t.kind:
+		Target.Kind.ROD:
+			Sfx.play("wood", p, loud)
+		Target.Kind.SHIELD, Target.Kind.REEL:
+			Sfx.play("clank", p, loud)
+		Target.Kind.BOSS:
+			Sfx.play("metal", p * 0.9, loud)
+		_:
+			Sfx.play("hit", p, loud)
 
 
 ## String severed: double points, and it ignores armour and health.

@@ -24,6 +24,7 @@ UI = "kenney_interface-sounds/Audio/"
 IMP = "kenney_impact-sounds/Audio/"
 JIN = "kenney_music-jingles/Audio/"
 RPG = "kenney_rpg-audio/Audio/"
+FS = "fs/fs_%d.mp3"      # freesound.org HQ previews, all CC0 (see CREDITS.md)
 
 
 def impact(name, n=5):
@@ -71,6 +72,13 @@ SFX = {
     # enemy evasion: hook sliding along the rail, string creaking up
     "slide": ([RPG + "drawKnife%d.ogg" % i for i in (1, 2, 3)], 0.3),
     "creak": ([RPG + "creak%d.ogg" % i for i in (1, 2, 3)], 0.4),
+    # soft (jelly) bodies: squish on a hit, splat when they burst
+    "squish": ([FS % 442772, (FS % 593984, 0.15, 0.5), (FS % 593984, 1.88, 2.25),
+                (FS % 593984, 3.73, 4.1), (FS % 794272, 0.8, 1.05)], 0.4),
+    "splat": ([FS % 445117, FS % 445118, (FS % 447929, 0.08, 0.95)], 0.6),
+    # rigid bodies: wood for the rod, heavier metal for the boss
+    "wood": (impact("impactWood_medium"), 0.3),
+    "metal": (impact("impactMetal_heavy"), 0.35),
 }
 
 TARGET_RMS_DB = -20.0     # loudness of the active part of every sound
@@ -126,7 +134,13 @@ def build_sfx():
     os.makedirs(os.path.join(OUT, "sfx"), exist_ok=True)
     for name, (files, max_len) in SFX.items():
         for i, rel in enumerate(files):
+            span = None
+            if isinstance(rel, tuple):
+                rel, a, b = rel
+                span = (a, b)
             d, sr = sf.read(os.path.join(SRC, rel), always_2d=True)
+            if span:
+                d = d[int(span[0] * sr): int(span[1] * sr)]
             m = trim(d.mean(axis=1), sr, max_len)
             g = 10 ** ((TARGET_RMS_DB - db(active_rms(m, sr))) / 20.0)
             g = min(g, 10 ** (PEAK_DB / 20.0) / max(np.abs(m).max(), 1e-9))

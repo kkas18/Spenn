@@ -36,9 +36,39 @@ const EVADE := {
 	Kind.SHIELD: [0.9, 70.0, 210.0, 0.0, 0.5],
 	Kind.REEL: [0.5, 85.0, 300.0, 0.0, 0.25],
 }
+# Material. Soft bodies are jelly: a ring of radial springs that dents
+# where it is struck, bulges elsewhere (area is kept), ripples round and
+# lags behind when the body is swung. Rigid bodies keep their shape; they
+# ring briefly, rock and spin instead.
+const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE]
+const SOFT_N := 18
+const SOFT_K := 340.0          # radial spring (1/s²)
+const SOFT_C := 7.5            # damping (1/s)
+const SOFT_COUPLE := 900.0     # neighbour coupling: dents spread as ripples
+const SOFT_INERTIA := 0.0022   # how far the jelly sloshes per px/s² of swing
+const POP_TIME := 0.08
+
+# Temperament, rolled per target so no two behave quite alike.
+enum Temper { CALM, TIMID, BOLD, ERRATIC }
+
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0}
 
 var kind: Kind = Kind.RING
+var soft := false
+var temper: Temper = Temper.CALM
+var _sd := PackedFloat32Array()  # soft: radial displacement per spoke (px)
+var _sv := PackedFloat32Array()  # soft: radial velocity per spoke
+var _last_vel := Vector2.ZERO
+var _ring_t := 1.0             # rigid: time since the last knock (metal ring)
+var _ring_dir := Vector2.RIGHT
+var _feint := 0.0              # erratic: a false start the other way first
+var _feint_dir := 0.0
+var _wander_t := 3.0           # idle drift along the rail
+var _hue_shift := 0.0          # each one a slightly different shade of its kind
+var _gone := false             # burst jelly: the body is gone, the string recoils
+var pop_t := 0.0               # soft: squashed for a moment before it bursts
+var _queued_x := NAN           # erratic: the real slide after the feint
+var _queued_speed := 0.0
 var phase: Phase = Phase.OFF
 var hp := 1
 var radius := 30.0
@@ -120,11 +150,25 @@ var _pluck_cd := 0.0
 func _ready() -> void:
 	_pts.resize(N)
 	_prev.resize(N)
+	_sd.resize(SOFT_N)
+	_sv.resize(SOFT_N)
 	visible = false
 
 
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
 	kind = k
+	soft = k in SOFT_KINDS
+	_sd.fill(0.0)
+	_sv.fill(0.0)
+	_last_vel = Vector2.ZERO
+	_ring_t = 1.0
+	_feint = 0.0
+	_wander_t = randf_range(2.0, 5.0)
+	_queued_x = NAN
+	pop_t = 0.0
+	_gone = false
+	_hue_shift = randf_range(-0.035, 0.035)
+	temper = _roll_temper()
 	hp = HP[k]
 	radius = RADIUS[k]
 	anchor = anchor_pos
@@ -190,6 +234,81 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	visible = true
 	if k == Kind.ROD:
 		vel.x = 70.0 if randf() < 0.5 else -70.0
+
+
+## Most are calm early on; the mix grows livelier as aggression rises.
+func _roll_temper() -> Temper:
+	var r := randf()
+	var a := aggression
+	if kind == Kind.BOSS:
+		return Temper.CALM
+	if r < 0.22 + 0.1 * a:
+		return Temper.TIMID
+	if r < 0.4 + 0.15 * a:
+		return Temper.BOLD
+	if r < 0.52 + 0.2 * a:
+		return Temper.ERRATIC
+	return Temper.CALM
+
+
+static func is_soft_kind(k: int) -> bool:
+	return k in SOFT_KINDS
+
+
+## A strike on a soft body: the spokes near the contact are driven inward
+## (the dent), the rest take up the displaced area on the next step.
+func dent(at: Vector2, speed: float) -> void:
+	if not soft:
+		_ring_t = 0.0
+		_ring_dir = (pos - at).normalized()
+		return
+	var la := (at - pos).angle() - body_rot
+	var k := clampf(speed * 0.55, 60.0, 520.0) * (radius / 30.0)
+	for i in SOFT_N:
+		var d := angle_difference(la, i * TAU / SOFT_N)
+		_sv[i] -= k * exp(-pow(d / 0.6, 2.0))
+
+
+func _soft_step(dt: float) -> void:
+	if not soft or dt <= 0.0:
+		return
+	var acc := (vel - _last_vel) / dt
+	_last_vel = vel
+	acc = acc.limit_length(9000.0)
+	var mean := 0.0
+	var lim := radius * 0.4
+	for i in SOFT_N:
+		var dir := Vector2.from_angle(i * TAU / SOFT_N + body_rot)
+		var lap := _sd[(i + SOFT_N - 1) % SOFT_N] + _sd[(i + 1) % SOFT_N] - 2.0 * _sd[i]
+		var f := -SOFT_K * _sd[i] - SOFT_C * _sv[i] + SOFT_COUPLE * lap * 0.25
+		# Inertia: speeding up to the right, the jelly lags to the left.
+		f += acc.dot(dir) * SOFT_INERTIA * radius
+		_sv[i] += f * dt
+	for i in SOFT_N:
+		_sd[i] = clampf(_sd[i] + _sv[i] * dt, -lim, lim)
+		mean += _sd[i]
+	mean /= SOFT_N
+	for i in SOFT_N:
+		_sd[i] -= mean
+
+
+## Radial offset of the jelly surface at a body-space angle.
+func _soft_at(a: float) -> float:
+	var f := fposmod(a, TAU) / TAU * SOFT_N
+	var i := int(f) % SOFT_N
+	var w := f - floorf(f)
+	w = w * w * (3.0 - 2.0 * w)
+	return lerpf(_sd[i], _sd[(i + 1) % SOFT_N], w)
+
+
+## A body-space point pushed out (or in) by the jelly surface.
+func _sp(p: Vector2) -> Vector2:
+	if not soft:
+		return p
+	var l := p.length()
+	if l < 0.001:
+		return p
+	return p + p / l * _soft_at(p.angle()) * minf(1.0, l / radius)
 
 
 func is_hittable() -> bool:
@@ -305,6 +424,10 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 			_speed_bonus = 1.4
 		return false
 	_snap(impulse)
+	if soft:
+		pop_t = POP_TIME
+		vel = Vector2.ZERO
+		spin = 0.0
 	return true
 
 
@@ -367,17 +490,29 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				goal_length = length
 				_lunge_left -= step_len
 			_body_step(dt)
+			_soft_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
 			_rope_step(dt)
 		Phase.FALLING:
+			if pop_t > 0.0:
+				# Jelly holds still, squashed around the blow, then bursts.
+				pop_t -= dt
+				_soft_step(dt)
+				_rope_step(dt)
+				if pop_t <= 0.0:
+					_gone = true
+				return
 			fall_t += dt
 			vel.y += GRAVITY * dt
 			pos += vel * dt
 			body_rot += spin * dt
 			tilt += 4.5 * dt
-			modulate.a = clampf(1.0 - (fall_t - 0.45) / 0.5, 0.0, 1.0)
+			_soft_step(dt)
+			# Burst jelly is gone; only its recoiling string remains.
+			if not soft:
+				modulate.a = clampf(1.0 - (fall_t - 0.45) / 0.5, 0.0, 1.0)
 			_rope_step(dt)
-			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0) and rope_alpha <= 0.0:
+			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0 or _gone) and rope_alpha <= 0.0:
 				phase = Phase.OFF
 				visible = false
 
@@ -386,6 +521,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 func _brain(dt: float) -> void:
 	var a := aggression
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
+	_wander(dt)
 	match kind:
 		Kind.RING:
 			# Vakt: with cover available it slides its hook along the rail to
@@ -483,15 +619,21 @@ func _evade(dt: float) -> void:
 	if _dodge_cd > 0.0 or a < prof[4]:
 		return
 	_aim_t += dt
-	var react: float = prof[0] * lerpf(1.0, 0.4, a)
+	var react: float = prof[0] * lerpf(1.0, 0.4, a) * [1.0, 0.7, 1.35, 0.9][temper]
 	if incoming and not aimed:
 		if a < 0.4:
 			return
 		react *= 0.35
 	if _aim_t < react:
 		return
+	if temper == Temper.BOLD and randf() < 0.35:
+		# Stands its ground: a defiant flinch, no move (a chance for you).
+		ang_vel -= dodge_dir * 1.5
+		_dodge_cd = lerpf(2.0, 1.0, a)
+		_aim_t = 0.0
+		return
 	var sc := _screen_h / 1280.0
-	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0)
+	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0) * [1.0, 1.25, 0.8, 1.0][temper]
 	var speed: float = prof[2] * lerpf(1.0, 1.4, a) * sc
 	var room_fwd := (slide_hi - anchor.x) if dodge_dir > 0.0 else (anchor.x - slide_lo)
 	var room_back := (anchor.x - slide_lo) if dodge_dir > 0.0 else (slide_hi - anchor.x)
@@ -504,7 +646,7 @@ func _evade(dt: float) -> void:
 		_slide(anchor.x - dodge_dir * minf(reach * 1.3, room_back), speed * 1.15)
 		moved = true
 	var hop: float = prof[3]
-	if (not moved or (hop > 0.0 and a > 0.35)) and length > 90.0 * sc:
+	if (not moved or (hop > 0.0 and a > 0.35) or temper == Temper.TIMID) and length > 90.0 * sc:
 		_hop_left += maxf(hop, 45.0) * sc * lerpf(0.8, 1.3, a)
 		Sfx.play("creak", randf_range(0.95, 1.1))
 	ang_vel += dodge_dir * 2.5
@@ -513,13 +655,47 @@ func _evade(dt: float) -> void:
 	_aim_t = 0.0
 
 
-func _slide(x: float, speed: float) -> void:
+func _slide(x: float, speed: float, quiet := false) -> void:
 	x = clampf(x, minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
 	if absf(x - anchor.x) < 4.0:
 		return
+	if temper == Temper.ERRATIC and not quiet and randf() < 0.6:
+		# Feint: a quick jink the wrong way, then the real move.
+		var fake := clampf(anchor.x - signf(x - anchor.x) * 26.0 * (_screen_h / 1280.0), minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
+		_queued_x = x
+		_queued_speed = speed
+		x = fake
+		speed *= 1.3
 	_slide_to = x
 	_slide_speed = speed
-	Sfx.play("slide", randf_range(0.92, 1.08))
+	if not quiet:
+		Sfx.play("slide", randf_range(0.92, 1.08))
+
+
+## Idle life: now and then a target drifts along the rail on its own. Bold
+## ones patrol wider and swing, erratic ones twitch, timid ones keep still.
+func _wander(dt: float) -> void:
+	if aimed or incoming or not is_nan(_slide_to) or kind == Kind.BOSS or kind == Kind.ROD:
+		return
+	_wander_t -= dt
+	if _wander_t > 0.0:
+		return
+	var sc := _screen_h / 1280.0
+	match temper:
+		Temper.TIMID:
+			_wander_t = randf_range(5.0, 9.0)
+			return
+		Temper.BOLD:
+			_wander_t = randf_range(2.5, 4.5)
+			vel.x += (1.0 if randf() < 0.5 else -1.0) * 70.0
+			_slide(anchor.x + randf_range(-80.0, 80.0) * sc, 70.0 * sc, true)
+		Temper.ERRATIC:
+			_wander_t = randf_range(0.9, 2.0)
+			_slide(anchor.x + randf_range(-35.0, 35.0) * sc, 160.0 * sc, true)
+		_:
+			_wander_t = randf_range(3.5, 6.5)
+			if aggression > 0.2:
+				_slide(anchor.x + randf_range(-45.0, 45.0) * sc, 55.0 * sc, true)
 
 
 ## The hook glides along the rail (eased in and out); the body follows on
@@ -533,6 +709,10 @@ func _move_anchor(dt: float) -> void:
 		anchor.x += step_x
 		if absf(_slide_to - anchor.x) < 0.5:
 			_slide_to = NAN
+			if not is_nan(_queued_x):
+				_slide_to = _queued_x
+				_slide_speed = _queued_speed
+				_queued_x = NAN
 	if _hop_left > 0.0:
 		var u := minf(_hop_left, 320.0 * dt)
 		u = minf(u, maxf(0.0, length - 60.0))
@@ -564,6 +744,12 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 func _body_step(dt: float) -> void:
 	vel.y += GRAVITY * dt
 	vel.x += wind * dt / MASS[kind]
+	# They are alive: when the hook has moved on, the body pulls itself back
+	# under it instead of trailing for seconds on a long string.
+	if kind != Kind.ROD:
+		var off := anchor.x - pos.x
+		if absf(off) > 10.0:
+			vel.x += clampf(off * 6.0, -700.0, 700.0) * dt / MASS[kind]
 	var d := pos - anchor
 	var dist := d.length()
 	if dist > length and dist > 0.001:
@@ -614,6 +800,13 @@ func _rope_step(dt: float) -> void:
 			var off := d * ((l - seg) / l)
 			_pts[i] += off * (wa / sum)
 			_pts[i + 1] -= off * (wb / sum)
+	# Bending stiffness: a real cord resists sharp kinks, so a fast slide
+	# along the rail sends a smooth wave down it instead of a zigzag.
+	var bend := 0.35 if soft else 0.25
+	for _it in 2:
+		for i in range(1, last):
+			var mid := (_pts[i - 1] + _pts[i + 1]) * 0.5
+			_pts[i] = _pts[i].lerp(mid, bend)
 	if not _attached:
 		# The recoiling stub folds against the rail instead of passing it.
 		for i in range(1, N):
@@ -646,6 +839,10 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 		var e := exp(-(t - 0.06) * 12.0) * cos((t - 0.06) * 36.0)
 		sx = 1.0 + 0.25 * e
 		sy = 1.0 - 0.2 * e
+	# Jelly deforms through its spokes; a rigid shell does not squash.
+	var amt := 0.35 if soft else 0.0
+	sx = 1.0 + (sx - 1.0) * amt
+	sy = 1.0 + (sy - 1.0) * amt
 	var a := squash_dir.angle() + PI * 0.5
 	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
 	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
@@ -653,6 +850,11 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 	var jitter := Vector2.ZERO
 	if tele_t > 0.0:
 		jitter = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
+	if not soft and _ring_t < 0.16:
+		# Struck shell: a short, stiff vibration along the blow.
+		jitter += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
+	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
+		jitter += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
 	return Transform2D(0.0, pos + offset + jitter) * squash * body
 
 ## Hook tilt, following the top rope segment's angle from vertical.
@@ -672,6 +874,7 @@ func _process(delta: float) -> void:
 	if phase == Phase.OFF:
 		return
 	intro_t = maxf(0.0, intro_t - delta)
+	_ring_t += delta
 	squash_t += delta
 	_clock += delta
 	_update_eye(delta)
@@ -701,6 +904,17 @@ func _update_eye(delta: float) -> void:
 
 
 func color() -> Color:
+	var base := _base_color()
+	if danger > 0.0 and phase == Phase.HANGING:
+		var pulse := 0.8 + 0.2 * sin(_clock * TAU * 0.8)
+		base = base.lerp(Pal.CORAL, danger * pulse)
+	if flash_t > 0.0:
+		# One-frame-ish matte flash on impact (lighter, never glowing).
+		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
+	return base
+
+
+func _base_color() -> Color:
 	var base := Pal.BLUE
 	match kind:
 		Kind.HEAVY: base = Pal.GREEN
@@ -711,12 +925,8 @@ func color() -> Color:
 		Kind.BOSS: base = Pal.BOSS
 		Kind.REEL: base = Pal.REEL
 		Kind.SHADE: base = Pal.SHADE
-	if danger > 0.0 and phase == Phase.HANGING:
-		var pulse := 0.8 + 0.2 * sin(_clock * TAU * 0.8)
-		base = base.lerp(Pal.CORAL, danger * pulse)
-	if flash_t > 0.0:
-		# One-frame-ish matte flash on impact (lighter, never glowing).
-		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
+	if kind != Kind.SHIELD and kind != Kind.BOSS:
+		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), base.v)
 	return base
 
 
@@ -726,8 +936,11 @@ func _draw() -> void:
 	if rope_alpha > 0.0:
 		# Two-tone string: dark underside down/right, body, and a fine lit edge
 		# up/left. Near the danger line it pulls tighter and lighter.
-		var sc := Pal.STRING.lerp(Pal.INK_DIM, danger * 0.7)
-		var w := 2.0 + danger * 0.6
+		# Each string takes its target's colour: a dyed cord for jelly, a
+		# darker tinted wire for rigid shells.
+		var tint := _base_color()
+		var sc := (tint.darkened(0.2) if soft else tint.darkened(0.42).lerp(Pal.STRING, 0.3)).lerp(Pal.INK_DIM, danger * 0.5)
+		var w := (2.4 if soft else 1.8) + danger * 0.6
 		draw_set_transform(Vector2(0.9, 1.1))
 		draw_polyline(_pts, Color(Pal.METAL_DARK, 0.8 * rope_alpha), w, true)
 		draw_set_transform(Vector2.ZERO)
@@ -747,6 +960,8 @@ func _draw() -> void:
 				var a := -0.9 + k * 0.9
 				draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
 				draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+	if _gone:
+		return
 	var col := color()
 	var dark := col.darkened(0.45)
 	var light := col.lightened(0.22)
@@ -811,7 +1026,7 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 	draw_set_transform_matrix(body_xform(offset))
 	match kind:
 		Kind.RING:
-			Pal.ring(self, Vector2.ZERO, radius - 5.0, col, 9.0 + grow)
+			_soft_ring(radius - 5.0, col, 9.0 + grow)
 		Kind.HEAVY:
 			var outer_col := col if hp > 1 else Color(col, col.a * 0.0)
 			if hp > 1:
@@ -826,8 +1041,16 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 			var hex := PackedVector2Array()
 			for i in 7:
 				var a := i * TAU / 6.0 + PI / 6.0
-				hex.append(Vector2.from_angle(a) * (radius - 4.0))
-			draw_polyline(hex, col, 8.0 + grow, true)
+				hex.append(_sp(Vector2.from_angle(a) * (radius - 4.0)))
+			# Jelly hexagon: the edges bow with the surface, not just the corners.
+			var edge := PackedVector2Array()
+			for i in 6:
+				for k in 4:
+					var a0 := i * TAU / 6.0 + PI / 6.0
+					var q := Vector2.from_angle(a0).lerp(Vector2.from_angle(a0 + TAU / 6.0), k / 4.0) * (radius - 4.0)
+					edge.append(_sp(q))
+			edge.append(edge[0])
+			draw_polyline(edge, col, 8.0 + grow, true)
 			draw_line(Vector2(0, -radius + 8.0), Vector2(0, -radius * 0.55), col, 2.0 + grow * 0.5, true)
 			draw_line(Vector2(0, radius - 8.0), Vector2(0, radius * 0.55), col, 2.0 + grow * 0.5, true)
 		Kind.ROD:
@@ -844,7 +1067,10 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 				var d := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0)
 				draw_line(d * 11.0, d * (radius - 7.0), col, 3.0 + grow * 0.5, true)
 		Kind.SHADE:
-			draw_colored_polygon(_crescent(radius + grow * 0.5), col)
+			var cres := _crescent(radius + grow * 0.5)
+			for i in cres.size():
+				cres[i] = _sp(cres[i])
+			draw_colored_polygon(cres, col)
 		Kind.BOSS:
 			var hexf := PackedVector2Array()
 			for i in 6:
@@ -856,11 +1082,21 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 			pts.append(Vector2(0, -r * 1.75))
 			for i in 17:
 				var a := -PI * 0.5 + 0.62 + (TAU - 1.24) * i / 16.0
-				pts.append(Vector2.from_angle(a) * r)
+				pts.append(_sp(Vector2.from_angle(a) * r))
+			pts[0] = _sp(pts[0])
 			draw_colored_polygon(pts, col)
 			pts.append(pts[0])
 			draw_polyline(pts, col, 1.0, true)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## A jelly ring: a closed, round stroke whose radius follows the surface.
+func _soft_ring(r: float, col: Color, w: float) -> void:
+	var pts := PackedVector2Array()
+	for i in 37:
+		var a := i * TAU / 36.0
+		pts.append(Vector2.from_angle(a) * (r + _soft_at(a)))
+	draw_polyline(pts, col, w, true)
 
 
 ## Crescent: outer half-circle and an inner half-ellipse sharing the tips,
