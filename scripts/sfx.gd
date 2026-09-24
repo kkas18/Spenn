@@ -53,6 +53,8 @@ const MIX := {
 	# enemy evasion (Kenney RPG Audio)
 	"slide": [-21.0, 0.06, 3],
 	"creak": [-20.0, 0.05, 3],
+	# an enemy mocking a near miss (kept rare and quiet)
+	"tease": [-19.0, 0.0, 3],
 	# materials: jelly (freesound CC0) and rigid shells (Kenney)
 	"squish": [-11.0, 0.06, 5],
 	"splat": [-10.0, 0.05, 3],

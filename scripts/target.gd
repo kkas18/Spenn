@@ -67,6 +67,12 @@ var _wander_t := 3.0           # idle drift along the rail
 var _hue_shift := 0.0          # each one a slightly different shade of its kind
 var _gone := false             # burst jelly: the body is gone, the string recoils
 var pop_t := 0.0               # soft: squashed for a moment before it bursts
+# Teasing: close to the line they turn smug, dance and mock near misses.
+var smug := 0.0                # 0..1: half-lidded eye and a raised brow
+var _taunt := -1.0             # time into a taunt (<0: none)
+var _taunt_in := 3.0           # until the next unprompted taunt
+var _taunt_delay := -1.0       # a near miss is mocked a moment later
+static var _last_tease_ms := 0
 var _queued_x := NAN           # erratic: the real slide after the feint
 var _queued_speed := 0.0
 var phase: Phase = Phase.OFF
@@ -168,6 +174,10 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	pop_t = 0.0
 	_gone = false
 	_hue_shift = randf_range(-0.035, 0.035)
+	smug = 0.0
+	_taunt = -1.0
+	_taunt_in = randf_range(2.0, 4.0)
+	_taunt_delay = -1.0
 	temper = _roll_temper()
 	hp = HP[k]
 	radius = RADIUS[k]
@@ -253,6 +263,45 @@ func _roll_temper() -> Temper:
 
 static func is_soft_kind(k: int) -> bool:
 	return k in SOFT_KINDS
+
+
+const TAUNT_TIME := 0.9
+
+
+## The closer to the line, the smugger (bold ones sooner, timid ones never);
+## smug ones break into a little dance now and then.
+func _tease(dt: float) -> void:
+	var start := 0.25 if temper == Temper.BOLD else 0.4
+	var want := 0.0 if temper == Temper.TIMID else smoothstep(start, start + 0.25, danger)
+	smug = move_toward(smug, want, dt * 1.5)
+	if _taunt_delay >= 0.0:
+		_taunt_delay -= dt
+		if _taunt_delay < 0.0:
+			taunt()
+	if _taunt >= 0.0:
+		_taunt += dt
+		if _taunt >= TAUNT_TIME:
+			_taunt = -1.0
+	elif smug > 0.5 and not aimed:
+		_taunt_in -= dt
+		if _taunt_in <= 0.0:
+			_taunt_in = randf_range(1.5, 3.0) if temper == Temper.BOLD else randf_range(2.5, 4.5)
+			taunt()
+
+
+## A wiggle-and-bob, a wink and (rarely, quietly) a "na-na".
+func taunt() -> void:
+	if _taunt >= 0.0 or phase != Phase.HANGING or temper == Temper.TIMID or _closed_t > 0.0:
+		return
+	_taunt = 0.0
+	_blink_t = 0.12
+	if soft:
+		for i in SOFT_N:
+			_sv[i] += cos(3.0 * i * TAU / SOFT_N) * 90.0 * (radius / 30.0)
+	var now := Time.get_ticks_msec()
+	if now - _last_tease_ms > 1600:
+		_last_tease_ms = now
+		Sfx.play("tease", randf_range(1.12, 1.3))
 
 
 ## A strike on a soft body: the spokes near the contact are driven inward
@@ -462,6 +511,9 @@ func startle(from: Vector2) -> void:
 	if startle_t > 0.0 or _closed_t > 0.0:
 		return
 	startle_t = 0.45
+	# Missed it: once the fright passes, it mocks you.
+	if temper != Temper.TIMID and _taunt_delay < 0.0:
+		_taunt_delay = 0.5
 	var away := (pos - from).normalized()
 	push(away * 45.0, pos - away * radius * 0.5 + Vector2(0, -radius * 0.3))
 
@@ -490,6 +542,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				goal_length = length
 				_lunge_left -= step_len
 			_body_step(dt)
+			_tease(dt)
 			_soft_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
 			_rope_step(dt)
@@ -846,7 +899,13 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 	var a := squash_dir.angle() + PI * 0.5
 	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
 	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
-	var body := Transform2D(body_rot, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
+	var wig := 0.0
+	var bob := Vector2.ZERO
+	if _taunt >= 0.0:
+		var env := sin(PI * _taunt / TAUNT_TIME)
+		wig = sin(_taunt * TAU * 3.2) * 0.28 * env
+		bob = Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * env)
+	var body := Transform2D(body_rot + wig, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
 	var jitter := Vector2.ZERO
 	if tele_t > 0.0:
 		jitter = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
@@ -855,7 +914,7 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 		jitter += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
 		jitter += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
-	return Transform2D(0.0, pos + offset + jitter) * squash * body
+	return Transform2D(0.0, pos + offset + jitter + bob) * squash * body
 
 ## Hook tilt, following the top rope segment's angle from vertical.
 func hook_angle() -> float:
@@ -1145,6 +1204,22 @@ func _eye() -> void:
 		# Brows pulled in: rage reads at a glance.
 		for sx: float in [-1.0, 1.0]:
 			draw_line(Vector2(sx * er * 1.15, -er * 1.25), Vector2(sx * er * 0.25, -er * 0.8), Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 2.2, true)
+	if smug > 0.05 and open >= 0.9 and not enraged:
+		# Smug: a heavy upper lid slides down and one brow goes up.
+		var yc := lerpf(-er, -er * 0.05, smug)
+		var hw := sqrt(maxf(0.0, er * er - yc * yc))
+		var a0 := atan2(yc, -hw)
+		var a1 := atan2(yc, hw)
+		var lid := PackedVector2Array()
+		for i in 11:
+			lid.append(Vector2.from_angle(lerpf(a0, a1, i / 10.0)) * (er + 0.6))
+		var lid_col := color().darkened(0.25)
+		if lid.size() >= 3 and a1 > a0:
+			draw_colored_polygon(lid, lid_col)
+		draw_line(Vector2(-hw, yc + 1.5 * smug), Vector2(hw, yc - 1.5 * smug), Pal.PUPIL, 1.8, true)
+		var bc := Color(Pal.EYE, smug)
+		draw_line(Vector2(-er * 0.95, -er * 1.3), Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), bc, 2.6, true)
+		draw_line(Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), Vector2(er * 1.0, -er * 1.35), bc, 2.6, true)
 	if open < 0.9:
 		# Lid lines make the squint read as intent, not just a squash.
 		var y := er * open

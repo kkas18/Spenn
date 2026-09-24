@@ -4,7 +4,6 @@ extends Node2D
 ## swinging body. Balls knock them about; starting a run snaps the strings
 ## one by one so the letters drop out of the way.
 
-const GOLD_INDEX := 2
 const K := 90.0
 const GRAVITY := 900.0
 
@@ -121,7 +120,7 @@ func _draw() -> void:
 		if d.attached:
 			draw_line(d.anchor, d.pos + Vector2(0, -fs * 0.62).rotated(d.rot), Color(Pal.STRING, a), 1.6, true)
 		var w := font.get_string_size(d.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var col := Pal.GOLD if i == GOLD_INDEX else Pal.INK
+		var col := Pal.GOLD if i == Loc.title_accent() else Pal.INK
 		draw_set_transform(d.pos + Pal.SHADOW_OFFSET * 1.5, d.rot)
 		draw_string(font, Vector2(-w * 0.5, fs * 0.08), d.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.35 * a))
 		draw_set_transform(d.pos, d.rot)

@@ -10,6 +10,7 @@ const LANGS := ["no", "en"]
 const STRINGS := {
 	"no": {
 		"game.title": "SPENN",
+		"game.titleAccent": "2",
 		"game.tagline": "HOLD SNORENE UNNA LINJEN",
 		"menu.play": "DRA FOR Å SPILLE",
 		"menu.best": "REKORD",
@@ -78,7 +79,8 @@ const STRINGS := {
 		"enemy.8": "SKYGGE|Blir usynlig i perioder. Skudd går gjennom den da.",
 	},
 	"en": {
-		"game.title": "SPENN",
+		"game.title": "TAUT",
+		"game.titleAccent": "1",
 		"game.tagline": "KEEP THE STRINGS OFF THE LINE",
 		"menu.play": "PULL TO PLAY",
 		"menu.best": "BEST",
@@ -159,6 +161,11 @@ func t(key: String) -> String:
 		return table[key]
 	push_warning("Missing string: %s/%s" % [lang, key])
 	return STRINGS["en"].get(key, key)
+
+
+## Which letter of the localized title is the gold one (the ball).
+func title_accent() -> int:
+	return int(t("game.titleAccent"))
 
 
 ## "MUSIKK: MIDDELS" style setting line.

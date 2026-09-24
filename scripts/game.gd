@@ -115,7 +115,6 @@ func _ready() -> void:
 	add_child(hud)
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
-	hud.pause_pressed.connect(_pause)
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
 	hud.menu_pressed.connect(_to_menu)
@@ -228,7 +227,10 @@ func _start_run() -> void:
 	hud.hide_menu_ui()
 	hud.reveal_hud()
 	title.release()
-	hud.card(Loc.t("event.survive"), Loc.t("event.surviveSub"))
+	# No pause button: the first few runs say how to pause instead.
+	Prefs.runs += 1
+	Prefs.save()
+	hud.card(Loc.t("event.survive"), Loc.t("pause.hint") if Prefs.runs <= 3 else Loc.t("event.surviveSub"))
 	_spawn_formation(Target.Kind.RING, 4)
 	Music.set_mode(Music.Mode.PLAY)
 	Motion.after(0.5, func() -> void:
@@ -917,6 +919,10 @@ func _breach(t: Target) -> void:
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
+	# The ones hanging nearby enjoy it.
+	for o in targets:
+		if o != t and o.is_hittable() and o.pos.distance_to(t.pos) < 260.0 * layout.scale:
+			o.taunt()
 	streak = 0
 	_chain = 0
 	hud.bar.streak = 0

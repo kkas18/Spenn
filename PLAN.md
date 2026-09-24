@@ -690,3 +690,41 @@ Menneskelignende bot, snitt av 4 runder:
 | v5.3 | 135 s |
 
 Poengene er lavere, fordi kombinasjoner nå må fortjenes.
+
+---
+
+# v5.4 – Ryddigere HUD, ertende fiender og engelsk navn
+
+**Tilbakemelding:** buen ved spretterten var uklar, og pauseknappen skal bort siden
+dobbelttrykk finnes. Fiendene skal være mer ertende når de nærmer seg, og logoen skal
+bytte til et engelsk navn når språket er engelsk.
+
+## HUD
+- **Kraftbuen er fjernet.** Den tomme gullbuen rundt spretterten var kraftmåleren, men
+  den leste som en løs strek. Kraften vises nå i siktepunktene: de blir lysere og
+  større jo hardere du drar, og varmere i de siste 15 %. Strikken viser den også.
+- **Pauseknappen er fjernet.** Pause skjer med dobbelttrykk på feltet eller
+  Tilbake-knappen. I de tre første rundene sier startkortet «DOBBELTTRYKK FOR PAUSE» i
+  stedet for undertittelen. Antall runder lagres i `Prefs.runs`.
+
+## Ertende fiender
+- **Selvgode:** når de nærmer seg linjen, glir et tungt øyelokk ned, og det ene brynet
+  går opp. Dristige fiender begynner tidligere (fare 0,25), rolige og uberegnelige ved
+  0,4, og forsiktige aldri.
+- **Dans:** selvgode fiender danser av og til. De vrikker (±0,28 rad) og hopper (5 px)
+  i 0,9 s og blunker. Myke fiender gynger i hele kroppen. Dristige gjør det hvert
+  1,5–3 s, andre hvert 2,5–4,5 s, og aldri mens de blir siktet på.
+- **Håner bom:** når ballen suser like forbi, skvetter fienden først og gjør narr av deg
+  et halvt sekund senere.
+- **Ler ved brudd:** når en knute ryker, danser fiendene i nærheten.
+- **Lyd:** et lite «na-na» (Kenney pizzicato-jingler, lyst stemt). Det spilles høyst én
+  gang per 1,6 s og ligger lavt i miksen (−19 dB).
+
+## Engelsk navn: TAUT
+- **Navnet:** «taut» betyr stram, som et spent tau, og er en direkte parallell til
+  «Spenn».
+- **Tittelen:** den skifter levende med språket, både i introen og i bokstavene som
+  henger i snorer i menyen. Gullbokstaven (ballen) er språkstyrt: E i SPENN, A i TAUT
+  (`game.titleAccent`).
+- **Appnavnet på telefonen:** «Spenn» med norsk systemspråk (nb/nn/no), ellers «Taut»
+  (`config/name_localized`, `package/name`).

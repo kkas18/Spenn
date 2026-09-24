@@ -76,6 +76,8 @@ SFX = {
     "squish": ([FS % 442772, (FS % 593984, 0.15, 0.5), (FS % 593984, 1.88, 2.25),
                 (FS % 593984, 3.73, 4.1), (FS % 794272, 0.8, 1.05)], 0.4),
     "splat": ([FS % 445117, FS % 445118, (FS % 447929, 0.08, 0.95)], 0.6),
+    # a teasing "na-na" when an enemy mocks a miss (pizzicato, two notes)
+    "tease": ([JIN + "Pizzicato jingles/jingles_PIZZI%02d.ogg" % i for i in (8, 9, 5)], None),
     # rigid bodies: wood for the rod, heavier metal for the boss
     "wood": (impact("impactWood_medium"), 0.3),
     "metal": (impact("impactMetal_heavy"), 0.35),

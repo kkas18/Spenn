@@ -6,7 +6,6 @@ extends CanvasLayer
 ## countdown, the main-menu chrome and the launch intro. All text comes from
 ## `Loc` and is refreshed live on a language change.
 
-signal pause_pressed
 signal resume_pressed
 signal restart_pressed
 signal menu_pressed
@@ -146,17 +145,15 @@ func hide_menu_ui() -> void:
 	Motion.after(Motion.FAST, func() -> void: _menu_bar.visible = false)
 
 
-## In-game bar comes in piece by piece: score, pause (+80 ms), the rest
-## (+160 ms), each fading and settling 6 px.
+## In-game bar comes in piece by piece: score, then the rest (+80 ms),
+## each fading and settling 6 px.
 func reveal_hud() -> void:
 	bar.visible = true
 	bar.modulate.a = 1.0
 	bar.a_score = 0.0
-	bar.a_pause = 0.0
 	bar.a_right = 0.0
 	Motion.to(bar, "a_score", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.0)
-	Motion.to(bar, "a_pause", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER)
-	Motion.to(bar, "a_right", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER * 2.0)
+	Motion.to(bar, "a_right", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER)
 
 
 func fade_hud(to: float, d: float, delay := 0.0) -> void:
@@ -452,8 +449,8 @@ func _build_menu_bar() -> void:
 
 # ---------------------------------------------------------------- top bar
 
-## Minimal in-game bar: pause (top left, on a soft disc, with a touch area
-## larger than the icon), score with streak multiplier, knots and phase.
+## Minimal in-game bar: score with streak multiplier, knots and phase.
+## There is no pause button: a double-tap on the field (or Back) pauses.
 class TopBar extends Control:
 	var hud: Hud
 	var score := 0
@@ -469,7 +466,6 @@ class TopBar extends Control:
 	var knot_shake := 0.0
 	var show_fps := false
 	var a_score := 1.0             # staggered reveal alphas
-	var a_pause := 1.0
 	var a_right := 1.0
 	var _taps: Array[int] = []
 
@@ -485,12 +481,6 @@ class TopBar extends Control:
 		lives = n
 		knot_shake = 1.0
 
-	func pause_rect() -> Rect2:
-		var l := hud.l
-		var s := maxf(Tok.TOUCH_MIN_DP * l.dp, 72.0)
-		var c := Vector2(l.margin + 14.0, l.score_baseline - 12.0)
-		return Rect2(c - Vector2(s, s) * 0.5, Vector2(s, s)).abs()
-
 	func knots_rect() -> Rect2:
 		var l := hud.l
 		var s := maxf(48.0 * l.dp, 64.0)
@@ -500,10 +490,7 @@ class TopBar extends Control:
 		var press: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed)
 		if not press or modulate.a < 0.5:
 			return
-		if pause_rect().has_point(e.position):
-			accept_event()
-			hud.pause_pressed.emit()
-		elif knots_rect().has_point(e.position):
+		if knots_rect().has_point(e.position):
 			accept_event()
 			var now := Time.get_ticks_msec()
 			_taps.append(now)
@@ -514,7 +501,7 @@ class TopBar extends Control:
 				show_fps = not show_fps
 
 	func _has_point(p: Vector2) -> bool:
-		return hud != null and hud.l != null and visible and (pause_rect().has_point(p) or knots_rect().has_point(p))
+		return hud != null and hud.l != null and visible and knots_rect().has_point(p)
 
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
@@ -535,15 +522,6 @@ class TopBar extends Control:
 		var w := l.size.x
 		var num := hud.num_font()
 		var caps := hud.caps_font()
-		# Pause: two bars on a soft disc.
-		var pc := pause_rect().get_center()
-		var ap := a_pause
-		var dy := (1.0 - ap) * 6.0
-		draw_circle(pc + Vector2(0, dy), 24.0, Color(Tok.SURFACE, 0.7 * ap), true, -1.0, true)
-		draw_arc(pc + Vector2(0, dy), 24.0, 0.0, TAU, 32, Color(Tok.BORDER, 0.8 * ap), 1.0, true)
-		for i in 2:
-			var r := Rect2(pc + Vector2(-8.0 + i * 11.0, -10.0 + dy), Vector2(5.0, 20.0))
-			draw_rect(r, Color(Tok.TEXT_PRIMARY, 0.85 * ap))
 		# Score (centre), pulsing about its own baseline centre.
 		var asc := a_score
 		var txt := Hud._group(int(round(shown_score)))

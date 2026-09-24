@@ -22,7 +22,6 @@ const ARM_W := 13.0
 const SHAFT_W := 16.0
 const GRIP_W := 21.0
 const POUCH_HALF := 15.0
-const ARC_SPAN := deg_to_rad(84.0)
 const ARC_FADE := 0.12
 
 enum Mode { IDLE, AIM, RELEASE }
@@ -38,7 +37,6 @@ var aim_dir := Vector2.UP
 var _ammo: Array[int] = []
 var _reload := 0.0
 var _arc_alpha := 0.0
-var _arc_ang := PI * 0.5
 var _at_max := false
 var _release_t := 0.0
 var _release_dir := Vector2.UP
@@ -123,7 +121,6 @@ func begin_aim() -> bool:
 		return false
 	mode = Mode.AIM
 	_at_max = false
-	_arc_ang = PI * 0.5
 	return true
 
 
@@ -145,7 +142,6 @@ func drag(offset: Vector2) -> void:
 	power = clampf(pull.length() / l.max_pull, 0.0, 1.0)
 	if pull.length() > 0.01:
 		aim_dir = -pull.normalized()
-		_arc_ang = pull.angle()
 	if power >= 0.995 and not _at_max:
 		_at_max = true
 		Sfx.haptic(14, 0.35)
@@ -276,7 +272,6 @@ func _build_band(side: int, attach: Vector2, out: PackedVector2Array) -> void:
 func _draw() -> void:
 	if l == null:
 		return
-	_draw_arc()
 
 
 func _fork_paths() -> Array:
@@ -334,28 +329,6 @@ func _draw_fork() -> void:
 		_fork.draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
 
 
-func _draw_arc() -> void:
-	if _arc_alpha <= 0.0:
-		return
-	# Gauge centred on the pull: fills outward both ways, warmer in the last 15 %.
-	var rest := l.pouch_rest()
-	var a := _arc_alpha
-	var half := ARC_SPAN * 0.5
-	var c := _arc_ang
-	draw_arc(rest, l.arc_radius, c - half, c + half, 40, Color(Pal.GOLD, 0.14 * a), 3.0, true)
-	var fill := half * power
-	var warm := half * 0.85
-	var cold := minf(fill, warm)
-	if cold > 0.0:
-		draw_arc(rest, l.arc_radius, c - cold, c + cold, 32, Color(Pal.GOLD, 0.9 * a), 3.0, true)
-	if fill > warm:
-		for sgn in [-1.0, 1.0]:
-			draw_arc(rest, l.arc_radius, c + sgn * warm, c + sgn * fill, 6, Color(Pal.GOLD_WARM, 0.95 * a), 3.0, true)
-	var end_col := Color(Pal.GOLD_WARM if power > 0.85 else Pal.GOLD, a)
-	for sgn in [-1.0, 1.0]:
-		Pal.disc(self, rest + Vector2.from_angle(c + sgn * fill) * l.arc_radius, 3.2, end_col)
-
-
 func _draw_front() -> void:
 	if l == null:
 		return
@@ -404,7 +377,10 @@ func _draw_aim_dots() -> void:
 		if t >= next_dot:
 			next_dot += 0.045
 			var k := 1.0 - float(i) / DOTS
-			_front.draw_circle(p, lerpf(1.4, 2.8, k), Color(Pal.GOLD, 0.42 * k * _arc_alpha), true, -1.0, true)
+			# The dots carry the power: brighter and fuller the harder you pull,
+			# warming in the last 15 %.
+			var col := Pal.GOLD.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
+			_front.draw_circle(p, lerpf(1.4, 2.8, k) * lerpf(0.8, 1.2, power), Color(col, (0.2 + 0.4 * power) * k * _arc_alpha), true, -1.0, true)
 			i += 1
 
 

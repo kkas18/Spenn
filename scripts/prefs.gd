@@ -17,6 +17,7 @@ var aim_guide := true
 var record := 0
 var intro_seen := false
 var seen := {}                 # enemy kinds already introduced
+var runs := 0                  # runs started (the pause hint shows for the first few)
 
 var _cfg := ConfigFile.new()
 
@@ -34,6 +35,7 @@ func _ready() -> void:
 		record = int(_cfg.get_value("stats", "record", 0))
 		intro_seen = bool(_cfg.get_value("stats", "intro_seen", false))
 		seen = _cfg.get_value("stats", "seen", {})
+		runs = int(_cfg.get_value("stats", "runs", 0))
 	if lang == "":
 		lang = "no" if OS.get_locale_language() in ["nb", "nn", "no"] else "en"
 
@@ -107,4 +109,5 @@ func save() -> void:
 	_cfg.set_value("stats", "record", record)
 	_cfg.set_value("stats", "intro_seen", intro_seen)
 	_cfg.set_value("stats", "seen", seen)
+	_cfg.set_value("stats", "runs", runs)
 	_cfg.save(PATH)

@@ -110,7 +110,7 @@ func _draw() -> void:
 		if la <= 0.0:
 			continue
 		var y := ty + lerpf(8.0, 0.0, lt)
-		var col := Tok.PRIMARY if i == 2 else Tok.TEXT_PRIMARY
+		var col := Tok.PRIMARY if i == Loc.title_accent() else Tok.TEXT_PRIMARY
 		var blur := lerpf(4.0, 0.0, lt)
 		if blur > 0.3:
 			for g in [-1.0, 1.0]:
