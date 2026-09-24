@@ -41,6 +41,32 @@ const SHADOW := Color(0, 0, 0, 0.35)
 const LIGHT_DIR := Vector2(-0.7071, -0.7071)
 
 
+const SOFT_SHADOW := Color(0, 0, 0, 0.2)
+
+static var _soft_tex: ImageTexture
+
+
+## Wide, blurred contact shadow (radial falloff texture, built once).
+static func soft_shadow_tex() -> ImageTexture:
+	if _soft_tex == null:
+		var n := 64
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - n * 0.5, y + 0.5 - n * 0.5).length() / (n * 0.5)
+				var a := clampf(1.0 - d, 0.0, 1.0)
+				img.set_pixel(x, y, Color(1, 1, 1, a * a * (3.0 - 2.0 * a)))
+		_soft_tex = ImageTexture.create_from_image(img)
+	return _soft_tex
+
+
+## Soft shadow for a body of half-extent `half`, drawn in the current
+## transform; callers pass an offset already along the shared light direction.
+static func soft_shadow(ci: CanvasItem, center: Vector2, half: Vector2, alpha := 1.0) -> void:
+	var h := half * 1.45
+	ci.draw_texture_rect(soft_shadow_tex(), Rect2(center - h, h * 2.0), false, Color(SOFT_SHADOW, SOFT_SHADOW.a * alpha))
+
+
 static func disc(ci: CanvasItem, pos: Vector2, r: float, col: Color) -> void:
 	ci.draw_circle(pos, r, col, true, -1.0, true)
 

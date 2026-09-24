@@ -1,8 +1,8 @@
 class_name Backdrop
 extends Node2D
-## Static layer behind the play field: a distant parallax layer of strings
-## (40% scale, 8% opacity, slower than the foreground), the danger line and
-## slow dust. Nothing here shakes.
+## Static layer behind the play field: the lit, grained backdrop shader, a
+## distant parallax layer of bare strings (40% scale, 8% opacity, slower than
+## the foreground), the danger line and slow dust. Nothing here shakes.
 
 const FAR_SCALE := 0.4
 const FAR_ALPHA := 0.08
@@ -16,19 +16,30 @@ var _far: Array[Dictionary] = []
 var _far_drop := 0.0
 var _clock := 0.0
 var _dust: CPUParticles2D
+var _bg: ColorRect
+var _layer: Node2D
 var _rng := RandomNumberGenerator.new()
 var _dashes := PackedVector2Array()
 
 
 func _ready() -> void:
 	_rng.seed = 7
+	_bg = ColorRect.new()
+	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/backdrop.gdshader")
+	_bg.material = mat
+	add_child(_bg)
+	_layer = Node2D.new()
+	add_child(_layer)
+	_layer.draw.connect(_draw_layer)
 	for i in FAR_COUNT:
 		_far.append({
 			"x": 0.0,
 			"len": _rng.randf_range(0.15, 0.75),
 			"phase": _rng.randf() * TAU,
 			"rate": _rng.randf_range(0.18, 0.32),
-			"kind": _rng.randi() % 3,
+			"beads": 1 + _rng.randi() % 3,
 		})
 	_dust = CPUParticles2D.new()
 	_dust.amount = 10
@@ -58,6 +69,8 @@ func _soft_dot() -> ImageTexture:
 
 func setup(layout: Layout) -> void:
 	l = layout
+	_bg.position = Vector2.ZERO
+	_bg.size = l.size
 	for i in FAR_COUNT:
 		_far[i].x = (i + 0.5) / FAR_COUNT * l.size.x + _rng.randf_range(-20.0, 20.0)
 	_dust.position = Vector2(l.center_x, l.size.y * 0.55)
@@ -67,28 +80,28 @@ func setup(layout: Layout) -> void:
 func _process(delta: float) -> void:
 	_clock += delta
 	_far_drop = fmod(_far_drop + descent * FAR_SCALE * delta, l.play_h * 0.3) if l else 0.0
-	queue_redraw()
+	_layer.queue_redraw()
 
 
-func _draw() -> void:
+func _draw_layer() -> void:
 	if l == null:
 		return
 	_draw_far()
 	_draw_danger()
 
 
+## Bare distant strings with a few beads: depth without silhouettes that
+## could be mistaken for targets.
 func _draw_far() -> void:
 	var col := Color(Pal.INK, FAR_ALPHA)
 	for f in _far:
 		var sway := sin(_clock * f.rate + f.phase) * 6.0
 		var top := Vector2(f.x, l.rail_y + 10.0)
 		var bottom := top + Vector2(sway, l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE)
-		draw_line(top, bottom, col, 1.0, true)
-		var r := 30.0 * FAR_SCALE
-		match f.kind:
-			0: draw_arc(bottom + Vector2(0, r), r, 0.0, TAU, 16, col, 3.0, true)
-			1: draw_arc(bottom + Vector2(0, r), r, 0.0, TAU, 6, col, 3.0, true)
-			_: draw_circle(bottom + Vector2(0, r), r * 0.8, col, true, -1.0, true)
+		_layer.draw_line(top, bottom, col, 1.0, true)
+		for b in f.beads:
+			var t := 1.0 - float(b) * 0.09
+			_layer.draw_circle(top.lerp(bottom, t), 2.2, col, true, -1.0, true)
 
 
 ## Nearly invisible at rest; coral and more tightly stippled as a target nears.
@@ -105,4 +118,4 @@ func _draw_danger() -> void:
 		_dashes.append(Vector2(x, l.danger_y))
 		_dashes.append(Vector2(x + dash, l.danger_y))
 		x += gap
-	draw_multiline(_dashes, col, 2.0)
+	_layer.draw_multiline(_dashes, col, 2.0)

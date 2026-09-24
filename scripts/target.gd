@@ -376,13 +376,25 @@ func _draw() -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
 	if rope_alpha > 0.0:
-		# A string near the danger line pulls tighter and lighter.
+		# Two-tone string: dark underside down/right, body, and a fine lit edge
+		# up/left. Near the danger line it pulls tighter and lighter.
 		var sc := Pal.STRING.lerp(Pal.INK_DIM, danger * 0.7)
-		draw_polyline(_pts, Color(sc, rope_alpha), 2.0 + danger * 0.6, true)
+		var w := 2.0 + danger * 0.6
+		draw_set_transform(Vector2(0.9, 1.1))
+		draw_polyline(_pts, Color(Pal.METAL_DARK, 0.8 * rope_alpha), w, true)
+		draw_set_transform(Vector2.ZERO)
+		draw_polyline(_pts, Color(sc, rope_alpha), w, true)
+		draw_set_transform(Vector2(-0.45, -0.45))
+		draw_polyline(_pts, Color(Pal.INK_DIM, 0.35 * rope_alpha), 0.7, true)
+		draw_set_transform(Vector2.ZERO)
 	var col := color()
 	var dark := col.darkened(0.45)
 	var light := col.lightened(0.22)
-	# Shadow, dark rim (down/right), light rim (up/left), body: one light source.
+	# Soft contact shadow, sharp shadow, dark rim (down/right), light rim
+	# (up/left), body: one light source for everything.
+	draw_set_transform_matrix(body_xform(Pal.SHADOW_OFFSET * 2.0))
+	var half := Vector2(ROD_HALF + radius, radius) if kind == Kind.ROD else Vector2(radius, radius)
+	Pal.soft_shadow(self, Vector2.ZERO, half)
 	_shape(Pal.SHADOW_OFFSET, Pal.SHADOW, 0.0)
 	_shape(Vector2(1.2, 1.2), dark, 0.0)
 	_shape(Vector2(-1.0, -1.0), light, 0.0)

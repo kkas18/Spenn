@@ -89,8 +89,9 @@ func step(dt: float, l: Layout) -> bool:
 	return age < MAX_AGE and pos.y < l.size.y + RADIUS * 2.0
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if active:
+		_impact_t += delta
 		queue_redraw()
 
 
@@ -101,13 +102,31 @@ func _draw() -> void:
 	for i in TRAIL:
 		var k := 1.0 - float(i) / TRAIL
 		draw_line(_trail[i], _trail[i + 1], Color(Pal.GOLD_DARK, 0.4 * k), RADIUS * 1.5 * k, true)
-	draw_ball(self, pos, RADIUS, special, spin, vel.normalized())
+	# Stretch along the flight (speed) or squash against a fresh contact.
+	# R·S·R⁻¹ keeps the lighting world-aligned while the shape deforms.
+	var axis := vel.angle()
+	var sx := 1.0 + clampf((vel.length() - 400.0) / 5000.0, 0.0, 0.2)
+	var sy := 1.0 - (sx - 1.0) * 0.6
+	if _impact_t < 0.09:
+		var k := sin(_impact_t / 0.09 * PI)
+		axis = _impact_n.angle()
+		sx = 1.0 - 0.28 * k
+		sy = 1.0 + 0.18 * k
+	var deform := Transform2D(axis, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-axis, Vector2.ZERO)
+	draw_set_transform_matrix(Transform2D(0.0, pos + Pal.SHADOW_OFFSET * 1.8) * deform)
+	Pal.soft_shadow(self, Vector2.ZERO, Vector2(RADIUS, RADIUS), 0.8)
+	draw_set_transform_matrix(Transform2D(0.0, pos + Pal.SHADOW_OFFSET * 0.8) * deform)
+	Pal.disc(self, Vector2.ZERO, RADIUS, Pal.SHADOW)
+	draw_set_transform_matrix(Transform2D(0.0, pos) * deform)
+	draw_ball(self, Vector2.ZERO, RADIUS, special, spin, vel.normalized(), false)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## Matte gold ball lit from the upper left. `rot` turns the seam so spin
 ## reads; a pierce ball carries a dark slit along its flight direction.
-static func draw_ball(ci: CanvasItem, p: Vector2, r: float, is_special: bool, rot: float, dir: Vector2) -> void:
-	Pal.disc(ci, p + Pal.SHADOW_OFFSET * 0.8, r, Pal.SHADOW)
+static func draw_ball(ci: CanvasItem, p: Vector2, r: float, is_special: bool, rot: float, dir: Vector2, shadow := true) -> void:
+	if shadow:
+		Pal.disc(ci, p + Pal.SHADOW_OFFSET * 0.8, r, Pal.SHADOW)
 	Pal.disc(ci, p, r, Pal.GOLD_DARK)
 	Pal.disc(ci, p - Vector2(1.3, 1.3), r - 1.6, Pal.GOLD)
 	Pal.disc(ci, p - Vector2(r, r) * 0.34, r * 0.32, Color(Pal.GOLD_LIGHT, 0.55))

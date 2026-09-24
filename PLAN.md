@@ -176,7 +176,7 @@ brukes der det er mulig.
 - **Snorer i to toner:** lys kant oppe/venstre, og en svak lysrefleks som følger strekket.
 - **Treff:** en tynn trykkring (180 ms, lokal). Drepte mål slipper 3–5 skår som faller
   med spinn, i målets farge og fra en pool.
-- **Parallakselaget:** bare rene, korte snorer med små perler i 5 % opasitet. Ingen
+- **Parallakselaget:** bare rene snorer med små perler (fortsatt 8 % opasitet). Ingen
   silhuetter som kan forveksles med mål.
 - **Inter** brukes i HUD, popups og menyer.
 
@@ -200,5 +200,5 @@ brukes der det er mulig.
 | Fase | Status | Merknad |
 |---|---|---|
 | Q1 | Ferdig | Masse per type og vinkeltreghet med dempet fjær (k 55, c 2,6). Friksjon: sklifarten langs overflaten gir dreiemoment, så streifskudd spinner målet. Mål–mål-kontakt med invers-masse-separasjon og begrenset impuls, pluss en svak «knock»-lyd og haptikk. Ballen plukker snorer (Gauss-fordelt kick på tau-punktene) med «twang». Lagdelt bris på noen px/s². Nesten-bom (< 34 px) gir vidt øye, krympet pupill og et lite rykk. Snoren blir stivere nær faresonen. Stabilitetstest på nivå 8 med 15 skudd: ingen NaN, farten klinger av. |
-| Q2 | – | |
+| Q2 | Ferdig | Bakgrunnsshader med lysfall fra øvre venstre, statisk korn og triangulær dithering. Myk kontaktskygge (radial tekstur, bygget én gang) under skarp skygge på mål og ball. Ballen strekkes etter fart og skvises ved sprett (R·S·R⁻¹, så lyset står stille). Snorer i to toner med lys kant. Trykkring på 180 ms og 4–5 skår per drept mål (poolet data, 32 skår). Popups stables i stedet for å overlappe. Parallaksen er bare snorer med perler. Inter-fonter i hele UI-et. Romklang på egen SFX-buss. |
 | Q3 | – | |

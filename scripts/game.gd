@@ -350,6 +350,9 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	# Response: hit-stop, sparks, popup, sound and haptics on every hit.
 	fx.hitstop()
 	fx.sparks(cp, col, 10 if killed else 6)
+	fx.ring(contact, col.lightened(0.15), t.radius)
+	if killed:
+		fx.shards(t.pos, col, 5 if kind == Target.Kind.HEAVY else 4, t.vel)
 	var label := "+%d" % gained
 	if b.special:
 		label += " " + Loc.t("pierce")

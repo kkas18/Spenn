@@ -12,9 +12,22 @@ var _next := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# A short, dark room on its own bus gives the synthesised sounds space.
+	var bus := AudioServer.bus_count
+	AudioServer.add_bus(bus)
+	AudioServer.set_bus_name(bus, "Sfx")
+	AudioServer.set_bus_send(bus, &"Master")
+	var room := AudioEffectReverb.new()
+	room.room_size = 0.32
+	room.damping = 0.7
+	room.spread = 0.6
+	room.hipass = 0.15
+	room.dry = 1.0
+	room.wet = 0.12
+	AudioServer.add_bus_effect(bus, room)
 	for i in POOL:
 		var p := AudioStreamPlayer.new()
-		p.bus = &"Master"
+		p.bus = &"Sfx"
 		add_child(p)
 		_players.append(p)
 	# name: [partials(freq, amp), duration, decay, noise, pitch glide]

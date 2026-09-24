@@ -1,7 +1,8 @@
 class_name Fx
 extends Node2D
 ## Pooled hit sparks and score popups, screen shake and hit-stop.
-## Popups are plain data drawn by this node, so they cost no nodes at all.
+## Popups, impact rings and shards are plain data drawn by this node, so
+## they cost no nodes at all.
 
 const SPARK_POOL := 8
 const POPUP_POOL := 8
@@ -10,6 +11,10 @@ const POPUP_RISE := 38.0
 const SHAKE_MAX := 3.0
 const SHAKE_TIME := 0.15
 const HITSTOP := 0.04
+const RING_POOL := 8
+const RING_LIFE := 0.18
+const SHARD_POOL := 32
+const SHARD_LIFE := 0.9
 
 var l: Layout
 var shake_target: Node2D
@@ -23,6 +28,10 @@ var _shake_t := 0.0
 var _shake_amp := 0.0
 var _hitstop_live := false
 var _drawn_last := false
+var _rings: Array[Dictionary] = []
+var _next_ring := 0
+var _shards: Array[Dictionary] = []
+var _next_shard := 0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -58,6 +67,11 @@ func _ready() -> void:
 		p.local_coords = false
 		add_child(p)
 		_sparks.append(p)
+	for i in RING_POOL:
+		_rings.append({"t": -1.0, "pos": Vector2.ZERO, "col": Pal.INK, "r": 30.0})
+	for i in SHARD_POOL:
+		_shards.append({"t": -1.0, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0, "spin": 0.0,
+			"col": Pal.INK, "pts": PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])})
 	for i in POPUP_POOL:
 		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20})
 
@@ -95,6 +109,36 @@ func sparks(at: Vector2, col: Color, count := 8) -> void:
 	p.restart()
 
 
+## Thin pressure ring at the contact: 180 ms, local, no glow.
+func ring(at: Vector2, col: Color, size := 30.0) -> void:
+	var r := _rings[_next_ring]
+	_next_ring = (_next_ring + 1) % RING_POOL
+	r.t = 0.0
+	r.pos = at
+	r.col = col
+	r.r = size
+
+
+## A broken target sheds a few chips of its own colour that tumble away.
+func shards(at: Vector2, col: Color, count: int, base_vel: Vector2) -> void:
+	for i in count:
+		var d := _shards[_next_shard]
+		_next_shard = (_next_shard + 1) % SHARD_POOL
+		var a := _rng.randf() * TAU
+		var size := _rng.randf_range(4.0, 7.5)
+		d.t = 0.0
+		d.pos = at + Vector2.from_angle(a) * _rng.randf_range(4.0, 16.0)
+		d.vel = base_vel * 0.4 + Vector2.from_angle(a) * _rng.randf_range(90.0, 230.0) + Vector2(0, -160)
+		d.rot = _rng.randf() * TAU
+		d.spin = _rng.randf_range(-14.0, 14.0)
+		d.col = col.darkened(_rng.randf_range(0.0, 0.25))
+		var pts: PackedVector2Array = d.pts
+		pts[0] = Vector2(-size, -size * 0.4)
+		pts[1] = Vector2(size * _rng.randf_range(0.6, 1.0), -size * 0.6)
+		pts[2] = Vector2(size * _rng.randf_range(-0.2, 0.4), size * 0.8)
+		d.pts = pts
+
+
 func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
@@ -106,6 +150,11 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
 	var half := w * 0.5
 	var x := clampf(at.x, l.margin + half, l.size.x - l.margin - half)
 	var y := clampf(at.y, l.top_bar_h + l.margin + POPUP_RISE + size, l.size.y - l.margin)
+	# Stack above young popups nearby instead of overprinting them.
+	for q in _popups:
+		if q != p and q.t >= 0.0 and q.t < 0.5 and absf(q.pos.x - x) < 140.0 and absf(q.pos.y - y) < size + 6.0:
+			y = q.pos.y - (size + 8.0)
+	y = maxf(y, l.top_bar_h + l.margin + POPUP_RISE + size)
 	p.pos = Vector2(x, y)
 
 
@@ -127,6 +176,10 @@ func hitstop() -> void:
 func clear() -> void:
 	for p in _popups:
 		p.t = -1.0
+	for r in _rings:
+		r.t = -1.0
+	for d in _shards:
+		d.t = -1.0
 	for s in _sparks:
 		s.emitting = false
 	_shake_t = 0.0
@@ -146,6 +199,23 @@ func _process(delta: float) -> void:
 			shake_target.position = Vector2.ZERO
 			_shake_amp = 0.0
 	var any := false
+	for r in _rings:
+		if r.t >= 0.0:
+			r.t += delta
+			if r.t > RING_LIFE:
+				r.t = -1.0
+			else:
+				any = true
+	for d in _shards:
+		if d.t >= 0.0:
+			d.t += delta
+			d.vel.y += 1100.0 * delta
+			d.pos += d.vel * delta
+			d.rot += d.spin * delta
+			if d.t > SHARD_LIFE or d.pos.y > l.size.y + 20.0:
+				d.t = -1.0
+			else:
+				any = true
 	for p in _popups:
 		if p.t >= 0.0:
 			p.t += delta
@@ -160,6 +230,21 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	for r in _rings:
+		if r.t < 0.0:
+			continue
+		var k: float = r.t / RING_LIFE
+		var e := 1.0 - pow(1.0 - k, 3.0)
+		draw_arc(r.pos, lerpf(r.r * 0.35, r.r * 1.25, e), 0.0, TAU, 32, Color(r.col, 0.55 * (1.0 - k)), lerpf(3.0, 0.6, k), true)
+	for d in _shards:
+		if d.t < 0.0:
+			continue
+		var alpha := clampf((SHARD_LIFE - d.t) / 0.3, 0.0, 1.0)
+		draw_set_transform(d.pos + Vector2(2.5, 2.5), d.rot)
+		draw_colored_polygon(d.pts, Color(0, 0, 0, 0.3 * alpha))
+		draw_set_transform(d.pos, d.rot)
+		draw_colored_polygon(d.pts, Color(d.col, alpha))
+	draw_set_transform(Vector2.ZERO)
 	if font == null:
 		return
 	for p in _popups:

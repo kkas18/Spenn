@@ -118,14 +118,15 @@ func _on_primary() -> void:
 
 
 func _build_fonts() -> void:
-	var sys := SystemFont.new()
-	sys.font_names = PackedStringArray(["Inter", "Roboto", "Helvetica Neue", "Arial", "sans-serif"])
-	sys.font_weight = 600
+	# Inter (SIL OFL 1.1, rsms/inter) bundled so type is identical on every
+	# device; the Display cut is used for large numerals.
+	var text_font: Font = load("res://fonts/Inter-SemiBold.ttf")
+	var display_font: Font = load("res://fonts/InterDisplay-SemiBold.ttf")
 	_font_caps = FontVariation.new()
-	_font_caps.base_font = sys
+	_font_caps.base_font = text_font
 	_font_caps.spacing_glyph = 2
 	_font_num = FontVariation.new()
-	_font_num.base_font = sys
+	_font_num.base_font = display_font
 	_font_num.opentype_features = {"tnum": 1}
 	_theme = Theme.new()
 	_theme.default_font = _font_caps
