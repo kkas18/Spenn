@@ -73,5 +73,18 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if not active:
 		return
-	Pal.shadow_disc(self, pos, RADIUS)
-	Pal.disc(self, pos, RADIUS, Pal.GOLD)
+	draw_ball(self, pos, RADIUS, special, 0.0, vel.normalized())
+
+
+## Matte gold ball lit from the upper left. `rot` turns the seam so spin
+## reads; a pierce ball carries a dark slit along its flight direction.
+static func draw_ball(ci: CanvasItem, p: Vector2, r: float, is_special: bool, rot: float, dir: Vector2) -> void:
+	Pal.disc(ci, p + Pal.SHADOW_OFFSET * 0.8, r, Pal.SHADOW)
+	Pal.disc(ci, p, r, Pal.GOLD_DARK)
+	Pal.disc(ci, p - Vector2(1.3, 1.3), r - 1.6, Pal.GOLD)
+	Pal.disc(ci, p - Vector2(r, r) * 0.34, r * 0.32, Color(Pal.GOLD_LIGHT, 0.55))
+	ci.draw_arc(p, r * 0.58, rot, rot + PI * 0.75, 12, Color(Pal.GOLD_DARK, 0.55), 1.4, true)
+	if is_special:
+		var d := dir.normalized() if dir.length() > 0.01 else Vector2.UP
+		ci.draw_line(p - d * r * 0.72, p + d * r * 0.72, Pal.METAL_DARK, 3.0, true)
+		Pal.ring(ci, p, r - 0.8, Pal.METAL_DARK, 1.6)
