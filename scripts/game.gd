@@ -4,7 +4,7 @@ extends Node2D
 
 enum State { PLAY, CLEARING, OVER }
 
-const MAX_TARGETS := 16
+const MAX_TARGETS := 20
 const MAX_BALLS := 4
 const AMMO_CAP := 5
 const RELOAD_TIME := 1.1
@@ -127,12 +127,12 @@ func _new_game() -> void:
 func _start_level(n: int) -> void:
 	level = n
 	state = State.PLAY
-	var count := mini(4 + n, 12)
+	var count := mini(5 + n, 14)
 	level_total = count
 	level_cleared = 0
 	# Staggered rows spread over the upper half of the field, so strings of
 	# lower rows pass between the targets above them.
-	var rows := 2 if count <= 6 else 3
+	var rows := 2 if count <= 6 else (3 if count <= 10 else 4)
 	var cols := ceili(float(count) / rows)
 	var usable := layout.size.x - 112.0
 	var col_w := usable / cols
@@ -145,7 +145,10 @@ func _start_level(n: int) -> void:
 		var stagger := (row - (rows - 1) * 0.5) / rows
 		var x := 56.0 + (col + 0.5 + stagger) * col_w + _rng.randf_range(-8.0, 8.0)
 		x = clampf(x, 48.0, layout.size.x - 48.0)
-		var len := layout.play_h * (0.13 + 0.22 * row) * _rng.randf_range(0.92, 1.08)
+		# Rows span 12–62% of the field (12–54% with two rows) so the lower
+		# half is in play from the start.
+		var span := 0.42 if rows == 2 else 0.5
+		var len := layout.play_h * (0.12 + span * row / (rows - 1)) * _rng.randf_range(0.94, 1.06)
 		t.spawn(_pick_kind(n), Vector2(x, layout.rail_y + 3.0), 12.0, len, 0.25 + i * 0.06)
 	hud.bar.level = n
 	hud.bar.progress = 0.0

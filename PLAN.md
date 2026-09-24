@@ -182,7 +182,7 @@ brukes der det er mulig.
 
 ## Q3 Spillbarhet (`game.gd`, `slingshot.gd`)
 - **Siktebane:** prikkbanen viser tyngdekraft og første sprett mot vegg. Den er kort
-  (ca. 0,35 s flytid), så det fortsatt krever presisjon.
+  (ca. 0,4 s flytid), så det fortsatt krever presisjon.
 - **Fyll feltet:** målene spres over 3–4 rader ned til ~70 % av feltet, med flere mål per
   nivå (5 + n, maks 14). Tom flate holdes under ~25 %.
 - **Rolige mellomspill:** ny bølge henges inn med stagger mens forrige treff fortsatt
@@ -201,4 +201,4 @@ brukes der det er mulig.
 |---|---|---|
 | Q1 | Ferdig | Masse per type og vinkeltreghet med dempet fjær (k 55, c 2,6). Friksjon: sklifarten langs overflaten gir dreiemoment, så streifskudd spinner målet. Mål–mål-kontakt med invers-masse-separasjon og begrenset impuls, pluss en svak «knock»-lyd og haptikk. Ballen plukker snorer (Gauss-fordelt kick på tau-punktene) med «twang». Lagdelt bris på noen px/s². Nesten-bom (< 34 px) gir vidt øye, krympet pupill og et lite rykk. Snoren blir stivere nær faresonen. Stabilitetstest på nivå 8 med 15 skudd: ingen NaN, farten klinger av. |
 | Q2 | Ferdig | Bakgrunnsshader med lysfall fra øvre venstre, statisk korn og triangulær dithering. Myk kontaktskygge (radial tekstur, bygget én gang) under skarp skygge på mål og ball. Ballen strekkes etter fart og skvises ved sprett (R·S·R⁻¹, så lyset står stille). Snorer i to toner med lys kant. Trykkring på 180 ms og 4–5 skår per drept mål (poolet data, 32 skår). Popups stables i stedet for å overlappe. Parallaksen er bare snorer med perler. Inter-fonter i hele UI-et. Romklang på egen SFX-buss. |
-| Q3 | – | |
+| Q3 | Ferdig | Siktebanen simulerer samme tyngdekraft og veggsprett som ballen: 8 prikker over ca. 0,4 s, fading, og den stopper ved bjelken. Flere mål per nivå (5 + n, maks 14) i 2–4 forskjøvne rader. Radene dekker 12–62 % av feltet (12–54 % med to rader), så den nedre halvdelen er i spill fra start. Poolen er økt til 20 for splittdråper. |

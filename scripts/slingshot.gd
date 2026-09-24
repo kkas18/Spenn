@@ -161,7 +161,7 @@ func release() -> void:
 	_release_dir = aim_dir
 	_ball_in_pouch = power >= MIN_POWER and has_ball()
 	if _ball_in_pouch:
-		_release_speed = lerpf(950.0, 2150.0, power) * l.scale
+		_release_speed = launch_speed()
 		_release_special = _ammo[0]
 		Sfx.play("release", lerpf(1.15, 0.9, power), -2.0)
 		Sfx.haptic(10, 0.25)
@@ -375,13 +375,39 @@ func _draw_lashing() -> void:
 			_front.draw_line(c - h, c + h, Pal.BAND, 1.2, true)
 
 
+## Short predicted path: same gravity and wall bounce as the ball, about
+## 0.35 s of flight, so it guides without solving the shot.
 func _draw_aim_dots() -> void:
 	if _arc_alpha <= 0.0 or power < MIN_POWER:
 		return
-	var rest := l.pouch_rest()
-	for i in 4:
-		var p := rest + aim_dir * (70.0 + i * 36.0 + power * 30.0)
-		_front.draw_circle(p, 2.6 - i * 0.35, Color(Pal.GOLD, (0.34 - i * 0.07) * _arc_alpha), true, -1.0, true)
+	var p := l.pouch_rest()
+	var v := aim_dir * launch_speed()
+	var dt := 1.0 / 120.0
+	var next_dot := 0.05
+	var t := 0.0
+	var i := 0
+	const DOTS := 8
+	while i < DOTS and t < 0.4:
+		t += dt
+		v.y += Ball.GRAVITY * dt
+		p += v * dt
+		if p.x < Ball.RADIUS:
+			p.x = Ball.RADIUS
+			v.x = absf(v.x) * Ball.WALL_BOUNCE
+		elif p.x > l.size.x - Ball.RADIUS:
+			p.x = l.size.x - Ball.RADIUS
+			v.x = -absf(v.x) * Ball.WALL_BOUNCE
+		if p.y < l.rail_y + Ball.RADIUS:
+			break
+		if t >= next_dot:
+			next_dot += 0.045
+			var k := 1.0 - float(i) / DOTS
+			_front.draw_circle(p, lerpf(1.4, 2.8, k), Color(Pal.GOLD, 0.42 * k * _arc_alpha), true, -1.0, true)
+			i += 1
+
+
+func launch_speed() -> float:
+	return lerpf(950.0, 2150.0, power) * l.scale
 
 
 func _draw_pouch() -> void:
