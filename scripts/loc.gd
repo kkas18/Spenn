@@ -14,7 +14,6 @@ const STRINGS := {
 		"restart": "START PÅ NYTT",
 		"language": "SPRÅK: NORSK",
 		"game_over": "SNOREN NÅDDE BUNNEN",
-		"score": "POENG",
 		"play_again": "SPILL IGJEN",
 		"new_record": "NY REKORD",
 		"hint": "DRA NED OG SLIPP",
@@ -22,7 +21,6 @@ const STRINGS := {
 		"combo": "KOMBO ×%d",
 		"split": "SPLITT",
 		"level_clear": "NIVÅ %d FULLFØRT",
-		"pause_a11y": "PAUSE",
 	},
 	"en": {
 		"level": "LEVEL %d",
@@ -32,7 +30,6 @@ const STRINGS := {
 		"restart": "RESTART",
 		"language": "LANGUAGE: ENGLISH",
 		"game_over": "THE STRING HIT BOTTOM",
-		"score": "SCORE",
 		"play_again": "PLAY AGAIN",
 		"new_record": "NEW RECORD",
 		"hint": "PULL DOWN AND RELEASE",
@@ -40,7 +37,6 @@ const STRINGS := {
 		"combo": "COMBO ×%d",
 		"split": "SPLIT",
 		"level_clear": "LEVEL %d CLEAR",
-		"pause_a11y": "PAUSE",
 	},
 }
 

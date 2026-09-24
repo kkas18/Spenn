@@ -51,6 +51,7 @@ var _band_r: Line2D
 var _under_l: Line2D
 var _under_r: Line2D
 var _front: Node2D
+var _fork: Node2D               # static: redrawn only on layout change
 var _pts_l := PackedVector2Array()
 var _pts_r := PackedVector2Array()
 var _rest_len := 1.0
@@ -62,6 +63,9 @@ func _ready() -> void:
 	curve.add_point(Vector2(0.18, 1.0))
 	curve.add_point(Vector2(0.65, 0.84))
 	curve.add_point(Vector2(1.0, 0.95))
+	_fork = Node2D.new()
+	add_child(_fork)
+	_fork.draw.connect(_draw_fork)
 	_under_l = _make_band(Pal.BAND_DARK, curve)
 	_band_l = _make_band(Pal.BAND, curve)
 	_under_r = _make_band(Pal.BAND_DARK, curve)
@@ -91,6 +95,7 @@ func setup(layout: Layout) -> void:
 	pouch_vel = Vector2.ZERO
 	_rest_len = _tip(-1).distance_to(pouch + Vector2(-POUCH_HALF, 0))
 	_update_bands()
+	_fork.queue_redraw()
 
 
 func set_ammo(queue: Array[bool], reload_frac: float) -> void:
@@ -206,7 +211,8 @@ func _process(delta: float) -> void:
 		goal = clampf(pouch_vel.x * 0.0012, -0.7, 0.7)
 	pouch_rot = lerp_angle(pouch_rot, goal, Pal.damp(0.35, delta))
 	_update_bands()
-	queue_redraw()
+	if _arc_alpha > 0.0 or target_alpha > 0.0:
+		queue_redraw()
 	_front.queue_redraw()
 
 
@@ -269,7 +275,6 @@ func _draw() -> void:
 	if l == null:
 		return
 	_draw_arc()
-	_draw_fork()
 
 
 func _fork_paths() -> Array:
@@ -316,15 +321,15 @@ func _draw_fork() -> void:
 			var moved := PackedVector2Array()
 			for q in pts:
 				moved.append(q + off)
-			draw_polyline(moved, col, p[1] + shrink, true)
+			_fork.draw_polyline(moved, col, p[1] + shrink, true)
 		for c in caps:
-			Pal.disc(self, c[0] + off, (c[1] + shrink) * 0.5, col)
+			Pal.disc(_fork, c[0] + off, (c[1] + shrink) * 0.5, col)
 	# Grip wrap: a few fine grooves to read as a handle.
 	var g0: Vector2 = paths[2][0][0]
 	var g1: Vector2 = paths[2][0][1]
 	for i in 4:
 		var y := lerpf(g0.y + 10.0, g1.y - 4.0, float(i) / 3.0)
-		draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
+		_fork.draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
 
 
 func _draw_arc() -> void:

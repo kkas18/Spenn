@@ -52,6 +52,10 @@ func setup(layout: Layout) -> void:
 	hint.size = Vector2(l.size.x, 30)
 	hint.position = Vector2(0, l.fork_y - 84.0)
 	_menu.size = l.size
+	# Every touch target is at least 48 dp.
+	var min_h := maxf(60.0, 48.0 * l.dp)
+	for b in [_btn_primary, _btn_restart, _btn_lang]:
+		b.custom_minimum_size = Vector2(maxf(280.0, 48.0 * l.dp), min_h)
 
 
 func caps_font() -> Font:
@@ -149,7 +153,7 @@ func _box(bg: Color, border: Color) -> StyleBoxFlat:
 	s.content_margin_right = 20
 	s.shadow_color = Color(0, 0, 0, 0.35)
 	s.shadow_offset = Pal.SHADOW_OFFSET
-	s.shadow_size = 0
+	s.shadow_size = 2
 	s.anti_aliasing = true
 	return s
 
@@ -212,6 +216,8 @@ class TopBar extends Control:
 	var progress := 0.0
 	var shown_progress := 0.0
 	var pulse := 0.0             # 0..1, decays; drives the 1.08 score pulse
+	var show_fps := false        # toggled by triple-tapping the record
+	var _taps: Array[int] = []
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -222,14 +228,30 @@ class TopBar extends Control:
 		var c := Vector2(l.margin + 10.0, l.score_baseline - 14.0)
 		return Rect2(c - Vector2(s, s) * 0.5, Vector2(s, s)).abs()
 
+	func record_rect() -> Rect2:
+		var l := hud.l
+		var s := maxf(48.0 * l.dp, 64.0)
+		return Rect2(l.size.x - l.margin - s * 2.0, l.score_baseline - s * 0.7, s * 2.0 + l.margin, s)
+
 	func _gui_input(e: InputEvent) -> void:
 		var press: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed)
-		if press and pause_rect().has_point(e.position):
+		if not press:
+			return
+		if pause_rect().has_point(e.position):
 			accept_event()
 			hud.pause_pressed.emit()
+		elif record_rect().has_point(e.position):
+			accept_event()
+			var now := Time.get_ticks_msec()
+			_taps.append(now)
+			while _taps.size() > 0 and now - _taps[0] > 900:
+				_taps.pop_front()
+			if _taps.size() >= 3:
+				_taps.clear()
+				show_fps = not show_fps
 
 	func _has_point(p: Vector2) -> bool:
-		return hud != null and hud.l != null and pause_rect().has_point(p)
+		return hud != null and hud.l != null and (pause_rect().has_point(p) or record_rect().has_point(p))
 
 	func _process(delta: float) -> void:
 		var diff := float(score) - shown_score
@@ -277,3 +299,6 @@ class TopBar extends Control:
 		var track := Rect2(w * 0.5 - bw * 0.5, by, bw, 3.0)
 		draw_rect(track, Color(Pal.INK_FAINT, 0.45))
 		draw_rect(Rect2(track.position, Vector2(bw * clampf(shown_progress, 0.0, 1.0), 3.0)), Pal.INK_DIM)
+		if show_fps:
+			var fps := "%d FPS" % Engine.get_frames_per_second()
+			draw_string(caps, Vector2(0, ly), fps, HORIZONTAL_ALIGNMENT_RIGHT, w - l.margin, 12, Pal.INK_FAINT)

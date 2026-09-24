@@ -17,6 +17,7 @@ var _far_drop := 0.0
 var _clock := 0.0
 var _dust: CPUParticles2D
 var _rng := RandomNumberGenerator.new()
+var _dashes := PackedVector2Array()
 
 
 func _ready() -> void:
@@ -99,6 +100,9 @@ func _draw_danger() -> void:
 	var gap := lerpf(18.0, 7.0, k)
 	var dash := 3.0
 	var x := fmod(_clock * 6.0, gap)
+	_dashes.clear()
 	while x < l.size.x:
-		draw_line(Vector2(x, l.danger_y), Vector2(x + dash, l.danger_y), col, 2.0)
+		_dashes.append(Vector2(x, l.danger_y))
+		_dashes.append(Vector2(x + dash, l.danger_y))
 		x += gap
+	draw_multiline(_dashes, col, 2.0)

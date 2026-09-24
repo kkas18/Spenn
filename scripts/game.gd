@@ -397,7 +397,9 @@ func _notification(what: int) -> void:
 			if is_inside_tree() and state != State.OVER:
 				_set_paused(true)
 		NOTIFICATION_WM_GO_BACK_REQUEST:
-			if state != State.OVER:
+			if state == State.OVER:
+				get_tree().quit()
+			else:
 				_set_paused(not get_tree().paused)
 
 
