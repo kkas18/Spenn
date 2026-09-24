@@ -299,3 +299,66 @@ mer av at fiender gjemmer seg, pluss bedre UI, brukervennlighet og mer krevende 
   - Seriemåler (tre prikker mot neste multiplikator).
   - Innstillingspanel fra tittel og pause: lydnivå, vibrasjon, siktelinje og språk.
   - Pausen er ryddigere: fortsett, start på nytt, innstillinger og meny.
+
+---
+
+# v4 – Endeløs overlevelse
+
+Tilbakemelding: nivåer bremser spillet. Det skal være som Tetris, Space Invaders, Pac-Man
+og Flappy Bird: fiender kommer hele tiden, du fokuserer på å overleve, og det skal være
+gøy og vanskelig samtidig.
+
+## Spilldesign
+- **Ingen nivåer.** Én endeløs runde der presset bare øker. Direktøren
+  (`director.gd`) bruker intensitet = overlevd tid / 45 s. Kurven stiger bratt først og
+  deretter saktere, men flater aldri helt ut. Det er det samme prinsippet som
+  tyngdekraften i Tetris.
+  - **Synkefart:** 7 + 9·I^0,85 px/s (maks 70).
+  - **Innslipp:** hvert 2,3/(1 + 0,5·I) s (min 0,3 s).
+  - **Tak:** 6 + 2·I mål samtidig (maks 22).
+  - **Omlading:** 1,05 s, ned mot 0,72 s.
+- **Rytme:** en hendelse omtrent hvert 38. sekund (tettere senere), fulgt av 4 s pusterom
+  med halvert innslipp.
+  - **Formasjon:** en rekke like mål i V, som i Space Invaders.
+  - **Storm:** dykkere slippes ned fra bjelken.
+  - **Boss:** Spinneren, hver 3. hendelse (~2 min).
+- **Faser:** «FASE n» med måler i toppfeltet. Nye fiender låses opp etter intensitet: Vakt
+  → Tungvekt 0,4 → Snelle 0,8 → Splitter 1,0 → Pendel 1,4 → Dykker 1,8 → Vokter 2,4 →
+  Skygge 3,0.
+- **Poeng:**
+  - Serie-multiplikator ×1–×4.
+  - **Kjede** (drap innen 1,2 s): +20 % per ledd fra 3, maks +120 %.
+  - **Nære på** (drap med fare > 0,55): +50 × multiplikator, med 0,28 s sakte film.
+  - **+1 knute** hver 3000 poeng (maks 3).
+  - Poengene flyr som gullkorn til telleren.
+- **Snorkutt** er et presisjonsskudd: ballsenteret (±5 px) må krysse den øverste
+  tredjedelen av snoren på vei opp, med over 1400 px/s og før ballen har truffet bjelken.
+  Første treff frynser snoren (synlige fibrer i 4 s), og et nytt treff mens den er frynset
+  kapper den. Kuttet bremser ballen til 45 %.
+- **Spenning:** et svakt hjerteslag (og lett vibrasjon) når et mål er nær linjen, og et
+  korallbånd som stiger fra linjen.
+- **Resultat:** tid overlevd, treffprosent, beste serie og snorkutt. Omstart med ett trykk.
+
+## Balansering (robotspiller, `--fixed-fps 60`)
+Roboten sikter på det laveste målet med litt forskyvning for bevegelsen og tilfeldig
+unøyaktighet.
+
+| Profil | Skudd | Treff | Overlevd |
+|---|---|---|---|
+| Overmenneskelig | 3/s, ±0,03 rad | ~88 % | 6–8 min (før innstramming) |
+| Dyktig | 1,3/s, ±0,06 rad | ~90 % | 2,5–5 min |
+| Slurvete | 0,86/s, ±0,14 rad | ~81 % | 3–5 min |
+
+Før innstrammingen fikk roboten opptil 314 snorkutt per runde, og kurven flatet ut etter
+~5 min. Begge deler er rettet.
+
+**Gulv for antall mål:** en dyktig spiller tømte brettet og fikk et tomt, kjedelig felt.
+Nå fylles feltet raskt opp igjen når det er færre enn 5 + 1,5·I mål (maks 14, 3 i pusterom), og nye mål kan henge seg inn ned til 30 % av feltet.
+Presset følger dermed ferdighetene. Med gulvet ender alle robotprofilene etter 4–6 min
+(før intensitetssteget ble strammet fra 50 til 45 s). Mennesker sikter mindre presist enn roboten, så en typisk
+runde bør ende etter 1,5–3 min, mens de beste holder ut i 5.
+
+**Endelig balanse (etter frynsing, gulv 5 + 1,5·I og steg på 45 s):** den dyktige roboten
+overlever ~3,6 min med 96 % treff, den slurvete 2,6–3,5 min, og snorkutt skjer 0–7 ganger per
+runde. Siden roboten sikter bedre enn et menneske, er forventet runde 1,5–2,5 min. Det
+passer til «ett forsøk til».

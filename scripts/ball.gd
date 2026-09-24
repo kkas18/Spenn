@@ -11,6 +11,7 @@ var active := false
 var special := false           # pierce ball: passes through targets and armour
 var shot_id := 0               # balls of one release (a triple fan) share it
 var cut_any := false
+var hit_rail := false
 var pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var age := 0.0
@@ -34,6 +35,7 @@ func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	special = is_special
 	shot_id = shot
 	cut_any = false
+	hit_rail = false
 	pos = p
 	vel = v
 	age = 0.0
@@ -90,6 +92,7 @@ func step(dt: float, l: Layout) -> bool:
 	if pos.y < l.rail_y + RADIUS + 3.0 and vel.y < 0.0:
 		pos.y = l.rail_y + RADIUS + 3.0
 		vel.y = -vel.y * 0.55
+		hit_rail = true
 	return age < MAX_AGE and pos.y < l.size.y + RADIUS * 2.0
 
 

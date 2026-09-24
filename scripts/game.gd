@@ -1,19 +1,21 @@
 extends Node2D
-## Game root: the run's state machine (title → play → clear → results),
-## waves, lives, streaks, collisions and scoring. All nodes are created once
+## Game root: an endless survival run. Targets keep hanging in from the
+## rail at a pace that only rises; events (formation, rush, boss) punctuate
+## it. Also lives, streaks, chains, collisions and scoring. All nodes are created once
 ## in _ready(); targets, balls and effects are pooled.
 
-enum State { TITLE, PLAY, CLEARING, OVER }
+enum State { TITLE, PLAY, OVER }
 
-const MAX_TARGETS := 24
+const MAX_TARGETS := 28
 const MAX_BALLS := 6
 const AMMO_CAP := 5
-const RELOAD_TIME := 1.1
 const SUBSTEP := 1.0 / 120.0
 const BALL_BOUNCE := 0.7
 const LIVES := 3
-const CUT_SPEED := 1500.0      # a ball this fast severs any string it crosses
-const WAVE_TIMEOUT := 22.0
+const CUT_SPEED := 1400.0      # a rising ball this fast severs a string near its hook
+const EXTRA_LIFE_EVERY := 3000
+const CHAIN_WINDOW := 1.2
+const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const MAX_MINIONS := 3
 const TRIPLE_SPREAD := 0.1
 const Ammo := Slingshot.Ammo
@@ -21,16 +23,11 @@ const Ammo := Slingshot.Ammo
 var layout: Layout
 var director := Director.new()
 var state := State.TITLE
-var level := 1
-var wave := 0
-var waves := 1
 var score := 0
 var lives := LIVES
 var streak := 0
 var best_streak := 0
 var cuts := 0
-var level_total := 0
-var level_cleared := 0
 var ammo: Array[int] = []       # index 0 is loaded
 var reload_t := 0.0
 
@@ -47,7 +44,16 @@ var balls: Array[Ball] = []
 var _rng := RandomNumberGenerator.new()
 var _acc := 0.0
 var _state_t := 0.0
-var _wave_t := 0.0
+var _spawn_t := 0.0
+var _rush_left := 0
+var _rush_t := 0.0
+var _chain := 0
+var _chain_t := 0.0
+var _next_life_at := EXTRA_LIFE_EVERY
+var _phase_shown := 1
+var _beat_t := 0.0
+var _vignette: ShaderMaterial
+var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
 var _time := 0.0
@@ -93,6 +99,7 @@ func _ready() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/vignette.gdshader")
 	vignette.material = mat
+	_vignette = mat
 	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
@@ -147,6 +154,8 @@ func _clear_field() -> void:
 
 func _to_title() -> void:
 	_clear_field()
+	_tension = 0.0
+	_vignette.set_shader_parameter("strength", 0.55)
 	state = State.TITLE
 	_state_t = 0.0
 	title.setup(layout, hud.display_font())
@@ -154,7 +163,7 @@ func _to_title() -> void:
 
 
 ## First release on the title starts a run: the letters' strings snap and
-## the first level hangs in behind them.
+## the first row of rings hangs in behind them.
 func _start_run() -> void:
 	state = State.PLAY
 	score = 0
@@ -162,6 +171,12 @@ func _start_run() -> void:
 	streak = 0
 	best_streak = 0
 	cuts = 0
+	_chain = 0
+	_chain_t = 0.0
+	_next_life_at = EXTRA_LIFE_EVERY
+	_phase_shown = 1
+	_rush_left = 0
+	_spawn_t = 2.5
 	_over_shown = false
 	director.reset()
 	hud.show_play()
@@ -169,9 +184,12 @@ func _start_run() -> void:
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
 	hud.bar.streak = 0
+	hud.bar.phase = 1
+	hud.bar.progress = 0.0
 	hud.bar.set_mult(1)
 	title.release()
-	_start_level(1)
+	hud.card(Loc.t("survive"), Loc.t("survive_sub"))
+	_spawn_formation(Target.Kind.RING, 4)
 
 
 func _restart() -> void:
@@ -181,72 +199,59 @@ func _restart() -> void:
 	_start_run()
 
 
-func _start_level(n: int) -> void:
-	level = n
-	state = State.PLAY
-	waves = director.wave_count(n)
-	wave = 0
-	level_total = 0
-	level_cleared = 0
-	_spawn_wave()
-	hud.bar.level = n
-	hud.bar.progress = 0.0
-	if Director.is_boss_level(n):
-		hud.card(Loc.t("boss"), Loc.t("boss_sub"))
-		Sfx.play("boss")
-	else:
-		var sub := Loc.t("level_sub") % [_planned_total(), waves] if waves > 1 else Loc.t("level_sub1") % _planned_total()
-		hud.card(Loc.t("level") % n, sub)
-
-
-func _planned_total() -> int:
-	var total := 0
-	for w in waves:
-		total += director.wave_size(level, w)
-	return total
-
-
-func _spawn_wave() -> void:
-	wave += 1
-	_wave_t = 0.0
-	hud.bar.wave = wave
-	hud.bar.waves = waves
-	var count := director.wave_size(level, wave - 1)
-	var boss := Director.is_boss_level(level) and wave == 1
+## One target at the freest spot along the rail, high up.
+func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
+	var t := _free_target()
+	if t == null:
+		return null
 	var used: Array[float] = []
-	for t in targets:
-		if t.is_hittable():
-			used.append(t.anchor.x)
-	var aggr := director.aggression(level)
-	if boss:
-		var b := _free_target()
-		if b:
-			b.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.3, 0.3)
-			b.aggression = aggr
-			_maybe_intro(b)
-			used.append(layout.center_x)
-			level_total += 1
-		count -= 1
-	# Rows alternate high and low; each anchor takes the free slot furthest
-	# from every string already hanging, so waves interleave cleanly.
-	var slots := 12
-	for i in count:
+	for o in targets:
+		if o.is_hittable() or (o.phase == Target.Phase.HANGING and o.delay > 0.0):
+			used.append(o.anchor.x)
+	var x := _best_slot(used, 12)
+	var frac := len_frac if len_frac >= 0.0 else _rng.randf_range(0.05, 0.3)
+	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
+	t.aggression = director.aggression()
+	_maybe_intro(t)
+	return t
+
+
+## A row of identical targets in a shallow V, dropping in left to right.
+func _spawn_formation(kind: Target.Kind, n: int) -> void:
+	var usable := layout.size.x - 120.0
+	for i in n:
 		var t := _free_target()
 		if t == null:
-			break
-		var x := _best_slot(used, slots)
-		used.append(x)
-		var row := i % 3
-		var len := layout.play_h * (0.14 + 0.2 * row) * _rng.randf_range(0.92, 1.08)
-		if boss and absf(x - layout.center_x) < 90.0:
-			len = layout.play_h * 0.58
-		t.spawn(director.pick_kind(level, _rng), Vector2(x, layout.rail_y + 3.0), 12.0, len, 0.35 + i * 0.07)
-		t.aggression = aggr
-		level_total += 1
+			return
+		var x := 60.0 + (i + 0.5) * usable / n
+		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
+		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
+		t.aggression = director.aggression()
 		_maybe_intro(t)
-	if wave > 1:
-		fx.popup(Loc.t("wave") % [wave, waves], Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.4), Pal.INK, 22)
-		Sfx.play("whoosh", 0.7, -4.0)
+
+
+func _spawn_boss() -> void:
+	var t := _free_target()
+	if t == null:
+		return
+	t.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.22, 0.3)
+	t.aggression = director.aggression()
+	_maybe_intro(t)
+
+
+func _alive_count() -> int:
+	var n := 0
+	for t in targets:
+		if t.is_hittable() or (t.phase == Target.Phase.HANGING and t.delay > 0.0):
+			n += 1
+	return n
+
+
+func _boss_alive() -> bool:
+	for t in targets:
+		if t.kind == Target.Kind.BOSS and t.phase == Target.Phase.HANGING:
+			return true
+	return false
 
 
 ## First time a kind ever appears it gets a short card and a marker ring.
@@ -292,14 +297,6 @@ func _free_target() -> Target:
 	return null
 
 
-func _hittable_count() -> int:
-	var n := 0
-	for t in targets:
-		if t.is_hittable() or (t.phase == Target.Phase.HANGING and t.delay > 0.0):
-			n += 1
-	return n
-
-
 # ---------------------------------------------------------------- frame
 
 func _process(delta: float) -> void:
@@ -310,21 +307,73 @@ func _process(delta: float) -> void:
 	_state_t += delta
 	_update_ammo(delta)
 	_update_eyes()
-	if state == State.PLAY or state == State.CLEARING:
-		_run_intros()
 	match state:
 		State.PLAY:
-			_wave_t += delta
-			if wave < waves and (_hittable_count() <= 2 or _wave_t > WAVE_TIMEOUT):
-				_spawn_wave()
+			_run_intros()
+			_pace(delta)
 			_spawn_minions()
-		State.CLEARING:
-			if _state_t > 1.9:
-				_start_level(level + 1)
 		State.OVER:
-			if not _over_shown and _state_t > 0.9:
+			if not _over_shown and _state_t > 0.75:
 				_over_shown = true
 				_show_results()
+
+
+## The endless pacing: regular spawns under a rising cap, events with a
+## card each, rush drops, chains timing out, phase changes and the
+## heartbeat when a target is close to the line.
+func _pace(delta: float) -> void:
+	director.tick(delta)
+	_spawn_t -= delta
+	if _alive_count() < director.alive_floor():
+		_spawn_t = minf(_spawn_t, 0.35)
+	if _spawn_t <= 0.0:
+		_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
+		if _alive_count() < director.alive_cap():
+			_spawn_one(director.pick_kind(_rng))
+	match director.poll_event():
+		Director.Event.FORMATION:
+			var k := director.formation_kind(_rng)
+			_spawn_formation(k, 5 + mini(3, int(director.intensity())))
+			hud.card(Loc.t("formation"), Loc.t("formation_sub"))
+			Sfx.play("intro", 0.9)
+		Director.Event.RUSH:
+			_rush_left = 5 + int(director.intensity())
+			_rush_t = 0.6
+			hud.card(Loc.t("rush"), Loc.t("rush_sub"))
+			Sfx.play("whoosh", 0.8)
+		Director.Event.BOSS:
+			_spawn_boss()
+			hud.card(Loc.t("boss"), Loc.t("boss_sub"))
+			Sfx.play("boss")
+	if _rush_left > 0:
+		_rush_t -= delta
+		if _rush_t <= 0.0:
+			_rush_t = 0.4
+			_rush_left -= 1
+			_spawn_one(Target.Kind.DROP, _rng.randf_range(0.04, 0.12))
+	if _chain_t > 0.0:
+		_chain_t -= delta
+		if _chain_t <= 0.0:
+			_chain = 0
+	var p := director.phase()
+	hud.bar.phase = p
+	hud.bar.progress = director.phase_progress()
+	if p != _phase_shown:
+		_phase_shown = p
+		fx.popup(Loc.t("phase") % p, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 24)
+		Sfx.play("streak", 0.85)
+	# Tension: the vignette closes in a little while a target is near the line.
+	var want := clampf(backdrop.danger, 0.0, 1.0)
+	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
+	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
+	if backdrop.danger > 0.7:
+		_beat_t -= delta
+		if _beat_t <= 0.0:
+			_beat_t = lerpf(0.85, 0.5, backdrop.danger)
+			Sfx.play("beat")
+			Sfx.haptic(8, 0.15)
+	else:
+		_beat_t = 0.0
 
 
 ## Pupils follow the nearest ball in flight (or the pouch while aiming);
@@ -392,7 +441,7 @@ func _find_cover(t: Target, o: Vector2) -> void:
 
 
 func _step(dt: float) -> void:
-	var descent := director.descent(level, layout.scale) if state == State.PLAY else 0.0
+	var descent := director.descent(layout.scale) if state == State.PLAY else 0.0
 	var band := layout.play_h * 0.15
 	var worst := 0.0
 	_time += dt
@@ -487,7 +536,6 @@ func _spawn_minions() -> void:
 		var ax := clampf(t.anchor.x + _rng.randf_range(-1.0, 1.0) * 150.0, 48.0, layout.size.x - 48.0)
 		d.spawn(Target.Kind.DROP, Vector2(ax, layout.rail_y + 3.0), 12.0, t.length * 0.75, 0.0)
 		d.aggression = t.aggression
-		level_total += 1
 		_maybe_intro(d)
 		Sfx.play("whoosh", 1.2, -8.0)
 
@@ -500,8 +548,16 @@ func _collide(b: Ball) -> void:
 		if not t.is_hittable():
 			continue
 		# A fast ball severs the string it crosses; a slower one plucks it.
-		if t.kind != Target.Kind.BOSS and b.vel.length() > cut_speed and t.rope_hit(b.pos, Ball.RADIUS):
-			_on_cut(b, t)
+		# Cut: the ball's centre (±5 px) crosses the string near its hook on
+		# the way up, fast, before touching the rail. A precision shot.
+		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(b.pos, 5.0):
+			b.cut_any = true
+			if t.strike_string(b.pos):
+				_on_cut(b, t)
+			else:
+				fx.sparks(b.pos, Pal.INK_DIM, 6)
+				Sfx.play("twang", 1.2, -6.0)
+				Sfx.haptic(8, 0.2)
 			continue
 		if t.pluck(b.pos, b.vel, Ball.RADIUS):
 			Sfx.play("twang", randf_range(0.85, 1.25), -14.0)
@@ -568,11 +624,14 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		impulse = -n * 260.0 + slide * 0.14
 	var kind := t.kind
 	var col := t.color()
+	var was_close := t.danger > CLOSE_CALL
 	var killed := t.hit(impulse, contact)
 	var gained := t.points() * b.hits * _mult()
 	if killed and kind == Target.Kind.BOSS:
 		gained *= 5
-	_add_score(gained)
+	if killed:
+		gained += _kill_bonus(t, was_close, gained)
+	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
 	fx.hitstop()
 	fx.sparks(cp, col, 10 if killed else 6)
@@ -599,7 +658,6 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 			fx.punch(0.045)
 			fx.slowmo(0.3, 0.6)
 			Sfx.haptic(80, 0.9)
-		_resolved(t)
 		if kind == Target.Kind.SPLIT:
 			_split(t)
 	else:
@@ -607,26 +665,27 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		Sfx.haptic(12, 0.35)
 	if b.hits == 2:
 		_grant(Ammo.PIERCE)
-	_check_clear()
 
 
 ## String severed: double points, and it ignores armour and health.
 func _on_cut(b: Ball, t: Target) -> void:
 	b.cut_any = true
+	# Cutting costs the ball most of its speed: one clean cut per shot.
+	b.vel *= 0.45
 	_mark_hit(b)
 	cuts += 1
 	var col := t.color()
+	var was_close := t.danger > CLOSE_CALL
 	t.cut()
 	var gained := t.points() * 2 * _mult()
-	_add_score(gained)
+	gained += _kill_bonus(t, was_close, gained)
+	_add_score(gained, t.pos)
 	fx.hitstop()
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
 	fx.popup("+%d %s" % [gained, Loc.t("cut")], b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
 	Sfx.play("cut", randf_range(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
-	_resolved(t)
-	_check_clear()
 
 
 func _split(t: Target) -> void:
@@ -642,34 +701,25 @@ func _split(t: Target) -> void:
 		d.pos = p
 		d.vel = Vector2(side * 160.0, -60.0)
 		d.aggression = t.aggression
-		level_total += 1
 		_maybe_intro(d)
 
 
-func _resolved(_t: Target) -> void:
-	level_cleared += 1
-	hud.bar.progress = float(level_cleared) / float(maxi(level_total + (_planned_total() - _spawned_so_far()), 1))
-
-
-func _spawned_so_far() -> int:
-	var n := 0
-	for w in wave:
-		n += director.wave_size(level, w)
-	return n
-
-
-func _check_clear() -> void:
-	if state != State.PLAY or wave < waves:
-		return
-	if _hittable_count() > 0:
-		return
-	state = State.CLEARING
-	_state_t = 0.0
-	hud.bar.progress = 1.0
-	fx.slowmo(0.35, 0.5)
-	fx.punch(0.03)
-	Sfx.play("clear")
-	fx.popup(Loc.t("level_clear") % level, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.42), Pal.INK, 26)
+## Chains (kills in quick succession) and close calls (a kill just above
+## the line) pay extra and say so.
+func _kill_bonus(t: Target, was_close: bool, gained: int) -> int:
+	var bonus := 0
+	_chain += 1
+	_chain_t = CHAIN_WINDOW
+	if _chain >= 3:
+		bonus += int(gained * 0.2 * mini(_chain - 2, 6))
+		fx.popup(Loc.t("chain") % _chain, t.pos + Vector2(0, t.radius + 26.0), Pal.GOLD, 16)
+		Sfx.play("streak", minf(1.25, 0.9 + 0.05 * _chain))
+	if was_close:
+		bonus += 50 * _mult()
+		fx.popup(Loc.t("close") + " +%d" % (50 * _mult()), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 18)
+		fx.slowmo(0.45, 0.28)
+		fx.punch(0.02)
+	return bonus
 
 
 ## A target reached the line: a knot snaps, the rail rings, the rest of
@@ -688,17 +738,15 @@ func _breach(t: Target) -> void:
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
 	streak = 0
+	_chain = 0
 	hud.bar.streak = 0
 	hud.bar.set_mult(1)
-	_resolved(t)
 	for o in targets:
 		if o.is_hittable():
 			o.length = maxf(40.0, o.length - 50.0 * layout.scale)
 			o.goal_length = o.length
 	if lives <= 0:
 		_game_over()
-	else:
-		_check_clear()
 
 
 func _game_over() -> void:
@@ -713,7 +761,8 @@ func _game_over() -> void:
 func _show_results() -> void:
 	var is_record := Loc.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
-	hud.show_results(score, is_record, Loc.t("out_of_knots"), [level, "%d %%" % acc, best_streak, cuts])
+	var secs := int(director.elapsed)
+	hud.show_results(score, is_record, Loc.t("out_of_knots"), ["%d:%02d" % [secs / 60, secs % 60], "%d %%" % acc, best_streak, cuts])
 
 
 # ---------------------------------------------------------------- scoring
@@ -722,10 +771,23 @@ func _mult() -> int:
 	return 1 + mini(streak / 3, 3)
 
 
-func _add_score(n: int) -> void:
+## Points fly to the counter as gold grains; every 3000 points returns a
+## lost knot.
+func _add_score(n: int, from := Vector2.INF) -> void:
 	score += n
 	hud.bar.score = score
 	hud.bar.pulse = 1.0
+	if from != Vector2.INF:
+		fx.tokens(from, Vector2(layout.center_x, layout.score_baseline - 16.0), clampi(2 + n / 25, 2, 8))
+	while score >= _next_life_at:
+		_next_life_at += EXTRA_LIFE_EVERY
+		if lives < LIVES:
+			lives += 1
+			hud.bar.lives = lives
+			hud.bar.knot_shake = 1.0
+			fx.popup(Loc.t("extra_knot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18)
+			Sfx.play("clear", 1.1)
+			Sfx.haptic(25, 0.5)
 
 
 func _mark_hit(b: Ball) -> void:
@@ -744,7 +806,7 @@ func _finish_ball(b: Ball) -> void:
 	if s.balls > 0:
 		return
 	_shots.erase(b.shot_id)
-	if state != State.PLAY and state != State.CLEARING:
+	if state != State.PLAY:
 		return
 	director.record_shot(s.hit)
 	if s.hit:
@@ -773,12 +835,12 @@ func _grant(kind: int) -> void:
 func _update_ammo(delta: float) -> void:
 	if ammo.size() < AMMO_CAP and state != State.OVER:
 		reload_t += delta
-		if reload_t >= RELOAD_TIME:
+		if reload_t >= director.reload_time():
 			reload_t = 0.0
 			ammo.append(Ammo.NORMAL)
 	else:
 		reload_t = 0.0
-	slingshot.set_ammo(ammo, reload_t / RELOAD_TIME)
+	slingshot.set_ammo(ammo, reload_t / director.reload_time())
 
 
 func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
@@ -804,7 +866,7 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 # ---------------------------------------------------------------- system
 
 func _set_paused(on: bool) -> void:
-	if state != State.PLAY and state != State.CLEARING:
+	if state != State.PLAY:
 		return
 	get_tree().paused = on
 	if on:
@@ -817,7 +879,7 @@ func _set_paused(on: bool) -> void:
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
-			if is_inside_tree() and (state == State.PLAY or state == State.CLEARING):
+			if is_inside_tree() and (state == State.PLAY):
 				_set_paused(true)
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			match state:

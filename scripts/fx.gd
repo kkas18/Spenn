@@ -35,6 +35,10 @@ var _slow_scale := 1.0
 var _frags: Array[Dictionary] = []
 var _next_frag := 0
 var _queued: Array[Dictionary] = []   # staged bursts (boss)
+var _tokens: Array[Dictionary] = []
+var _next_token := 0
+const TOKEN_POOL := 40
+const TOKEN_TIME := 0.5
 var _slow_left := 0.0
 var _punch := 0.0
 var _rings: Array[Dictionary] = []
@@ -84,6 +88,8 @@ func _ready() -> void:
 	for i in FRAG_POOL:
 		_frags.append({"t": -1.0, "type": 0, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
 			"spin": 0.0, "a0": 0.0, "a1": 0.0, "r": 0.0, "w": 0.0, "col": Pal.INK, "life": FRAG_LIFE})
+	for i in TOKEN_POOL:
+		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
 		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20})
 
@@ -223,6 +229,19 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 		_queued.append({"t": 0.3, "at": at, "r": radius * 2.1, "col": col})
 
 
+## Gold grains arc from a kill to the score counter (gold = points/power).
+func tokens(from: Vector2, to: Vector2, count: int) -> void:
+	for i in count:
+		var k := _tokens[_next_token]
+		_next_token = (_next_token + 1) % TOKEN_POOL
+		k.t = 0.0
+		k.delay = i * 0.03
+		k.from = from + Vector2(_rng.randf_range(-10, 10), _rng.randf_range(-10, 10))
+		k.to = to
+		var side := _rng.randf_range(-1.0, 1.0)
+		k.ctrl = from.lerp(to, 0.35) + Vector2(side * 140.0, 60.0)
+
+
 func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
@@ -292,6 +311,8 @@ func clear() -> void:
 		d.t = -1.0
 	for f in _frags:
 		f.t = -1.0
+	for k in _tokens:
+		k.t = -1.0
 	_queued.clear()
 	for s in _sparks:
 		s.emitting = false
@@ -324,6 +345,19 @@ func _process(delta: float) -> void:
 		shake_target.scale = Vector2(sc, sc)
 		shake_target.position = c * (1.0 - sc) + off
 	var any := false
+	for k in _tokens:
+		if k.t < 0.0:
+			continue
+		if k.delay > 0.0:
+			k.delay -= rd
+			any = true
+			continue
+		k.t += rd
+		if k.t >= TOKEN_TIME:
+			k.t = -1.0
+			Sfx.play("token", _rng.randf_range(0.95, 1.2))
+		else:
+			any = true
 	for q in _queued.duplicate():
 		q.t -= delta
 		if q.t <= 0.0:
@@ -384,6 +418,16 @@ func _draw() -> void:
 		var k: float = r.t / RING_LIFE
 		var e := 1.0 - pow(1.0 - k, 3.0)
 		draw_arc(r.pos, lerpf(r.r * 0.35, r.r * 1.25, e), 0.0, TAU, 32, Color(r.col, 0.55 * (1.0 - k)), lerpf(3.0, 0.6, k), true)
+	for tk in _tokens:
+		if tk.t < 0.0 or tk.delay > 0.0:
+			continue
+		var u: float = ease(tk.t / TOKEN_TIME, 2.2)
+		var a: Vector2 = tk.from.lerp(tk.ctrl, u)
+		var b: Vector2 = tk.ctrl.lerp(tk.to, u)
+		var p := a.lerp(b, u)
+		var r := lerpf(3.2, 2.0, u)
+		draw_circle(p + Vector2(1.5, 1.5), r, Color(0, 0, 0, 0.3), true, -1.0, true)
+		draw_circle(p, r, Pal.GOLD, true, -1.0, true)
 	for f in _frags:
 		if f.t < 0.0:
 			continue

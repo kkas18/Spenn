@@ -198,7 +198,7 @@ func _refresh_text() -> void:
 	_t_lang.text = "NO" if Loc.lang == "no" else "EN"
 	_t_sound.text = Loc.t("settings")
 	_menu_badge_label.text = Loc.t("new_record")
-	var names := [Loc.t("stat_level"), Loc.t("stat_acc"), Loc.t("stat_streak"), Loc.t("stat_cuts")]
+	var names := [Loc.t("stat_time"), Loc.t("stat_acc"), Loc.t("stat_streak"), Loc.t("stat_cuts")]
 	for i in _stat_names.size():
 		_stat_names[i].text = names[i]
 	var over := mode == Mode.OVER
@@ -410,9 +410,7 @@ class TopBar extends Control:
 	var mult := 1
 	var streak := 0
 	var lives := 3
-	var level := 1
-	var wave := 1
-	var waves := 1
+	var phase := 1
 	var progress := 0.0
 	var shown_progress := 0.0
 	var pulse := 0.0             # 0..1, decays; drives the 1.08 score pulse
@@ -533,7 +531,7 @@ class TopBar extends Control:
 				draw_line(c + Vector2(-7, 0), c + Vector2(-2, 0), Pal.INK_FAINT, 2.4, true)
 				draw_line(c + Vector2(2, 0), c + Vector2(7, 0), Pal.INK_FAINT, 2.4, true)
 		# Level · wave label 8 px under the score, progress bar 8 px under it.
-		var lv := Loc.t("level_wave") % [level, wave, waves] if waves > 1 else Loc.t("level") % level
+		var lv := Loc.t("phase") % phase
 		var ly := base + 10.0 + caps.get_ascent(13)
 		draw_string(caps, Vector2(0, ly), lv, HORIZONTAL_ALIGNMENT_CENTER, w, 13, Pal.INK_DIM)
 		var bw := 132.0

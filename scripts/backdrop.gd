@@ -110,6 +110,12 @@ func _draw_danger() -> void:
 	var pulse := 0.85 + 0.15 * sin(_clock * TAU * 0.8)
 	var col := Pal.INK_FAINT.lerp(Pal.CORAL, k)
 	col.a = lerpf(0.10, 0.75 * pulse, k)
+	if k > 0.2:
+		# A faint coral haze rising from the line: local, never over the field.
+		for i in 6:
+			var h := 14.0
+			var a := (k - 0.2) * 0.1 * (1.0 - i / 6.0) * pulse
+			_layer.draw_rect(Rect2(0, l.danger_y - (i + 1) * h, l.size.x, h), Color(Pal.CORAL, a))
 	var gap := lerpf(18.0, 7.0, k)
 	var dash := 3.0
 	var x := fmod(_clock * 6.0, gap)

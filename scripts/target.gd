@@ -65,6 +65,8 @@ var has_cover := false         # Vakt: an x where another target shields it
 var cover_x := 0.0
 var hidden_amt := 0.0          # Skygge: 0 solid .. 1 faded out
 var intro_t := 0.0             # marker ring when first introduced
+var fray_t := 0.0              # string frayed: a second precise hit cuts it
+var _fray_at := Vector2.ZERO
 var _reeled := 0.0
 var _calm_t := 0.0
 var _shade_t := 0.0
@@ -133,6 +135,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	has_cover = false
 	hidden_amt = 0.0
 	intro_t = 0.0
+	fray_t = 0.0
 	_reeled = 0.0
 	_calm_t = 0.0
 	_shade_t = randf_range(1.5, 3.0)
@@ -217,14 +220,27 @@ func blocks(n: Vector2) -> bool:
 	return false
 
 
-## Distance test against the string (not the hook end, not the knot at the
-## body), so a fast ball can cut it.
+## Distance test against the top third of the string, just under the hook:
+## cutting is a precision shot, not something a stray ball does by luck.
 func rope_hit(p: Vector2, r: float) -> bool:
 	if not _attached:
 		return false
-	for i in range(1, N - 2):
+	for i in range(0, 3):
 		if Geometry2D.get_closest_point_to_segment(p, _pts[i], _pts[i + 1]).distance_to(p) < r + 1.5:
 			return true
+	return false
+
+
+## A precise hit on the string: the first frays it (visible for 4 s), a
+## second one while frayed severs it. Returns true when it severed.
+func strike_string(p: Vector2) -> bool:
+	if fray_t > 0.0:
+		cut()
+		return true
+	fray_t = 4.0
+	_fray_at = p
+	for i in range(1, 4):
+		_prev[i] = _pts[i] - Vector2(randf_range(-2.0, 2.0), 3.0)
 	return false
 
 
@@ -303,6 +319,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 	_screen_h = screen_h
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	flash_t = maxf(0.0, flash_t - dt)
+	fray_t = maxf(0.0, fray_t - dt)
 	match phase:
 		Phase.HANGING:
 			if delay > 0.0:
@@ -595,6 +612,18 @@ func _draw() -> void:
 		draw_set_transform(Vector2(-0.45, -0.45))
 		draw_polyline(_pts, Color(Pal.INK_DIM, 0.35 * rope_alpha), 0.7, true)
 		draw_set_transform(Vector2.ZERO)
+		if fray_t > 0.0 and _attached:
+			# Frayed: a few loose fibres at the nearest point, blinking faster
+			# as the fray is about to mend.
+			var q := _pts[1]
+			for i in range(1, 4):
+				if _pts[i].distance_to(_fray_at) < q.distance_to(_fray_at):
+					q = _pts[i]
+			var blink := 0.6 + 0.4 * sin(_clock * lerpf(6.0, 18.0, 1.0 - fray_t / 4.0))
+			for k in 3:
+				var a := -0.9 + k * 0.9
+				draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+				draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
 	var col := color()
 	var dark := col.darkened(0.45)
 	var light := col.lightened(0.22)
