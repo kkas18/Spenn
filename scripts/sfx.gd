@@ -59,6 +59,9 @@ var _players: Array[AudioStreamPlayer] = []
 var _started: Array[float] = []
 var _bus := 0
 var _rng := RandomNumberGenerator.new()
+# Headless runs (CI smoke test) have no audio output; a sound still playing
+# at exit is held by the dummy driver and reported as a leak.
+var _headless := DisplayServer.get_name() == "headless"
 
 
 func _ready() -> void:
@@ -123,7 +126,7 @@ func apply_volume() -> void:
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
-	if not _takes.has(name) or Prefs.sfx_volume == 0:
+	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last.get(name, -1.0)) < MIN_GAP:
