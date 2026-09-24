@@ -33,6 +33,8 @@ const BLUE := Color("7C93D6")    # 225°, luma .58 – ring
 const TEAL := Color("84C9CF")    # 185°, luma .71 – splitter (hexagon)
 const DROP := Color("D1D8F0")    # 225° pale, luma .85 – fast drop
 const CORAL := Color("E98462")   # 15° – danger only
+const ARMOR := Color("9AA2AD")   # neutral – Vokter body (silhouette: ring + plate)
+const BOSS := Color("C9CED6")    # neutral pale – Spinneren (filled hexagon)
 const EYE := Color("E4E7EC")
 const PUPIL := Color("0E1015")
 

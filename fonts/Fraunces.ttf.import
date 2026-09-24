@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://cwatka08tdxxe"
-path="res://.godot/imported/Inter-SemiBold.ttf-769ee8cf572fe0f44baad1112e40ef8c.fontdata"
+uid="uid://behurg5dew3fn"
+path="res://.godot/imported/Fraunces.ttf-339d8c711e2dbeb6474913c2d6675039.fontdata"
 
 [deps]
 
-source_file="res://fonts/Inter-SemiBold.ttf"
-dest_files=["res://.godot/imported/Inter-SemiBold.ttf-769ee8cf572fe0f44baad1112e40ef8c.fontdata"]
+source_file="res://fonts/Fraunces.ttf"
+dest_files=["res://.godot/imported/Fraunces.ttf-339d8c711e2dbeb6474913c2d6675039.fontdata"]
 
 [params]
 

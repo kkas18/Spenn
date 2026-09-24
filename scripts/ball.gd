@@ -8,7 +8,9 @@ const WALL_BOUNCE := 0.85
 const MAX_AGE := 4.0
 
 var active := false
-var special := false           # pierce ball: passes through targets
+var special := false           # pierce ball: passes through targets and armour
+var shot_id := 0               # balls of one release (a triple fan) share it
+var cut_any := false
 var pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var age := 0.0
@@ -27,9 +29,11 @@ func _ready() -> void:
 	visible = false
 
 
-func fire(p: Vector2, v: Vector2, is_special: bool) -> void:
+func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	active = true
 	special = is_special
+	shot_id = shot
+	cut_any = false
 	pos = p
 	vel = v
 	age = 0.0

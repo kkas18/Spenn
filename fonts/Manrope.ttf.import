@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://cqq0r8yosd2cs"
-path="res://.godot/imported/InterDisplay-SemiBold.ttf-a63ff776d91fa470a34164e0a978d6cc.fontdata"
+uid="uid://8fe1lsoucmte"
+path="res://.godot/imported/Manrope.ttf-ffb0437a1d16d14670a4722c608bae12.fontdata"
 
 [deps]
 
-source_file="res://fonts/InterDisplay-SemiBold.ttf"
-dest_files=["res://.godot/imported/InterDisplay-SemiBold.ttf-a63ff776d91fa470a34164e0a978d6cc.fontdata"]
+source_file="res://fonts/Manrope.ttf"
+dest_files=["res://.godot/imported/Manrope.ttf-ffb0437a1d16d14670a4722c608bae12.fontdata"]
 
 [params]
 

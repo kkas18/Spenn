@@ -202,3 +202,66 @@ brukes der det er mulig.
 | Q1 | Ferdig | Masse per type og vinkeltreghet med dempet fjær (k 55, c 2,6). Friksjon: sklifarten langs overflaten gir dreiemoment, så streifskudd spinner målet. Mål–mål-kontakt med invers-masse-separasjon og begrenset impuls, pluss en svak «knock»-lyd og haptikk. Ballen plukker snorer (Gauss-fordelt kick på tau-punktene) med «twang». Lagdelt bris på noen px/s². Nesten-bom (< 34 px) gir vidt øye, krympet pupill og et lite rykk. Snoren blir stivere nær faresonen. Stabilitetstest på nivå 8 med 15 skudd: ingen NaN, farten klinger av. |
 | Q2 | Ferdig | Bakgrunnsshader med lysfall fra øvre venstre, statisk korn og triangulær dithering. Myk kontaktskygge (radial tekstur, bygget én gang) under skarp skygge på mål og ball. Ballen strekkes etter fart og skvises ved sprett (R·S·R⁻¹, så lyset står stille). Snorer i to toner med lys kant. Trykkring på 180 ms og 4–5 skår per drept mål (poolet data, 32 skår). Popups stables i stedet for å overlappe. Parallaksen er bare snorer med perler. Inter-fonter i hele UI-et. Romklang på egen SFX-buss. |
 | Q3 | Ferdig | Siktebanen simulerer samme tyngdekraft og veggsprett som ballen: 8 prikker over ca. 0,4 s, fading, og den stopper ved bjelken. Flere mål per nivå (5 + n, maks 14) i 2–4 forskjøvne rader. Radene dekker 12–62 % av feltet (12–54 % med to rader), så den nedre halvdelen er i spill fra start. Poolen er økt til 20 for splittdråper. |
+
+---
+
+# v3 – Motor, fiender med vilje og premium presentasjon
+
+Tilbakemelding: for lett og for forutsigbart, med for enkle effekter. Spillet skal være
+interaktivt, utfordrende og premium, og Claude Design skulle brukes.
+
+## Design (Claude Design)
+Designlerret med tittel, spillskjerm (nivå 7), resultat og fiendeoversikt ble laget
+først: https://claude.ai/artifact/1uTucQ8W5j6Vr5SZ4Hxm3G. Typografien i designet
+(Fraunces display over Manrope) er brukt i spillet, begge under SIL OFL fra
+google/fonts, med lisensfiler i `fonts/`. Inter er fjernet.
+
+## Motor
+- **Tilstandsmaskin:** TITTEL → SPILL → MELLOMSPILL → RESULTAT (`game.gd`).
+- **Direktør (`director.gd`):** treffprosenten (EMA) og nivået gir aggresjon 0..1. Den
+  styrer reaksjonstid, cooldown, synkefart og fiendemiks. Spiller du godt, blir
+  fiendene skarpere; går det dårlig, roer de seg.
+- **Bølger:** 1–3 per nivå. Neste bølge henges inn når ≤2 mål gjenstår eller etter 22 s.
+  Ankrene legges i ledige spor, så snorene fletter seg.
+- **Liv:** 3 knuter. Når et mål når linjen, ryker en knute: bjelken gir etter og svinger,
+  resten av feltet rykkes opp som pusterom, og rister 3 px.
+- **Serie og multiplikator:** ×1–×4 (hver 3. treffende serie), og bom nullstiller.
+  Hvert 5. treff i serien gir en tredelt ball (vifte med 3 baller). Et dobbeltreff gir
+  gjennomslagsball.
+- **Snorkutt:** en ball over 1500 px/s (skalert) kapper snoren den krysser, med dobbel
+  poengsum. Det gjelder også skjoldmål og tunge mål (ikke bossen).
+
+## Fiender (hver har et varsel før den handler)
+- **Vakt (ring):** unnviker et sikte som holdes, reaksjon 0,75→0,3 s.
+- **Tungvekt:** blir rasende etter første treff (sinte bryn), stuper 60 px og synker ×1,6.
+- **Splitter:** deler seg i to dykkere.
+- **Pendel:** pumper sin egen svingning og er aldri stille.
+- **Dykker:** skjelver og myser 0,45 s, så stuper den 50 px.
+- **Vokter (ny):** et metallskjold dreier mot spretteren. Treff forfra preller av (klang),
+  så du må bruke veggen eller kappe snoren.
+- **Spinneren (boss, hvert 5. nivå):** 8 liv, to skjold i bane med en glipe mellom,
+  slipper dykkere, stuper av og til og blir rasende ved 4 liv.
+
+## Presentasjon
+- Tittel: S-P-E-N-N henger i snorer med Verlet-fjær og kan skytes på. Første skudd
+  starter spillet, og snorene ryker én etter én.
+- Nivåkort med Fraunces og undertekst. Boss-nivå har eget kort og lyd.
+- Sakte film og kamerapuls på siste treff i et nivå og når bossen dør. Hit-stop og sakte
+  film deler én tidsstyring.
+- Blink ved treff (matt, lysere), sinte bryn, skjelving som varsel og helsepunkter på
+  bossen.
+- Resultatskjerm: poengsum, NY REKORD, nivå, treffprosent, beste serie, snorkutt,
+  SPILL IGJEN i gull og MENY.
+- Nye lyder: klang, sus, kutt, brudd, boss og serie. Lyd av/på lagres.
+
+## Status v3
+
+| Del | Status | Merknad |
+|---|---|---|
+| Design | Ferdig | 4 tavler på lerretet |
+| Motor | Ferdig | Headless: 0,28 ms/frame simulering, 0 nye noder under spill |
+| Fiender | Ferdig | 7 typer inkludert boss, alle med varsel |
+| Presentasjon | Ferdig | Tittel, kort, resultat, tidsstyring, kamera |
+
+**Avvik:** rekorden er flyttet fra toppfeltet til tittel, pause og resultat. Til høyre i
+toppfeltet står nå de tre knutene (liv), som vist i designet.

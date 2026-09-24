@@ -37,6 +37,12 @@ func _ready() -> void:
 	_streams["snap"] = _synth([[1320.0, 0.25]], 0.09, 45.0, 0.65, 0.0)
 	_streams["knock"] = _synth([[330.0, 0.5], [495.0, 0.2]], 0.1, 38.0, 0.25, -0.1)
 	_streams["twang"] = _synth([[262.0, 0.5], [524.0, 0.25], [786.0, 0.1]], 0.45, 7.0, 0.0, -0.02)
+	_streams["clank"] = _synth([[1210.0, 0.35], [1873.0, 0.25], [2632.0, 0.15], [3120.0, 0.08]], 0.22, 22.0, 0.2, 0.0)
+	_streams["whoosh"] = _synth([[140.0, 0.2]], 0.3, 7.0, 0.9, -0.5)
+	_streams["cut"] = _synth([[1568.0, 0.3], [784.0, 0.35], [392.0, 0.2]], 0.3, 14.0, 0.35, -0.25)
+	_streams["breach"] = _synth([[62.0, 0.8], [124.0, 0.3], [93.0, 0.25]], 0.7, 5.5, 0.4, -0.3)
+	_streams["boss"] = _synth([[98.0, 0.5], [147.0, 0.35], [185.0, 0.2]], 1.2, 2.4, 0.08, 0.0)
+	_streams["streak"] = _synth([[659.0, 0.35], [988.0, 0.25], [1318.0, 0.1]], 0.35, 9.0, 0.0, 0.0)
 	_streams["tick"] = _synth([[880.0, 0.4]], 0.04, 60.0, 0.0, 0.0)
 	_streams["reload"] = _synth([[440.0, 0.25]], 0.05, 50.0, 0.05, 0.1)
 	_streams["clear"] = _synth([[523.0, 0.4], [784.0, 0.35], [1046.0, 0.12]], 0.7, 4.5, 0.0, 0.0)
@@ -44,7 +50,7 @@ func _ready() -> void:
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
-	if not _streams.has(name):
+	if not _streams.has(name) or not Loc.sound_on:
 		return
 	var p := _players[_next]
 	_next = (_next + 1) % POOL

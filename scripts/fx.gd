@@ -28,6 +28,9 @@ var _shake_t := 0.0
 var _shake_amp := 0.0
 var _hitstop_live := false
 var _drawn_last := false
+var _slow_scale := 1.0
+var _slow_left := 0.0
+var _punch := 0.0
 var _rings: Array[Dictionary] = []
 var _next_ring := 0
 var _shards: Array[Dictionary] = []
@@ -167,10 +170,36 @@ func hitstop() -> void:
 	if _hitstop_live or get_tree().paused:
 		return
 	_hitstop_live = true
-	Engine.time_scale = 0.02
+	_apply_time()
 	await get_tree().create_timer(HITSTOP, true, false, true).timeout
-	Engine.time_scale = 1.0
 	_hitstop_live = false
+	_apply_time()
+
+
+## Slow motion for `real_dur` seconds of real time (last kill, boss, loss).
+func slowmo(scale: float, real_dur: float) -> void:
+	_slow_scale = scale
+	_slow_left = real_dur
+	_apply_time()
+
+
+## Brief zoom toward the centre of the field (camera punch).
+func punch(amount: float) -> void:
+	_punch = maxf(_punch, amount)
+
+
+func reset_time() -> void:
+	_slow_left = 0.0
+	_slow_scale = 1.0
+	_hitstop_live = false
+	_punch = 0.0
+	Engine.time_scale = 1.0
+
+
+func _apply_time() -> void:
+	if get_tree().paused:
+		return
+	Engine.time_scale = 0.02 if _hitstop_live else (_slow_scale if _slow_left > 0.0 else 1.0)
 
 
 func clear() -> void:
@@ -183,21 +212,33 @@ func clear() -> void:
 	for s in _sparks:
 		s.emitting = false
 	_shake_t = 0.0
+	_punch = 0.0
 	if shake_target:
 		shake_target.position = Vector2.ZERO
+		shake_target.scale = Vector2.ONE
 
 
 func _process(delta: float) -> void:
-	# Real time, so hit-stop freezes the game but not the settle of effects.
-	var rd := delta / maxf(Engine.time_scale, 0.001) if _hitstop_live else delta
-	if _shake_t > 0.0 and shake_target:
+	# Real time, so hit-stop and slow motion freeze the game, not the camera.
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	if _slow_left > 0.0:
+		_slow_left -= rd
+		if _slow_left <= 0.0:
+			_apply_time()
+	var off := Vector2.ZERO
+	if _shake_t > 0.0:
 		_shake_t -= rd
 		var k := maxf(_shake_t, 0.0) / SHAKE_TIME
 		var a := _shake_amp * k * k
-		shake_target.position = Vector2(_rng.randf_range(-a, a), _rng.randf_range(-a, a)).round()
+		off = Vector2(_rng.randf_range(-a, a), _rng.randf_range(-a, a)).round()
 		if _shake_t <= 0.0:
-			shake_target.position = Vector2.ZERO
 			_shake_amp = 0.0
+	_punch = maxf(0.0, _punch - rd * 0.12)
+	if shake_target and l:
+		var sc := 1.0 + _punch
+		var c := Vector2(l.center_x, l.rail_y + l.play_h * 0.5)
+		shake_target.scale = Vector2(sc, sc)
+		shake_target.position = c * (1.0 - sc) + off
 	var any := false
 	for r in _rings:
 		if r.t >= 0.0:

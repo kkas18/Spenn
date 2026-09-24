@@ -5,7 +5,7 @@ extends Node2D
 ## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
-enum Kind { RING, HEAVY, SPLIT, ROD, DROP }
+enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS }
 enum Phase { OFF, HANGING, FALLING }
 
 const N := 10                  # rope points
@@ -13,16 +13,18 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0}
-const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1}
-const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0}
+const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8}
+const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40}
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
-const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6}
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5}
+const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
+const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
 const ANG_K := 55.0            # angular spring back to the string angle (1/s²)
 const ANG_C := 2.6             # angular damping (1/s)
-const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7}
+const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45}
 
 var kind: Kind = Kind.RING
 var phase: Phase = Phase.OFF
@@ -46,6 +48,25 @@ var ang_off := 0.0             # body angle relative to the string (rad)
 var ang_vel := 0.0
 var wind := 0.0                # horizontal breeze acceleration (px/s²)
 var startle_t := 0.0           # wide eye + flinch after a near miss
+
+# Brain: every behaviour is telegraphed before it acts, so it can be read.
+var aggression := 0.0          # 0..1 from the director
+var aimed := false             # the player's aim line is on this target
+var dodge_dir := 0.0           # side to dodge toward (set by the game)
+var threat := Vector2.ZERO     # where the shots come from (shield faces it)
+var enraged := false
+var tele_t := 0.0              # telegraph (tremble + squint) before a lunge
+var shield_ang := PI * 0.5     # world angle of the Vokter plate
+var orbit := 0.0               # Spinneren plate orbit
+var wants_minion := false      # Spinneren asks the game for a Dykker
+var flash_t := 0.0
+var _aim_t := 0.0
+var _dodge_cd := 0.0
+var _brain_t := 3.0
+var _minion_t := 4.0
+var _lunge_left := 0.0
+var _speed_bonus := 1.0
+var _cut := false
 var look_at := Vector2.ZERO    # world point the pupil follows
 var has_look := false
 var squint := false            # nearest target while the player aims
@@ -85,6 +106,20 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	ang_vel = 0.0
 	startle_t = 0.0
 	_pluck_cd = 0.0
+	aimed = false
+	enraged = false
+	tele_t = 0.0
+	flash_t = 0.0
+	wants_minion = false
+	orbit = randf() * TAU
+	shield_ang = PI * 0.5
+	_aim_t = 0.0
+	_dodge_cd = 1.0
+	_brain_t = randf_range(2.5, 5.0)
+	_minion_t = 4.0
+	_lunge_left = 0.0
+	_speed_bonus = 1.0
+	_cut = false
 	danger = 0.0
 	rope_alpha = 1.0
 	squash_t = 1.0
@@ -105,6 +140,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 		_prev[i] = _pts[i]
 	phase = Phase.HANGING
 	visible = true
+	if k == Kind.ROD:
+		vel.x = 70.0 if randf() < 0.5 else -70.0
 
 
 func is_hittable() -> bool:
@@ -142,6 +179,42 @@ func bottom_y() -> float:
 	return pos.y + radius
 
 
+func was_cut() -> bool:
+	return _cut
+
+
+## True when a contact from direction `n` (centre → ball) lands on armour.
+func blocks(n: Vector2) -> bool:
+	match kind:
+		Kind.SHIELD:
+			return absf(angle_difference(n.angle(), shield_ang)) < SHIELD_HALF
+		Kind.BOSS:
+			for k in 2:
+				if absf(angle_difference(n.angle(), orbit + PI * k)) < BOSS_ARC_HALF:
+					return true
+	return false
+
+
+## Distance test against the string (not the hook end, not the knot at the
+## body), so a fast ball can cut it.
+func rope_hit(p: Vector2, r: float) -> bool:
+	if not _attached:
+		return false
+	for i in range(1, N - 2):
+		if Geometry2D.get_closest_point_to_segment(p, _pts[i], _pts[i + 1]).distance_to(p) < r + 1.5:
+			return true
+	return false
+
+
+## The string is severed: the body falls whatever its armour or health.
+func cut() -> void:
+	_cut = true
+	hp = 0
+	_closed_t = 1.2
+	flash_t = 0.07
+	_snap(Vector2(0, 60))
+
+
 ## Returns true if the target died from this hit. `at` is the contact point:
 ## off-centre contacts add torque, so the body wobbles about its string.
 func hit(impulse: Vector2, at: Vector2) -> bool:
@@ -151,9 +224,19 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 	ang_vel += clampf(arm.cross(impulse) / (radius * radius * m) * 0.9, -14.0, 14.0)
 	squash_t = 0.0
 	squash_dir = impulse.normalized() if impulse.length() > 0.01 else Vector2.UP
-	_closed_t = 1.2
+	_closed_t = 1.2 if kind != Kind.BOSS else 0.35
+	flash_t = 0.07
 	hp -= 1
 	if hp > 0:
+		if kind == Kind.HEAVY and not enraged:
+			# Bulwark rage: throws itself down and sinks faster from now on.
+			enraged = true
+			_lunge_left += 60.0
+			_speed_bonus = 1.6
+			Sfx.play("whoosh", 0.8, -6.0)
+		elif kind == Kind.BOSS and hp == 4:
+			enraged = true
+			_speed_bonus = 1.4
 		return false
 	_snap(impulse)
 	return true
@@ -197,6 +280,7 @@ func startle(from: Vector2) -> void:
 func step(dt: float, descent: float, danger_y: float, danger_band: float, screen_h: float) -> void:
 	_screen_h = screen_h
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
+	flash_t = maxf(0.0, flash_t - dt)
 	match phase:
 		Phase.HANGING:
 			if delay > 0.0:
@@ -206,8 +290,14 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			if length < goal_length:
 				length = minf(goal_length, length + 900.0 * dt)
 			else:
-				length += descent * SPEED_MUL[kind] * dt
+				length += descent * SPEED_MUL[kind] * _speed_bonus * dt
 				goal_length = length
+			_brain(dt)
+			if _lunge_left > 0.0:
+				var step_len := minf(_lunge_left, 340.0 * dt)
+				length += step_len
+				goal_length = length
+				_lunge_left -= step_len
 			_body_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
 			_rope_step(dt)
@@ -222,6 +312,58 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0) and rope_alpha <= 0.0:
 				phase = Phase.OFF
 				visible = false
+
+
+## Per-type behaviour. Aggression (0..1) shortens reactions and cooldowns.
+func _brain(dt: float) -> void:
+	var a := aggression
+	_dodge_cd = maxf(0.0, _dodge_cd - dt)
+	match kind:
+		Kind.RING:
+			# Vakt: sidesteps a held aim after a readable reaction time.
+			if aimed and a > 0.12 and _dodge_cd <= 0.0:
+				_aim_t += dt
+				if _aim_t > lerpf(0.75, 0.3, a):
+					vel.x += dodge_dir * lerpf(150.0, 300.0, a) / MASS[kind]
+					ang_vel += dodge_dir * 3.0
+					_dodge_cd = lerpf(2.6, 1.2, a)
+					_aim_t = 0.0
+					startle_t = 0.35
+			elif not aimed:
+				_aim_t = maxf(0.0, _aim_t - dt * 2.0)
+		Kind.ROD:
+			# Pendel: pumps its own swing up to a cap, so it is never still.
+			var swing := atan2(pos.x - anchor.x, pos.y - anchor.y)
+			if absf(swing) < lerpf(0.28, 0.5, a):
+				var dir := signf(vel.x) if absf(vel.x) > 4.0 else (1.0 if randf() < 0.5 else -1.0)
+				vel.x += dir * lerpf(40.0, 95.0, a) * dt
+		Kind.DROP:
+			_lunge_brain(dt, lerpf(4.5, 2.2, a), 50.0)
+		Kind.SHIELD:
+			# Vokter: the plate turns toward the slingshot with some lag.
+			var want := (threat - pos).angle()
+			shield_ang = rotate_toward(shield_ang, want, lerpf(1.6, 3.6, a) * dt)
+		Kind.BOSS:
+			orbit += lerpf(1.0, 1.7, a) * (1.35 if enraged else 1.0) * dt
+			_minion_t -= dt
+			if _minion_t <= 0.0:
+				_minion_t = lerpf(6.0, 3.5, a)
+				wants_minion = true
+			_lunge_brain(dt, lerpf(10.0, 6.0, a), 40.0)
+
+
+## Tremble and squint for 0.45 s, then drop by `drop` px (scaled).
+func _lunge_brain(dt: float, every: float, drop: float) -> void:
+	if tele_t > 0.0:
+		tele_t -= dt
+		if tele_t <= 0.0:
+			_lunge_left += drop * (_screen_h / 1280.0)
+			Sfx.play("whoosh", randf_range(0.95, 1.15), -8.0)
+		return
+	_brain_t -= dt
+	if _brain_t <= 0.0:
+		_brain_t = every * randf_range(0.8, 1.25)
+		tele_t = 0.45
 
 
 func _body_step(dt: float) -> void:
@@ -313,7 +455,10 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
 	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
 	var body := Transform2D(body_rot, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
-	return Transform2D(0.0, pos + offset) * squash * body
+	var jitter := Vector2.ZERO
+	if tele_t > 0.0:
+		jitter = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
+	return Transform2D(0.0, pos + offset + jitter) * squash * body
 
 ## Hook tilt, following the top rope segment's angle from vertical.
 func hook_angle() -> float:
@@ -345,7 +490,7 @@ func _update_eye(delta: float) -> void:
 		_blink_in = randf_range(3.0, 7.0)
 	_blink_t = maxf(0.0, _blink_t - delta)
 	startle_t = maxf(0.0, startle_t - delta)
-	var goal_open := 0.42 if squint else 1.0
+	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
 	if startle_t > 0.0:
 		goal_open = 1.3
 	elif _blink_t > 0.0:
@@ -366,9 +511,14 @@ func color() -> Color:
 		Kind.SPLIT: base = Pal.TEAL
 		Kind.ROD: base = Pal.PURPLE
 		Kind.DROP: base = Pal.DROP
+		Kind.SHIELD: base = Pal.ARMOR
+		Kind.BOSS: base = Pal.BOSS
 	if danger > 0.0 and phase == Phase.HANGING:
 		var pulse := 0.8 + 0.2 * sin(_clock * TAU * 0.8)
 		base = base.lerp(Pal.CORAL, danger * pulse)
+	if flash_t > 0.0:
+		# One-frame-ish matte flash on impact (lighter, never glowing).
+		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
 	return base
 
 
@@ -399,9 +549,38 @@ func _draw() -> void:
 	_shape(Vector2(1.2, 1.2), dark, 0.0)
 	_shape(Vector2(-1.0, -1.0), light, 0.0)
 	_shape(Vector2.ZERO, col, -2.0)
+	_armor()
 	draw_set_transform_matrix(body_xform())
 	_eye()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Plates that do not turn with the body: the Vokter's front plate and the
+## Spinneren's two orbiting plates, plus the boss's remaining-health pips.
+func _armor() -> void:
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+	var alpha := modulate.a
+	match kind:
+		Kind.SHIELD:
+			_plate(radius + 5.0, shield_ang, SHIELD_HALF, 8.0)
+		Kind.BOSS:
+			for k in 2:
+				_plate(radius + 11.0, orbit + PI * k, BOSS_ARC_HALF, 7.0)
+			if phase == Phase.HANGING:
+				var hp_max: int = HP[kind]
+				for i in hp_max:
+					var x := (i - (hp_max - 1) * 0.5) * 10.0
+					var c := Color(Pal.INK, 0.85 * alpha) if i < hp else Color(Pal.INK_FAINT, 0.6 * alpha)
+					draw_circle(pos + Vector2(x, radius + 26.0), 2.6, c, true, -1.0, true)
+
+
+func _plate(r: float, center: float, half: float, w: float) -> void:
+	var a0 := center - half
+	var a1 := center + half
+	draw_arc(pos + Pal.SHADOW_OFFSET, r, a0, a1, 20, Pal.SHADOW, w, true)
+	draw_arc(pos + Vector2(1.2, 1.2), r, a0, a1, 20, Pal.METAL_DARK, w, true)
+	draw_arc(pos, r, a0, a1, 20, Pal.METAL_LIGHT, w - 1.5, true)
+	draw_arc(pos - Vector2(0.8, 0.8), r + w * 0.3, a0 + 0.05, a1 - 0.05, 20, Color(Pal.INK, 0.25), 1.0, true)
 
 
 ## Draws the silhouette in body space, offset in world space. `grow` thins
@@ -435,6 +614,13 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 			draw_rect(Rect2(-h, -r, h * 2.0, r * 2.0), col)
 			Pal.disc(self, Vector2(-h, 0), r, col)
 			Pal.disc(self, Vector2(h, 0), r, col)
+		Kind.SHIELD:
+			Pal.ring(self, Vector2.ZERO, radius - 5.0, col, 8.0 + grow)
+		Kind.BOSS:
+			var hexf := PackedVector2Array()
+			for i in 6:
+				hexf.append(Vector2.from_angle(i * TAU / 6.0 + PI / 6.0) * (radius + grow * 0.5))
+			draw_colored_polygon(hexf, col)
 		Kind.DROP:
 			var r := radius + grow * 0.5
 			var pts := PackedVector2Array()
@@ -449,11 +635,15 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 
 
 func _eye() -> void:
-	var er := 9.5 if kind != Kind.DROP else 7.0
+	var er := 9.5
+	if kind == Kind.DROP:
+		er = 7.0
+	elif kind == Kind.BOSS:
+		er = 15.0
 	var wide := maxf(1.0, _open)
 	var pr := er * 0.48 / wide
 	er *= lerpf(1.0, wide, 0.5)
-	if kind == Kind.ROD or kind == Kind.DROP:
+	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS:
 		# Filled bodies: a dark socket keeps the eye readable.
 		Pal.disc(self, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
 	if _closed_t > 0.0 or phase == Phase.FALLING:
@@ -469,6 +659,10 @@ func _eye() -> void:
 	Pal.disc(self, pupil, pr, Pal.PUPIL)
 	Pal.disc(self, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
 	draw_set_transform_matrix(body_xform())
+	if enraged:
+		# Brows pulled in: rage reads at a glance.
+		for sx: float in [-1.0, 1.0]:
+			draw_line(Vector2(sx * er * 1.15, -er * 1.25), Vector2(sx * er * 0.25, -er * 0.8), Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 2.2, true)
 	if open < 0.9:
 		# Lid lines make the squint read as intent, not just a squash.
 		var y := er * open

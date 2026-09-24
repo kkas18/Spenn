@@ -9,7 +9,9 @@ extends Node2D
 ## Release: damped spring (k 900, c 12) gives overshoot and 2–3 swings in
 ## ~350 ms; the ball leaves when the pouch crosses its rest point.
 
-signal launched(pos: Vector2, vel: Vector2, special: bool)
+signal launched(pos: Vector2, vel: Vector2, ammo_kind: int)
+
+enum Ammo { NORMAL, PIERCE, TRIPLE }
 
 const MIN_POWER := 0.18
 const SPRING_K := 900.0
@@ -33,7 +35,7 @@ var pouch_rot := 0.0
 var power := 0.0
 var aim_dir := Vector2.UP
 
-var _ammo: Array[bool] = []
+var _ammo: Array[int] = []
 var _reload := 0.0
 var _arc_alpha := 0.0
 var _arc_ang := PI * 0.5
@@ -41,7 +43,7 @@ var _at_max := false
 var _release_t := 0.0
 var _release_dir := Vector2.UP
 var _release_speed := 0.0
-var _release_special := false
+var _release_kind := 0
 var _ball_in_pouch := true
 var _load_anim := 1.0
 var _was_empty := false
@@ -98,7 +100,7 @@ func setup(layout: Layout) -> void:
 	_fork.queue_redraw()
 
 
-func set_ammo(queue: Array[bool], reload_frac: float) -> void:
+func set_ammo(queue: Array[int], reload_frac: float) -> void:
 	var empty := queue.is_empty()
 	if _was_empty and not empty and mode != Mode.RELEASE:
 		_load_anim = 0.0
@@ -162,7 +164,7 @@ func release() -> void:
 	_ball_in_pouch = power >= MIN_POWER and has_ball()
 	if _ball_in_pouch:
 		_release_speed = launch_speed()
-		_release_special = _ammo[0]
+		_release_kind = _ammo[0]
 		Sfx.play("release", lerpf(1.15, 0.9, power), -2.0)
 		Sfx.haptic(10, 0.25)
 
@@ -186,7 +188,7 @@ func step(dt: float) -> void:
 	var after := (pouch - rest).dot(_release_dir)
 	if _ball_in_pouch and before <= 0.0 and after > 0.0:
 		_ball_in_pouch = false
-		launched.emit(rest, _release_dir * _release_speed, _release_special)
+		launched.emit(rest, _release_dir * _release_speed, _release_kind)
 	if _release_t > 0.35 and pouch_vel.length() < 40.0 and pouch.distance_to(rest) < 1.5:
 		mode = Mode.IDLE
 		pouch = rest
@@ -425,7 +427,10 @@ func _draw_pouch() -> void:
 	_front.draw_polyline(pts, Pal.POUCH, 8.0, true)
 	if _ball_in_pouch and has_ball():
 		var s := ease(_load_anim, -2.0)
-		Ball.draw_ball(_front, pouch, Ball.RADIUS * lerpf(0.4, 1.0, s), _ammo[0], 0.0, Vector2.UP)
+		Ball.draw_ball(_front, pouch, Ball.RADIUS * lerpf(0.4, 1.0, s), _ammo[0] == Ammo.PIERCE, 0.0, Vector2.UP)
+		if _ammo[0] == Ammo.TRIPLE:
+			for k in 3:
+				_front.draw_circle(pouch + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 5.0, 2.2, Pal.GOLD_DARK, true, -1.0, true)
 
 
 func _draw_ammo() -> void:
@@ -439,9 +444,9 @@ func _draw_ammo() -> void:
 			_front.draw_arc(p, 7.0, 0.0, TAU, 24, Color(Pal.INK_FAINT, 0.35), 1.0, true)
 
 
-func _draw_ammo_icon(p: Vector2, special: bool, current: bool) -> void:
+func _draw_ammo_icon(p: Vector2, kind: int, current: bool) -> void:
 	var col := Pal.GOLD if current else Pal.GOLD_DARK
-	if special:
+	if kind == Ammo.PIERCE:
 		var r := 9.0
 		var diamond := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
 		if current:
@@ -459,3 +464,8 @@ func _draw_ammo_icon(p: Vector2, special: bool, current: bool) -> void:
 		_front.draw_circle(p, 8.0, col, true, -1.0, true)
 	else:
 		_front.draw_arc(p, 7.0, 0.0, TAU, 24, col, 2.0, true)
+	if kind == Ammo.TRIPLE:
+		# Three seeds: this ball splits into a fan of three.
+		var seed_col := Pal.GOLD_DARK if current else Pal.GOLD
+		for k in 3:
+			_front.draw_circle(p + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 3.6, 1.7, seed_col, true, -1.0, true)
