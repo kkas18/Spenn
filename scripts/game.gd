@@ -35,6 +35,8 @@ var _clear_t := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
 var _first_shot := true
+var _time := 0.0
+var _knock_sfx_cd := 0.0
 
 
 func _ready() -> void:
@@ -229,13 +231,17 @@ func _step(dt: float) -> void:
 	var descent := _descent() if state == State.PLAY else 0.0
 	var band := layout.play_h * 0.15
 	var worst := 0.0
+	_time += dt
+	_knock_sfx_cd = maxf(0.0, _knock_sfx_cd - dt)
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
+			t.wind = _breeze(t.pos.x)
 			t.step(dt, descent, layout.danger_y, band, layout.size.y)
 			if t.phase == Target.Phase.HANGING:
 				worst = maxf(worst, t.danger)
 	backdrop.danger = worst
 	backdrop.descent = descent
+	_target_contacts()
 	slingshot.step(dt)
 	for b in balls:
 		if not b.active:
@@ -251,10 +257,55 @@ func _step(dt: float) -> void:
 				break
 
 
+## Slow layered breeze: a few px/s² of sideways push that drifts across
+## the field, enough for hanging targets to sway at rest.
+func _breeze(x: float) -> float:
+	return (sin(_time * 0.37 + x * 0.004) * 0.65 + sin(_time * 0.91 + x * 0.013 + 1.7) * 0.35) * 9.0 * layout.scale
+
+
+## Soft contacts between hanging targets: overlap is pushed apart by
+## inverse mass and the closing speed is exchanged with low restitution,
+## so a struck target can nudge its neighbours.
+func _target_contacts() -> void:
+	var n := targets.size()
+	for i in n:
+		var a := targets[i]
+		if not a.is_hittable():
+			continue
+		for j in range(i + 1, n):
+			var c := targets[j]
+			if not c.is_hittable():
+				continue
+			var d := c.pos - a.pos
+			var rr := a.contact_radius() + c.contact_radius()
+			var dist := d.length()
+			if dist >= rr or dist < 0.001:
+				continue
+			var nrm := d / dist
+			var ia := 1.0 / a.mass()
+			var ic := 1.0 / c.mass()
+			var corr := nrm * (rr - dist) / (ia + ic)
+			a.pos -= corr * ia
+			c.pos += corr * ic
+			var closing := (a.vel - c.vel).dot(nrm)
+			if closing <= 0.0:
+				continue
+			var j_imp := minf(closing * 1.35 / (ia + ic), 420.0)
+			var contact := a.pos + nrm * a.contact_radius()
+			a.push(-nrm * j_imp, contact)
+			c.push(nrm * j_imp, contact)
+			if closing > 140.0 and _knock_sfx_cd <= 0.0:
+				_knock_sfx_cd = 0.08
+				Sfx.play("knock", randf_range(0.9, 1.1), linear_to_db(clampf(closing / 600.0, 0.15, 0.7)))
+				Sfx.haptic(6, 0.2)
+
+
 func _collide(b: Ball) -> void:
 	for t in targets:
 		if not t.is_hittable():
 			continue
+		if t.pluck(b.pos, b.vel, Ball.RADIUS):
+			Sfx.play("twang", randf_range(0.85, 1.25), -14.0)
 		if not b.can_touch(t.get_instance_id()):
 			continue
 		var cp := t.closest_point(b.pos)
@@ -262,6 +313,9 @@ func _collide(b: Ball) -> void:
 		var rr := Ball.RADIUS + t.radius
 		var dist := d.length()
 		if dist >= rr:
+			# Near miss: the target flinches and its eye pops wide.
+			if dist < rr + 34.0 and b.vel.length() > 500.0:
+				t.startle(b.pos)
 			continue
 		var n := d / dist if dist > 0.001 else -b.vel.normalized()
 		_on_hit(b, t, n, cp, rr)
@@ -273,17 +327,22 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	b.touch(t.get_instance_id())
 	b.hits += 1
 	var impulse: Vector2
+	var contact := b.pos - n * Ball.RADIUS
+	# Friction: the ball's sliding speed along the surface spins the target.
+	var slide := b.vel - n * b.vel.dot(n)
 	if b.special:
-		impulse = b.vel.normalized() * 200.0
+		impulse = b.vel.normalized() * 200.0 + slide * 0.05
 	else:
 		var vn := b.vel.dot(n)
 		if vn < 0.0:
 			b.vel -= (1.0 + BALL_BOUNCE) * vn * n
+			b.vel -= slide * 0.12
+			b.impact(n)
 		b.pos = cp + n * (rr + 0.5)
-		impulse = -n * 260.0
+		impulse = -n * 260.0 + slide * 0.14
 	var kind := t.kind
 	var col := t.color()
-	var killed := t.hit(impulse)
+	var killed := t.hit(impulse, contact)
 	var gained := t.points() * b.hits
 	score += gained
 	hud.bar.score = score

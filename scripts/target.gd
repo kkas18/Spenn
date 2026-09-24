@@ -1,7 +1,8 @@
 class_name Target
 extends Node2D
 ## A target hanging from the rail on an elastic string (pooled).
-## Body: point mass on a one-sided spring. String: Verlet rope for visuals.
+## Body: rigid disc on a one-sided spring with its own angular inertia, so
+## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
 enum Kind { RING, HEAVY, SPLIT, ROD, DROP }
@@ -18,6 +19,9 @@ const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Ki
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6}
+const ANG_K := 55.0            # angular spring back to the string angle (1/s²)
+const ANG_C := 2.6             # angular damping (1/s)
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7}
 
 var kind: Kind = Kind.RING
@@ -38,6 +42,10 @@ var squash_dir := Vector2.UP
 var spin := 0.0                # rad/s while falling
 var tilt := 0.0                # perspective tilt phase while falling
 var fall_t := 0.0
+var ang_off := 0.0             # body angle relative to the string (rad)
+var ang_vel := 0.0
+var wind := 0.0                # horizontal breeze acceleration (px/s²)
+var startle_t := 0.0           # wide eye + flinch after a near miss
 var look_at := Vector2.ZERO    # world point the pupil follows
 var has_look := false
 var squint := false            # nearest target while the player aims
@@ -53,6 +61,7 @@ var _prev := PackedVector2Array()
 var _rope_len := 0.0
 var _attached := true
 var _screen_h := 1280.0
+var _pluck_cd := 0.0
 
 
 func _ready() -> void:
@@ -72,6 +81,10 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	pos = anchor + Vector2(0, start_len)
 	vel = Vector2.ZERO
 	body_rot = 0.0
+	ang_off = 0.0
+	ang_vel = 0.0
+	startle_t = 0.0
+	_pluck_cd = 0.0
 	danger = 0.0
 	rope_alpha = 1.0
 	squash_t = 1.0
@@ -106,6 +119,15 @@ func speed_mul() -> float:
 	return SPEED_MUL[kind]
 
 
+func mass() -> float:
+	return MASS[kind]
+
+
+## Circle used for target-to-target contact (the rod uses its half span).
+func contact_radius() -> float:
+	return ROD_HALF + radius * 0.4 if kind == Kind.ROD else radius
+
+
 ## Closest point of the body's collision shape to `p`.
 func closest_point(p: Vector2) -> Vector2:
 	if kind != Kind.ROD:
@@ -120,9 +142,13 @@ func bottom_y() -> float:
 	return pos.y + radius
 
 
-## Returns true if the target died from this hit.
-func hit(impulse: Vector2) -> bool:
-	vel += impulse
+## Returns true if the target died from this hit. `at` is the contact point:
+## off-centre contacts add torque, so the body wobbles about its string.
+func hit(impulse: Vector2, at: Vector2) -> bool:
+	var m: float = MASS[kind]
+	vel += impulse / m
+	var arm := at - pos
+	ang_vel += clampf(arm.cross(impulse) / (radius * radius * m) * 0.9, -14.0, 14.0)
 	squash_t = 0.0
 	squash_dir = impulse.normalized() if impulse.length() > 0.01 else Vector2.UP
 	_closed_t = 1.2
@@ -133,8 +159,44 @@ func hit(impulse: Vector2) -> bool:
 	return true
 
 
+## Knock from a neighbour or a near miss: no damage, only motion.
+func push(impulse: Vector2, at: Vector2) -> void:
+	var m: float = MASS[kind]
+	vel += impulse / m
+	ang_vel += clampf((at - pos).cross(impulse) / (radius * radius * m) * 0.6, -6.0, 6.0)
+
+
+## A ball crossing the string plucks it. Returns true when it did.
+func pluck(p: Vector2, v: Vector2, r: float) -> bool:
+	if not _attached or _pluck_cd > 0.0:
+		return false
+	var hit_any := false
+	for i in range(2, N - 2):
+		if _pts[i].distance_to(p) < r + 5.0:
+			hit_any = true
+			break
+	if not hit_any:
+		return false
+	_pluck_cd = 0.25
+	var kick := Vector2(v.x, v.y * 0.3).limit_length(900.0) * (1.0 / 120.0) * 0.45
+	for i in range(1, N - 1):
+		var fall := exp(-pow(_pts[i].distance_to(p) / 60.0, 2.0))
+		_prev[i] = _pts[i] - kick * fall
+	vel += Vector2(v.x, 0).limit_length(600.0) * 0.04 / MASS[kind]
+	return true
+
+
+func startle(from: Vector2) -> void:
+	if startle_t > 0.0 or _closed_t > 0.0:
+		return
+	startle_t = 0.45
+	var away := (pos - from).normalized()
+	push(away * 45.0, pos - away * radius * 0.5 + Vector2(0, -radius * 0.3))
+
+
 func step(dt: float, descent: float, danger_y: float, danger_band: float, screen_h: float) -> void:
 	_screen_h = screen_h
+	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	match phase:
 		Phase.HANGING:
 			if delay > 0.0:
@@ -164,20 +226,27 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 
 func _body_step(dt: float) -> void:
 	vel.y += GRAVITY * dt
+	vel.x += wind * dt / MASS[kind]
 	var d := pos - anchor
 	var dist := d.length()
 	if dist > length and dist > 0.001:
 		var dir := d / dist
-		vel -= dir * STRING_K * (dist - length) * dt
+		# Near the danger line the string pulls tighter (stiffer, less bounce).
+		var k := STRING_K * (1.0 + danger * 0.9)
+		vel -= dir * k * (dist - length) * dt
 		# Extra damping along the string keeps the bounce elastic but calm.
-		vel -= dir * vel.dot(dir) * 2.2 * dt
+		vel -= dir * vel.dot(dir) * (2.2 + danger * 2.0) * dt
 	vel *= exp(-DAMPING * dt)
 	pos += vel * dt
-	body_rot = atan2(-(pos.x - anchor.x), pos.y - anchor.y)
+	# Swinging drives the wobble a little (the string pulls the top first).
+	var swing := atan2(-(pos.x - anchor.x), pos.y - anchor.y)
+	ang_vel += (-ANG_K * ang_off - ANG_C * ang_vel) * dt
+	ang_off = clampf(ang_off + ang_vel * dt, -1.1, 1.1)
+	body_rot = swing + ang_off
 
 
 func _rope_step(dt: float) -> void:
-	var g := Vector2(0, GRAVITY) * dt * dt
+	var g := Vector2(wind * 0.6, GRAVITY) * dt * dt
 	var last := N - 1
 	for i in range(1, N):
 		if i == last and _attached:
@@ -217,8 +286,9 @@ func _rope_step(dt: float) -> void:
 func _snap(impulse: Vector2) -> void:
 	phase = Phase.FALLING
 	_attached = false
-	vel = impulse * 0.5 + Vector2(0, -120)
-	spin = randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0)
+	vel = impulse * 0.5 / MASS[kind] + Vector2(0, -120)
+	# Keep the wobble it already had; heavier bodies tumble slower.
+	spin = ang_vel * 0.5 + randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0) / MASS[kind]
 	# Whip recoil: the freed rope springs upward for a few frames.
 	for i in range(1, N):
 		var k := float(i) / (N - 1)
@@ -274,8 +344,11 @@ func _update_eye(delta: float) -> void:
 		_blink_t = 0.13
 		_blink_in = randf_range(3.0, 7.0)
 	_blink_t = maxf(0.0, _blink_t - delta)
+	startle_t = maxf(0.0, startle_t - delta)
 	var goal_open := 0.42 if squint else 1.0
-	if _blink_t > 0.0:
+	if startle_t > 0.0:
+		goal_open = 1.3
+	elif _blink_t > 0.0:
 		goal_open = 0.0
 	_open = lerpf(_open, goal_open, Pal.damp(0.35, delta))
 	# Pupil follows the ball: 0.15 per frame, clamped inside the eye ring.
@@ -365,7 +438,9 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 
 func _eye() -> void:
 	var er := 9.5 if kind != Kind.DROP else 7.0
-	var pr := er * 0.48
+	var wide := maxf(1.0, _open)
+	var pr := er * 0.48 / wide
+	er *= lerpf(1.0, wide, 0.5)
 	if kind == Kind.ROD or kind == Kind.DROP:
 		# Filled bodies: a dark socket keeps the eye readable.
 		Pal.disc(self, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))

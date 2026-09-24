@@ -127,3 +127,78 @@ lages per frame. Mål, baller, partikler, popups og lydspillere ligger i pooler.
 | P3 | Ferdig, med avvik | Silhuetter: ring, dobbel ring (ytre ring sprekker etter første treff), sekskant med splittsøm, avrundet stav og dråpe. Alle har tofarget kant og skygge fra samme lyskilde. Ett øye per mål: pupillen følger nærmeste ball (lerp 0,15/frame, begrenset til øyeringen), målet nærmest siktelinjen myser, øyet lukkes til «–» i 1,2 s etter treff, og målene blunker tilfeldig hvert 3.–7. sekund. Innenfor 15 % av faresonen glir fargen mot korall med puls på 0,8 Hz, og snoren blir lysere og tykkere. **Avvik:** spesifikasjonens egne toner bryter kravet om 40° (blå 210 / teal 180 / grønn 150 ligger bare 30° fra hverandre). Tonene er derfor flyttet ≤15°: grønn 145, teal 185, blå 225, lilla 265, korall 15. Lysheten er trappet 0,36 / 0,47 / 0,58 / 0,71 / 0,85 for gråtoner (verifisert med gråtone-skjermbilde). |
 | P5 | Ferdig | Bjelke på 6 px i to toner med skygge (4,4) og en krok per oppheng. Kroken vipper med snorens vinkel, og snoren går ut fra krokens øye. Parallakselag med 9 fjerne snorer/mål i 40 % skala og 8 % opasitet, som svaier og synker med 40 % av forgrunnens fart. Faresonen er en nesten usynlig stiplet linje som går mot korall med tettere stipling og puls på 0,8 Hz når et mål nærmer seg. Vignett-shader med triangulær IGN-dithering, ingen banding. 10 støvpartikler med 3 % opasitet driver oppover. |
 | P6 | Ferdig | Nivåetiketten er «NIVÅ n» / «LEVEL n» (ingen «STRIKK» finnes). Alle strenger på begge språk er gjennomgått, og ubrukte nøkler er fjernet. Skygger går ned/høyre over alt (mål, gaffel, ball, bjelke, kroker, ammo, pauseikon, popups, knapper). Pauseflate og menyknapper er minst 48 dp, og popups og gnister klemmes eller rettes innover fra kantene. Tilbake-knappen pauser, og avslutter appen på game over-skjermen. Spillet pauses når appen mister fokus. Ytelse: gaffelen tegnes bare ved layoutendring, og faresonen er ett `draw_multiline`-kall. Målt headless: simulering 0,3 ms/frame med 12 mål, og nodeantallet er uendret under spill (0 nye noder). **Test på telefon:** trykk tre ganger på rekorden for FPS-visning. |
+
+---
+
+# v2.1 – Fysikk, grafikk og spillbarhet
+
+Tilbakemelding etter test på telefon: spillet ser bra ut og skal løftes videre. Grafikk,
+dynamikk, fysikk og spillbarhet skal bli mer realistiske, og tredjepartsressurser skal
+brukes der det er mulig.
+
+## Funn fra skjermbildene
+- **Nedre halvdel av målfeltet står tom.** Målene henger bare i øvre ~55 %. Mellom
+  laveste mål og faresonen, og mellom faresonen og spretterten, er det store tomme
+  felt. Dette bryter akseptkriteriet om maks 25 % tom flate.
+- **Parallakselaget leses som «spøkelsesmål».** Særlig de fjerne sekskantene og ringene
+  forstyrrer.
+- **Målene er stive.** De roterer bare med snoren, reagerer ikke på hverandre og står
+  helt stille mellom treff.
+- **Bakgrunnen er flat.** Den gir ingen følelse av rom eller lys fra øvre venstre.
+- **Sikteprikkene er korte og rette.** De viser ikke tyngdekraft eller sprett mot vegg.
+
+## Tredjepart
+- **Inter** (rsms/inter v4.1, SIL OFL 1.1) er lagt i `fonts/` med lisensfil. Den gir
+  samme typografi på alle enheter og tabulære tall uten hopp i poengsummen.
+- **Godots innebygde lydeffekter:** en kort romklang på en egen SFX-buss gir de genererte
+  lydene rom uten nye filer.
+- Kenney, OpenGameArt og Freesound er blokkert av nettverket i byggmiljøet (403), så
+  lydene syntetiseres fortsatt i kode. De er forbedret med lag og romklang.
+- Ingen GDExtension-addons (for eksempel Ropesim). Native biblioteker for Android øker
+  risikoen i CI, og Verlet-tauet i GDScript koster bare ~0,3 ms.
+
+## Q1 Fysikk og dynamikk (`target.gd`, `game.gd`)
+- **Rotasjon med treghet:** treff utenfor senter gir dreiemoment, og målet slingrer
+  rundt opphenget med dempet vinkelfjær mot snorvinkelen.
+- **Mål–mål-kollisjon:** et truffet mål kan dytte naboen. Det gir myk, masseavhengig
+  impuls, men ingen skade.
+- **Ball mot snor:** ballen plukker snoren den passerer (impuls på nærmeste tau-punkter)
+  med en svak «twang».
+- **Luftdrag:** en rolig, støybasert bris gjør at målene svaier litt i hvile.
+- **Nesten-bom:** når ballen passerer nær et mål, spretter øyet opp og målet rykker til.
+
+## Q2 Grafikk og effekter (`backdrop.gd`, nye `shaders/backdrop.gdshader`, `target.gd`, `ball.gd`, `fx.gd`, `hud.gd`)
+- **Bakgrunn:** shader med mykt lysfall fra øvre venstre og fint, statisk korn med
+  dithering. Matt, uten glød.
+- **Myke skygger:** en bred, svak kontaktskygge under den skarpe skyggen. Mål og ball
+  løftes fra veggen, i samme retning (ned/høyre).
+- **Ball:** strekkes etter fart langs bevegelsen og skvises kort ved sprett.
+- **Snorer i to toner:** lys kant oppe/venstre, og en svak lysrefleks som følger strekket.
+- **Treff:** en tynn trykkring (180 ms, lokal). Drepte mål slipper 3–5 skår som faller
+  med spinn, i målets farge og fra en pool.
+- **Parallakselaget:** bare rene, korte snorer med små perler i 5 % opasitet. Ingen
+  silhuetter som kan forveksles med mål.
+- **Inter** brukes i HUD, popups og menyer.
+
+## Q3 Spillbarhet (`game.gd`, `slingshot.gd`)
+- **Siktebane:** prikkbanen viser tyngdekraft og første sprett mot vegg. Den er kort
+  (ca. 0,35 s flytid), så det fortsatt krever presisjon.
+- **Fyll feltet:** målene spres over 3–4 rader ned til ~70 % av feltet, med flere mål per
+  nivå (5 + n, maks 14). Tom flate holdes under ~25 %.
+- **Rolige mellomspill:** ny bølge henges inn med stagger mens forrige treff fortsatt
+  faller ut.
+
+## Risikoer
+- **Mål–mål-kollisjon (O(n²), n ≤ 14):** billig, men impulsene begrenses så kjeder ikke
+  eksploderer.
+- **Kornshader over hele skjermen:** én ekstra fullskjerm-pass i GL Compatibility. Den er
+  billig (ingen teksturoppslag), men må verifiseres på mellomklassetelefon.
+- **Prosjektstørrelse:** fonter gir +0,8 MB i APK-en.
+
+## Status v2.1
+
+| Fase | Status | Merknad |
+|---|---|---|
+| Q1 | Ferdig | Masse per type og vinkeltreghet med dempet fjær (k 55, c 2,6). Friksjon: sklifarten langs overflaten gir dreiemoment, så streifskudd spinner målet. Mål–mål-kontakt med invers-masse-separasjon og begrenset impuls, pluss en svak «knock»-lyd og haptikk. Ballen plukker snorer (Gauss-fordelt kick på tau-punktene) med «twang». Lagdelt bris på noen px/s². Nesten-bom (< 34 px) gir vidt øye, krympet pupill og et lite rykk. Snoren blir stivere nær faresonen. Stabilitetstest på nivå 8 med 15 skudd: ingen NaN, farten klinger av. |
+| Q2 | – | |
+| Q3 | – | |

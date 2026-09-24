@@ -17,6 +17,8 @@ var spin := 0.0                # visual rotation (rad)
 var _touched := {}             # target instance id -> cooldown (s)
 var _trail := PackedVector2Array()
 var _trail_t := 0.0
+var _impact_t := 1.0
+var _impact_n := Vector2.UP
 
 const TRAIL := 6
 
@@ -43,6 +45,12 @@ func fire(p: Vector2, v: Vector2, is_special: bool) -> void:
 func stop() -> void:
 	active = false
 	visible = false
+
+
+## Brief squash against the contact normal (visual only).
+func impact(n: Vector2) -> void:
+	_impact_t = 0.0
+	_impact_n = n
 
 
 func can_touch(id: int) -> bool:
