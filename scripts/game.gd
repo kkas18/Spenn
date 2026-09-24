@@ -126,7 +126,7 @@ func _start_level(n: int) -> void:
 			break
 		var row := i % rows
 		var col := i / rows
-		var stagger := 0.25 if row % 2 == 1 else -0.25
+		var stagger := (row - (rows - 1) * 0.5) / rows
 		var x := 56.0 + (col + 0.5 + stagger) * col_w + _rng.randf_range(-8.0, 8.0)
 		x = clampf(x, 48.0, layout.size.x - 48.0)
 		var len := layout.play_h * (0.13 + 0.22 * row) * _rng.randf_range(0.92, 1.08)
@@ -167,10 +167,48 @@ func _process(delta: float) -> void:
 		_acc -= SUBSTEP
 		_step(SUBSTEP)
 	_update_ammo(delta)
+	_update_eyes()
 	if state == State.CLEARING:
 		_clear_t -= delta
 		if _clear_t <= 0.0:
 			_start_level(level + 1)
+
+
+## Pupils follow the nearest ball in flight (or the pouch while aiming);
+## the target nearest the aim line squints.
+func _update_eyes() -> void:
+	var aiming := slingshot.is_aiming() and slingshot.power >= Slingshot.MIN_POWER
+	var squinter: Target = null
+	if aiming:
+		var best := INF
+		var o := layout.pouch_rest()
+		for t in targets:
+			if not t.is_hittable():
+				continue
+			var rel := t.pos - o
+			var along := rel.dot(slingshot.aim_dir)
+			if along <= 0.0:
+				continue
+			var off := absf(rel.cross(slingshot.aim_dir))
+			if off < best:
+				best = off
+				squinter = t
+	for t in targets:
+		if t.phase == Target.Phase.OFF:
+			continue
+		t.squint = t == squinter
+		var nearest := INF
+		t.has_look = false
+		for b in balls:
+			if b.active:
+				var d := b.pos.distance_squared_to(t.pos)
+				if d < nearest:
+					nearest = d
+					t.look_at = b.pos
+					t.has_look = true
+		if not t.has_look:
+			t.look_at = slingshot.pouch
+			t.has_look = true
 
 
 func _step(dt: float) -> void:

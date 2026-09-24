@@ -24,14 +24,17 @@ const BAND_DARK := Color("2E333B")
 const POUCH := Color("474D57")
 const STRING := Color("59616D")
 
-# Target hues (see PLAN.md): silhouettes carry identity, hue + lightness second.
-# Lightness is spread so every type separates in greyscale.
-const BLUE := Color("5E8FC7")    # 210° ring
-const GREEN := Color("3F7A5E")   # 150° heavy (double ring)
-const TEAL := Color("7CC4C4")    # 180° splitter (hexagon)
-const PURPLE := Color("7661A6")  # 265° rod
-const DROP := Color("C3D2E2")    # 210° pale, fast drop
-const CORAL := Color("D9765A")   # 15° danger only
+# Target hues: silhouettes carry identity, hue + lightness second. Hues sit
+# ≥40° apart (spec hues nudged ≤15° so blue/teal/green clear 40°), and
+# luma steps of ~0.11 keep every type apart in greyscale.
+const GREEN := Color("3F6C52")   # 145°, luma .36 – heavy (double ring)
+const PURPLE := Color("826AA5")  # 265°, luma .47 – rod
+const BLUE := Color("7C93D6")    # 225°, luma .58 – ring
+const TEAL := Color("84C9CF")    # 185°, luma .71 – splitter (hexagon)
+const DROP := Color("D1D8F0")    # 225° pale, luma .85 – fast drop
+const CORAL := Color("E98462")   # 15° – danger only
+const EYE := Color("E4E7EC")
+const PUPIL := Color("0E1015")
 
 const SHADOW_OFFSET := Vector2(4, 4)
 const SHADOW := Color(0, 0, 0, 0.35)
