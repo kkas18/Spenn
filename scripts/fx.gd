@@ -15,6 +15,9 @@ const RING_POOL := 8
 const RING_LIFE := 0.18
 const SHARD_POOL := 32
 const SHARD_LIFE := 0.9
+const FRAG_POOL := 64
+const FRAG_LIFE := 0.75
+const RAY_LIFE := 0.26
 
 var l: Layout
 var shake_target: Node2D
@@ -29,6 +32,9 @@ var _shake_amp := 0.0
 var _hitstop_live := false
 var _drawn_last := false
 var _slow_scale := 1.0
+var _frags: Array[Dictionary] = []
+var _next_frag := 0
+var _queued: Array[Dictionary] = []   # staged bursts (boss)
 var _slow_left := 0.0
 var _punch := 0.0
 var _rings: Array[Dictionary] = []
@@ -75,6 +81,9 @@ func _ready() -> void:
 	for i in SHARD_POOL:
 		_shards.append({"t": -1.0, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0, "spin": 0.0,
 			"col": Pal.INK, "pts": PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])})
+	for i in FRAG_POOL:
+		_frags.append({"t": -1.0, "type": 0, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
+			"spin": 0.0, "a0": 0.0, "a1": 0.0, "r": 0.0, "w": 0.0, "col": Pal.INK, "life": FRAG_LIFE})
 	for i in POPUP_POOL:
 		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20})
 
@@ -140,6 +149,78 @@ func shards(at: Vector2, col: Color, count: int, base_vel: Vector2) -> void:
 		pts[1] = Vector2(size * _rng.randf_range(0.6, 1.0), -size * 0.6)
 		pts[2] = Vector2(size * _rng.randf_range(-0.2, 0.4), size * 0.8)
 		d.pts = pts
+
+
+enum Frag { ARC, SEG, DOT, RAY, CAPSULE }
+
+
+func _frag(type: int, pos: Vector2, vel: Vector2, col: Color, life := FRAG_LIFE) -> Dictionary:
+	var f := _frags[_next_frag]
+	_next_frag = (_next_frag + 1) % FRAG_POOL
+	f.t = 0.0
+	f.type = type
+	f.pos = pos
+	f.vel = vel
+	f.col = col
+	f.life = life
+	f.rot = 0.0
+	f.spin = _rng.randf_range(-6.0, 6.0)
+	return f
+
+
+## Shape-true break-up: a ring parts into arcs, a hexagon into its edges,
+## a rod into two halves, a drop into droplets; plus a quick fan of fine
+## rays. Matte, local and short; all pooled data.
+func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_vel: Vector2) -> void:
+	var inherit := base_vel * 0.35
+	match kind:
+		Target.Kind.RING, Target.Kind.HEAVY, Target.Kind.SHIELD, Target.Kind.REEL:
+			var pieces := 6 if kind != Target.Kind.HEAVY else 8
+			var rr := radius - 5.0
+			for i in pieces:
+				var mid := rot + (i + 0.5) * TAU / pieces
+				var f := _frag(Frag.ARC, at, inherit + Vector2.from_angle(mid) * _rng.randf_range(120.0, 200.0), col)
+				f.a0 = mid - TAU / pieces * 0.42
+				f.a1 = mid + TAU / pieces * 0.42
+				f.r = rr
+				f.w = 7.0 if kind != Target.Kind.HEAVY else 5.0
+				f.spin = _rng.randf_range(-3.0, 3.0)
+		Target.Kind.SPLIT, Target.Kind.BOSS:
+			var rr := radius - (4.0 if kind == Target.Kind.SPLIT else 0.0)
+			for i in 6:
+				var a := rot + i * TAU / 6.0 + PI / 6.0
+				var b := a + TAU / 6.0
+				var p0 := Vector2.from_angle(a) * rr
+				var p1 := Vector2.from_angle(b) * rr
+				var mid := (p0 + p1) * 0.5
+				var f := _frag(Frag.SEG, at + mid, inherit + mid.normalized() * _rng.randf_range(130.0, 230.0), col)
+				f.rot = (p1 - p0).angle()
+				f.r = p0.distance_to(p1) * 0.5
+				f.w = 7.0 if kind == Target.Kind.SPLIT else 10.0
+		Target.Kind.ROD:
+			for side: float in [-1.0, 1.0]:
+				var dir := Vector2.RIGHT.rotated(rot) * side
+				var f := _frag(Frag.CAPSULE, at + dir * 15.0, inherit + dir * 150.0 + Vector2(0, -60), col)
+				f.rot = rot
+				f.r = radius
+				f.w = 15.0
+		Target.Kind.DROP, Target.Kind.SHADE:
+			for i in 9:
+				var a := _rng.randf() * TAU
+				var f := _frag(Frag.DOT, at + Vector2.from_angle(a) * radius * 0.5, inherit + Vector2.from_angle(a) * _rng.randf_range(90.0, 240.0) + Vector2(0, -80), col, 0.6)
+				f.r = _rng.randf_range(2.0, 4.5)
+	# Fine rays: a quick, thin fan that reads as the burst's energy.
+	var rays := 12 if kind != Target.Kind.BOSS else 20
+	for i in rays:
+		var a := rot + i * TAU / rays + _rng.randf_range(-0.08, 0.08)
+		var f := _frag(Frag.RAY, at, Vector2.ZERO, col.lightened(0.25), RAY_LIFE)
+		f.rot = a
+		f.r = radius * 0.9
+		f.w = radius * _rng.randf_range(1.6, 2.2)
+	if kind == Target.Kind.BOSS:
+		# Staged: two more rings of rays follow the first.
+		_queued.append({"t": 0.14, "at": at, "r": radius * 1.5, "col": col})
+		_queued.append({"t": 0.3, "at": at, "r": radius * 2.1, "col": col})
 
 
 func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
@@ -209,6 +290,9 @@ func clear() -> void:
 		r.t = -1.0
 	for d in _shards:
 		d.t = -1.0
+	for f in _frags:
+		f.t = -1.0
+	_queued.clear()
 	for s in _sparks:
 		s.emitting = false
 	_shake_t = 0.0
@@ -240,6 +324,29 @@ func _process(delta: float) -> void:
 		shake_target.scale = Vector2(sc, sc)
 		shake_target.position = c * (1.0 - sc) + off
 	var any := false
+	for q in _queued.duplicate():
+		q.t -= delta
+		if q.t <= 0.0:
+			_queued.erase(q)
+			ring(q.at, q.col, q.r)
+			for i in 14:
+				var f := _frag(Frag.RAY, q.at, Vector2.ZERO, q.col.lightened(0.25), RAY_LIFE)
+				f.rot = i * TAU / 14.0 + _rng.randf() * 0.2
+				f.r = q.r * 0.6
+				f.w = q.r * 1.3
+		any = true
+	for f in _frags:
+		if f.t >= 0.0:
+			f.t += delta
+			if f.t > f.life:
+				f.t = -1.0
+				continue
+			any = true
+			if f.type != Frag.RAY:
+				f.vel.y += 900.0 * delta
+				f.vel *= exp(-0.8 * delta)
+				f.pos += f.vel * delta
+				f.rot += f.spin * delta
 	for r in _rings:
 		if r.t >= 0.0:
 			r.t += delta
@@ -277,6 +384,37 @@ func _draw() -> void:
 		var k: float = r.t / RING_LIFE
 		var e := 1.0 - pow(1.0 - k, 3.0)
 		draw_arc(r.pos, lerpf(r.r * 0.35, r.r * 1.25, e), 0.0, TAU, 32, Color(r.col, 0.55 * (1.0 - k)), lerpf(3.0, 0.6, k), true)
+	for f in _frags:
+		if f.t < 0.0:
+			continue
+		var k: float = f.t / f.life
+		var alpha := 1.0 - k * k
+		var c: Color = f.col
+		match f.type:
+			Frag.ARC:
+				draw_arc(f.pos + Pal.SHADOW_OFFSET * 0.6, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(0, 0, 0, 0.3 * alpha), f.w, true)
+				draw_arc(f.pos, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(c, alpha), f.w, true)
+			Frag.SEG:
+				var d: Vector2 = Vector2.from_angle(f.rot) * f.r
+				draw_line(f.pos - d + Pal.SHADOW_OFFSET * 0.6, f.pos + d + Pal.SHADOW_OFFSET * 0.6, Color(0, 0, 0, 0.3 * alpha), f.w, true)
+				draw_line(f.pos - d, f.pos + d, Color(c, alpha), f.w, true)
+			Frag.CAPSULE:
+				var d2 := Vector2.from_angle(f.rot) * 13.0
+				for layer in 2:
+					var o := Pal.SHADOW_OFFSET * 0.6 if layer == 0 else Vector2.ZERO
+					var lc := Color(0, 0, 0, 0.3 * alpha) if layer == 0 else Color(c, alpha)
+					draw_line(f.pos - d2 + o, f.pos + d2 + o, lc, f.w * 2.0, true)
+					draw_circle(f.pos - d2 + o, f.w, lc, true, -1.0, true)
+					draw_circle(f.pos + d2 + o, f.w, lc, true, -1.0, true)
+			Frag.DOT:
+				draw_circle(f.pos, f.r, Color(c, alpha), true, -1.0, true)
+			Frag.RAY:
+				# Rays run outward: inner end chases the outer end.
+				var e := 1.0 - pow(1.0 - k, 3.0)
+				var dir := Vector2.from_angle(f.rot)
+				var r0: float = f.r + f.w * maxf(0.0, e - 0.35) * 1.4
+				var r1: float = f.r + f.w * e
+				draw_line(f.pos + dir * r0, f.pos + dir * r1, Color(c, 0.7 * (1.0 - k)), 1.6, true)
 	for d in _shards:
 		if d.t < 0.0:
 			continue

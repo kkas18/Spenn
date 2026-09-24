@@ -10,11 +10,12 @@ signal resume_pressed
 signal restart_pressed
 signal menu_pressed
 
-enum Mode { NONE, TITLE, PAUSE, OVER }
+enum Mode { NONE, TITLE, PAUSE, OVER, SETTINGS }
 
 const CARD_IN := 0.25
 const CARD_HOLD := 1.0
 const CARD_OUT := 0.35
+const INTRO_TIME := 3.2
 
 var l: Layout
 var bar: TopBar
@@ -35,6 +36,11 @@ var _btn_restart: Button
 var _btn_menu: Button
 var _btn_lang: Button
 var _btn_sound: Button
+var _btn_settings: Button
+var _btn_haptics: Button
+var _btn_guide: Button
+var _btn_back: Button
+var _settings_from := Mode.NONE
 var _title_bar: HBoxContainer
 var _t_sound: Button
 var _t_lang: Button
@@ -72,7 +78,7 @@ func setup(layout: Layout) -> void:
 	_menu.size = l.size
 	# Every touch target is at least 48 dp.
 	var min_h := maxf(60.0, 48.0 * l.dp)
-	for b in [_btn_primary, _btn_restart, _btn_menu, _btn_lang, _btn_sound]:
+	for b in [_btn_primary, _btn_restart, _btn_menu, _btn_lang, _btn_sound, _btn_settings, _btn_haptics, _btn_guide, _btn_back]:
 		b.custom_minimum_size = Vector2(maxf(300.0, 48.0 * l.dp), min_h)
 	for b in [_t_sound, _t_lang]:
 		b.custom_minimum_size = Vector2(maxf(64.0, 48.0 * l.dp), maxf(64.0, 48.0 * l.dp))
@@ -129,6 +135,35 @@ func show_results(score: int, is_record: bool, reason: String, stats: Array) -> 
 	_menu.visible = true
 
 
+func show_settings() -> void:
+	_settings_from = mode
+	mode = Mode.SETTINGS
+	_title_bar.visible = false
+	_refresh_text()
+	_menu.visible = true
+
+
+func _close_settings() -> void:
+	mode = _settings_from
+	_refresh_text()
+	if mode == Mode.TITLE:
+		_menu.visible = false
+		_title_bar.visible = true
+	else:
+		_menu.visible = true
+
+
+## "New enemy" card near the bottom of the field; the target gets a marker.
+func intro(name: String, desc: String) -> void:
+	overlay.intro_name = name
+	overlay.intro_desc = desc
+	overlay.intro_t = 0.0
+
+
+func intro_busy() -> bool:
+	return overlay.intro_t < INTRO_TIME
+
+
 func hide_menu() -> void:
 	if mode != Mode.TITLE:
 		mode = Mode.NONE
@@ -155,23 +190,35 @@ func _refresh_text() -> void:
 	_btn_restart.text = Loc.t("restart")
 	_btn_menu.text = Loc.t("menu")
 	_btn_lang.text = Loc.t("language")
-	_btn_sound.text = Loc.t("sound_on") if Loc.sound_on else Loc.t("sound_off")
+	_btn_sound.text = Loc.sound_label()
+	_btn_haptics.text = Loc.t("haptics_on") if Loc.haptics else Loc.t("haptics_off")
+	_btn_guide.text = Loc.t("guide_on") if Loc.aim_guide else Loc.t("guide_off")
+	_btn_settings.text = Loc.t("settings")
+	_btn_back.text = Loc.t("back")
 	_t_lang.text = "NO" if Loc.lang == "no" else "EN"
-	_t_sound.text = _btn_sound.text
+	_t_sound.text = Loc.t("settings")
 	_menu_badge_label.text = Loc.t("new_record")
 	var names := [Loc.t("stat_level"), Loc.t("stat_acc"), Loc.t("stat_streak"), Loc.t("stat_cuts")]
 	for i in _stat_names.size():
 		_stat_names[i].text = names[i]
 	var over := mode == Mode.OVER
+	var settings := mode == Mode.SETTINGS
+	var pause := mode == Mode.PAUSE
 	_menu_score.visible = over
 	_stats.visible = over
-	_btn_restart.visible = not over
-	_btn_lang.visible = not over
-	_btn_sound.visible = not over
 	_menu_badge.visible = _menu_badge.visible and over
+	_btn_primary.visible = over or pause
+	_btn_restart.visible = pause
+	_btn_settings.visible = pause
+	_btn_menu.visible = over or pause
+	for b in [_btn_sound, _btn_haptics, _btn_guide, _btn_lang, _btn_back]:
+		b.visible = settings
 	if over:
 		_btn_primary.text = Loc.t("play_again")
 		_btn_primary.theme_type_variation = &"PrimaryButton"
+	elif settings:
+		_menu_title.text = Loc.t("settings")
+		_menu_record.visible = false
 	else:
 		_menu_title.text = Loc.t("paused")
 		_btn_primary.text = Loc.t("resume")
@@ -250,7 +297,7 @@ func _build_title_bar() -> void:
 	_title_bar.visible = false
 	add_child(_title_bar)
 	_t_sound = Button.new()
-	_t_sound.pressed.connect(func() -> void: Loc.toggle_sound(); Sfx.play("tick"))
+	_t_sound.pressed.connect(func() -> void: Sfx.play("tick"); show_settings())
 	_title_bar.add_child(_t_sound)
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -329,9 +376,13 @@ func _build_menu() -> void:
 	_btn_primary = _button(_on_primary)
 	_btn_restart = _button(func() -> void: Sfx.play("tick"); restart_pressed.emit())
 	_btn_menu = _button(func() -> void: Sfx.play("tick"); menu_pressed.emit())
+	_btn_settings = _button(func() -> void: Sfx.play("tick"); show_settings())
 	_btn_sound = _button(func() -> void: Loc.toggle_sound(); Sfx.play("tick"))
+	_btn_haptics = _button(func() -> void: Loc.toggle_haptics(); Sfx.haptic(20, 0.6); Sfx.play("tick"))
+	_btn_guide = _button(func() -> void: Loc.toggle_aim_guide(); Sfx.play("tick"))
 	_btn_lang = _button(func() -> void: Sfx.play("tick"); Loc.toggle_language())
-	for b in [_btn_primary, _btn_restart, _btn_menu, _btn_sound, _btn_lang]:
+	_btn_back = _button(func() -> void: Sfx.play("tick"); _close_settings())
+	for b in [_btn_primary, _btn_restart, _btn_settings, _btn_menu, _btn_sound, _btn_haptics, _btn_guide, _btn_lang, _btn_back]:
 		box.add_child(b)
 
 
@@ -357,6 +408,7 @@ class TopBar extends Control:
 	var score := 0
 	var shown_score := 0.0
 	var mult := 1
+	var streak := 0
 	var lives := 3
 	var level := 1
 	var wave := 1
@@ -457,6 +509,15 @@ class TopBar extends Control:
 			draw_rect(rr, Pal.GOLD)
 			draw_string(caps, Vector2(-mw * 0.5 + 8.0, 6.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Pal.BG)
 			draw_set_transform(Vector2.ZERO)
+		# Streak meter: three small dots toward the next multiplier.
+		if mult < 4:
+			var filled := streak % 3
+			var sx := w * 0.5 + tw * 0.5 * s + 12.0
+			if mult > 1:
+				sx += caps.get_string_size("×%d" % mult, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 26.0
+			for i in 3:
+				var c := Pal.GOLD if i < filled else Color(Pal.INK_FAINT, 0.7)
+				draw_circle(Vector2(sx + i * 9.0, base - 4.0), 2.4, c, true, -1.0, true)
 		# Knots (lives) on the right, same baseline.
 		for i in 3:
 			var cx := w - l.margin - 8.0 - (2 - i) * 22.0
@@ -492,6 +553,9 @@ class Overlay extends Control:
 	var card_sub := ""
 	var card_t := 99.0
 	var title_t := 0.0
+	var intro_name := ""
+	var intro_desc := ""
+	var intro_t := 99.0
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -499,6 +563,7 @@ class Overlay extends Control:
 	func _process(delta: float) -> void:
 		card_t += delta
 		title_t += delta
+		intro_t += delta
 		queue_redraw()
 
 	func _draw() -> void:
@@ -516,6 +581,14 @@ class Overlay extends Control:
 			draw_string(num, Vector2(0, y + 56.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Pal.INK)
 			var a := 0.55 + 0.45 * sin(title_t * 2.4)
 			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Pal.GOLD, a))
+		if intro_t < Hud.INTRO_TIME and intro_name != "":
+			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))
+			var iy := l.danger_y - 150.0 + (1.0 - k) * 10.0
+			var disp := hud.display_font()
+			draw_string(caps, Vector2(0, iy), Loc.t("new_enemy"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Pal.GOLD, k))
+			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
+			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Pal.INK, k))
+			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Pal.INK_DIM, k))
 		var total := Hud.CARD_IN + Hud.CARD_HOLD + Hud.CARD_OUT
 		if card_t < total and card_title != "":
 			var k := 1.0

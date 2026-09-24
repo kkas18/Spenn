@@ -35,6 +35,8 @@ const DROP := Color("D1D8F0")    # 225° pale, luma .85 – fast drop
 const CORAL := Color("E98462")   # 15° – danger only
 const ARMOR := Color("9AA2AD")   # neutral – Vokter body (silhouette: ring + plate)
 const BOSS := Color("C9CED6")    # neutral pale – Spinneren (filled hexagon)
+const REEL := Color("B7C3CF")    # pale steel – Snelle (spoked reel)
+const SHADE := Color("B9B1D6")   # pale lavender – Skygge (crescent)
 const EYE := Color("E4E7EC")
 const PUPIL := Color("0E1015")
 

@@ -5,7 +5,7 @@ extends Node2D
 ## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
-enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS }
+enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE }
 enum Phase { OFF, HANGING, FALLING }
 
 const N := 10                  # rope points
@@ -13,18 +13,18 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0}
-const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8}
-const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0}
+const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1}
+const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25}
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
-const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5}
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9}
 const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
 const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
 const ANG_K := 55.0            # angular spring back to the string angle (1/s²)
 const ANG_C := 2.6             # angular damping (1/s)
-const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45}
+const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0}
 
 var kind: Kind = Kind.RING
 var phase: Phase = Phase.OFF
@@ -60,6 +60,15 @@ var shield_ang := PI * 0.5     # world angle of the Vokter plate
 var orbit := 0.0               # Spinneren plate orbit
 var wants_minion := false      # Spinneren asks the game for a Dykker
 var flash_t := 0.0
+var alarm := false             # a ball is closing in (Snelle reels up)
+var has_cover := false         # Vakt: an x where another target shields it
+var cover_x := 0.0
+var hidden_amt := 0.0          # Skygge: 0 solid .. 1 faded out
+var intro_t := 0.0             # marker ring when first introduced
+var _reeled := 0.0
+var _calm_t := 0.0
+var _shade_t := 0.0
+var _shade_hidden := false
 var _aim_t := 0.0
 var _dodge_cd := 0.0
 var _brain_t := 3.0
@@ -120,6 +129,14 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_lunge_left = 0.0
 	_speed_bonus = 1.0
 	_cut = false
+	alarm = false
+	has_cover = false
+	hidden_amt = 0.0
+	intro_t = 0.0
+	_reeled = 0.0
+	_calm_t = 0.0
+	_shade_t = randf_range(1.5, 3.0)
+	_shade_hidden = false
 	danger = 0.0
 	rope_alpha = 1.0
 	squash_t = 1.0
@@ -146,6 +163,11 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 
 func is_hittable() -> bool:
 	return phase == Phase.HANGING and delay <= 0.0
+
+
+## Balls collide with the body only while it is there (Skygge fades out).
+func is_solid() -> bool:
+	return is_hittable() and hidden_amt < 0.6
 
 
 func points() -> int:
@@ -320,8 +342,14 @@ func _brain(dt: float) -> void:
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
 	match kind:
 		Kind.RING:
-			# Vakt: sidesteps a held aim after a readable reaction time.
-			if aimed and a > 0.12 and _dodge_cd <= 0.0:
+			# Vakt: with cover available it slides in behind another target;
+			# otherwise it sidesteps a held aim after a readable reaction time.
+			if aimed and has_cover and a > 0.12:
+				_aim_t += dt
+				if _aim_t > lerpf(0.6, 0.25, a):
+					var pull := clampf((cover_x - pos.x) / 60.0, -1.0, 1.0)
+					vel.x += pull * lerpf(260.0, 520.0, a) * dt
+			elif aimed and a > 0.12 and _dodge_cd <= 0.0:
 				_aim_t += dt
 				if _aim_t > lerpf(0.75, 0.3, a):
 					vel.x += dodge_dir * lerpf(150.0, 300.0, a) / MASS[kind]
@@ -343,6 +371,33 @@ func _brain(dt: float) -> void:
 			# Vokter: the plate turns toward the slingshot with some lag.
 			var want := (threat - pos).angle()
 			shield_ang = rotate_toward(shield_ang, want, lerpf(1.6, 3.6, a) * dt)
+		Kind.REEL:
+			# Snelle: winches up toward the rail when threatened, lets itself
+			# back down once it has been calm for a moment.
+			if alarm or aimed:
+				_calm_t = 0.0
+				var d := minf(lerpf(240.0, 380.0, a) * dt, maxf(0.0, length - 40.0))
+				if d > 0.0 and _reeled == 0.0:
+					Sfx.play("reel", randf_range(0.95, 1.1))
+				length -= d
+				_reeled += d
+			else:
+				_calm_t += dt
+				if _calm_t > lerpf(0.5, 1.0, a) and _reeled > 0.0:
+					var u := minf(_reeled, 120.0 * dt)
+					length += u
+					_reeled -= u
+			goal_length = length
+		Kind.SHADE:
+			# Skygge: visible for a while, then fades out (shots pass through),
+			# then back. Only its eye and its string stay readable.
+			_shade_t -= dt
+			if _shade_t <= 0.0:
+				_shade_hidden = not _shade_hidden
+				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * randf_range(0.85, 1.2)
+				if _shade_hidden:
+					Sfx.play("fade", randf_range(0.95, 1.05))
+			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
 			orbit += lerpf(1.0, 1.7, a) * (1.35 if enraged else 1.0) * dt
 			_minion_t -= dt
@@ -476,6 +531,7 @@ func eyelet() -> Vector2:
 func _process(delta: float) -> void:
 	if phase == Phase.OFF:
 		return
+	intro_t = maxf(0.0, intro_t - delta)
 	squash_t += delta
 	_clock += delta
 	_update_eye(delta)
@@ -513,6 +569,8 @@ func color() -> Color:
 		Kind.DROP: base = Pal.DROP
 		Kind.SHIELD: base = Pal.ARMOR
 		Kind.BOSS: base = Pal.BOSS
+		Kind.REEL: base = Pal.REEL
+		Kind.SHADE: base = Pal.SHADE
 	if danger > 0.0 and phase == Phase.HANGING:
 		var pulse := 0.8 + 0.2 * sin(_clock * TAU * 0.8)
 		base = base.lerp(Pal.CORAL, danger * pulse)
@@ -540,12 +598,24 @@ func _draw() -> void:
 	var col := color()
 	var dark := col.darkened(0.45)
 	var light := col.lightened(0.22)
+	if hidden_amt > 0.0:
+		# Skygge fades as a whole; only a faint outline and the eye remain.
+		var keep := 1.0 - 0.9 * hidden_amt
+		col.a *= keep
+		dark.a *= keep
+		light.a *= keep
+	if intro_t > 0.0:
+		# First sighting: a slow dashed ring marks the new enemy.
+		var k := minf(1.0, intro_t / 0.5)
+		for i in 12:
+			var a0 := _clock * 0.8 + i * TAU / 12.0
+			draw_arc(pos, radius + 16.0, a0, a0 + 0.3, 6, Color(Pal.INK, 0.5 * k), 1.5, true)
 	# Soft contact shadow, sharp shadow, dark rim (down/right), light rim
 	# (up/left), body: one light source for everything.
 	draw_set_transform_matrix(body_xform(Pal.SHADOW_OFFSET * 2.0))
 	var half := Vector2(ROD_HALF + radius, radius) if kind == Kind.ROD else Vector2(radius, radius)
 	Pal.soft_shadow(self, Vector2.ZERO, half)
-	_shape(Pal.SHADOW_OFFSET, Pal.SHADOW, 0.0)
+	_shape(Pal.SHADOW_OFFSET, Color(Pal.SHADOW, Pal.SHADOW.a * (1.0 - hidden_amt)), 0.0)
 	_shape(Vector2(1.2, 1.2), dark, 0.0)
 	_shape(Vector2(-1.0, -1.0), light, 0.0)
 	_shape(Vector2.ZERO, col, -2.0)
@@ -616,6 +686,13 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 			Pal.disc(self, Vector2(h, 0), r, col)
 		Kind.SHIELD:
 			Pal.ring(self, Vector2.ZERO, radius - 5.0, col, 8.0 + grow)
+		Kind.REEL:
+			Pal.ring(self, Vector2.ZERO, radius - 4.0, col, 7.0 + grow)
+			for i in 4:
+				var d := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0)
+				draw_line(d * 11.0, d * (radius - 7.0), col, 3.0 + grow * 0.5, true)
+		Kind.SHADE:
+			draw_colored_polygon(_crescent(radius + grow * 0.5), col)
 		Kind.BOSS:
 			var hexf := PackedVector2Array()
 			for i in 6:
@@ -634,7 +711,24 @@ func _shape(offset: Vector2, col: Color, grow: float) -> void:
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
+## Crescent: outer half-circle and an inner half-ellipse sharing the tips,
+## thick on the left, tapering to points top and bottom. Never self-crosses.
+func _crescent(r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := -PI * 0.5 + PI * i / 16.0
+		pts.append(Vector2(-cos(a) * r, sin(a) * r))
+	for i in 17:
+		var a := PI * 0.5 - PI * i / 16.0
+		pts.append(Vector2(-cos(a) * r * 0.22, sin(a) * r * 0.96))
+	return pts
+
+
 func _eye() -> void:
+	# The Skygge's eye sits in the thick part of the crescent.
+	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
+	var bx := body_xform() * Transform2D(0.0, eo)
+	draw_set_transform_matrix(bx)
 	var er := 9.5
 	if kind == Kind.DROP:
 		er = 7.0
@@ -643,7 +737,7 @@ func _eye() -> void:
 	var wide := maxf(1.0, _open)
 	var pr := er * 0.48 / wide
 	er *= lerpf(1.0, wide, 0.5)
-	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS:
+	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
 		# Filled bodies: a dark socket keeps the eye readable.
 		Pal.disc(self, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
 	if _closed_t > 0.0 or phase == Phase.FALLING:
@@ -653,12 +747,12 @@ func _eye() -> void:
 	if open < 0.12:
 		draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.2, true)
 		return
-	draw_set_transform_matrix(body_xform() * Transform2D(0.0, Vector2(1.0, open), 0.0, Vector2.ZERO))
+	draw_set_transform_matrix(bx * Transform2D(0.0, Vector2(1.0, open), 0.0, Vector2.ZERO))
 	Pal.disc(self, Vector2.ZERO, er, Pal.EYE)
 	var pupil := _pupil * (er - pr - 1.2)
 	Pal.disc(self, pupil, pr, Pal.PUPIL)
 	Pal.disc(self, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
-	draw_set_transform_matrix(body_xform())
+	draw_set_transform_matrix(bx)
 	if enraged:
 		# Brows pulled in: rage reads at a glance.
 		for sx: float in [-1.0, 1.0]:

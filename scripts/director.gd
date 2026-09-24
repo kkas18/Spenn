@@ -60,8 +60,12 @@ func pick_kind(level: int, rng: RandomNumberGenerator) -> Target.Kind:
 		table.append([Target.Kind.ROD, 1.0 + a])
 	if level >= 5:
 		table.append([Target.Kind.DROP, 1.0 + a * 1.5])
+	if level >= 3:
+		table.append([Target.Kind.REEL, 0.7 + a])
 	if level >= 6:
 		table.append([Target.Kind.SHIELD, 0.8 + a * 1.5])
+	if level >= 7:
+		table.append([Target.Kind.SHADE, 0.7 + a * 1.2])
 	var total := 0.0
 	for e in table:
 		total += e[1]

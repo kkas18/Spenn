@@ -55,6 +55,7 @@ var _knock_sfx_cd := 0.0
 var _shot_seq := 0
 var _shots := {}                # shot id -> {"balls": n, "hit": bool}
 var _over_shown := false
+var _intro_queue: Array[Target] = []
 
 
 func _ready() -> void:
@@ -135,6 +136,7 @@ func _clear_field() -> void:
 	for b in balls:
 		b.stop()
 	_shots.clear()
+	_intro_queue.clear()
 	ammo.clear()
 	for i in AMMO_CAP:
 		ammo.append(Ammo.NORMAL)
@@ -166,6 +168,7 @@ func _start_run() -> void:
 	hud.bar.score = 0
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
+	hud.bar.streak = 0
 	hud.bar.set_mult(1)
 	title.release()
 	_start_level(1)
@@ -220,6 +223,7 @@ func _spawn_wave() -> void:
 		if b:
 			b.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.3, 0.3)
 			b.aggression = aggr
+			_maybe_intro(b)
 			used.append(layout.center_x)
 			level_total += 1
 		count -= 1
@@ -239,9 +243,31 @@ func _spawn_wave() -> void:
 		t.spawn(director.pick_kind(level, _rng), Vector2(x, layout.rail_y + 3.0), 12.0, len, 0.35 + i * 0.07)
 		t.aggression = aggr
 		level_total += 1
+		_maybe_intro(t)
 	if wave > 1:
 		fx.popup(Loc.t("wave") % [wave, waves], Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.4), Pal.INK, 22)
 		Sfx.play("whoosh", 0.7, -4.0)
+
+
+## First time a kind ever appears it gets a short card and a marker ring.
+func _maybe_intro(t: Target) -> void:
+	if not Loc.seen.has(t.kind) and not _intro_queue.has(t):
+		_intro_queue.append(t)
+
+
+func _run_intros() -> void:
+	if _intro_queue.is_empty() or hud.intro_busy():
+		return
+	var t: Target = _intro_queue[0]
+	if t.phase == Target.Phase.HANGING and t.delay > 0.0:
+		return
+	_intro_queue.pop_front()
+	if t.phase != Target.Phase.HANGING or not Loc.first_sight(t.kind):
+		return
+	var parts := Loc.t("e%d" % t.kind).split("|")
+	hud.intro(parts[0], parts[1] if parts.size() > 1 else "")
+	t.intro_t = 3.0
+	Sfx.play("intro")
 
 
 func _best_slot(used: Array[float], slots: int) -> float:
@@ -284,6 +310,8 @@ func _process(delta: float) -> void:
 	_state_t += delta
 	_update_ammo(delta)
 	_update_eyes()
+	if state == State.PLAY or state == State.CLEARING:
+		_run_intros()
 	match state:
 		State.PLAY:
 			_wave_t += delta
@@ -326,6 +354,13 @@ func _update_eyes() -> void:
 		if t.dodge_dir == 0.0:
 			t.dodge_dir = 1.0
 		t.threat = o
+		t.alarm = false
+		for b in balls:
+			if b.active and b.pos.distance_to(t.pos) < 280.0 * layout.scale and b.vel.dot(t.pos - b.pos) > 0.0:
+				t.alarm = true
+		t.has_cover = false
+		if t.aimed and t.kind == Target.Kind.RING:
+			_find_cover(t, o)
 		var nearest := INF
 		t.has_look = false
 		for b in balls:
@@ -338,6 +373,22 @@ func _update_eyes() -> void:
 		if not t.has_look:
 			t.look_at = slingshot.pouch
 			t.has_look = true
+
+
+## Cover for a Vakt: the x at its height where a lower target sits on the
+## line from the slingshot, i.e. hiding behind that target.
+func _find_cover(t: Target, o: Vector2) -> void:
+	var best := 170.0 * layout.scale
+	for c in targets:
+		if c == t or not c.is_solid() or c.pos.y < t.pos.y + 30.0:
+			continue
+		var k := (t.pos.y - o.y) / (c.pos.y - o.y)
+		var x := o.x + (c.pos.x - o.x) * k
+		var d := absf(x - t.pos.x)
+		if d < best:
+			best = d
+			t.cover_x = clampf(x, 40.0, layout.size.x - 40.0)
+			t.has_cover = true
 
 
 func _step(dt: float) -> void:
@@ -437,6 +488,7 @@ func _spawn_minions() -> void:
 		d.spawn(Target.Kind.DROP, Vector2(ax, layout.rail_y + 3.0), 12.0, t.length * 0.75, 0.0)
 		d.aggression = t.aggression
 		level_total += 1
+		_maybe_intro(d)
 		Sfx.play("whoosh", 1.2, -8.0)
 
 
@@ -453,7 +505,7 @@ func _collide(b: Ball) -> void:
 			continue
 		if t.pluck(b.pos, b.vel, Ball.RADIUS):
 			Sfx.play("twang", randf_range(0.85, 1.25), -14.0)
-		if not b.can_touch(t.get_instance_id()):
+		if not b.can_touch(t.get_instance_id()) or not t.is_solid():
 			continue
 		var cp := t.closest_point(b.pos)
 		var d := b.pos - cp
@@ -536,7 +588,9 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if b.hits >= 2:
 		fx.shake(2.0 + minf(b.hits - 2, 1))
 	if killed:
-		fx.shards(t.pos, col, 10 if kind == Target.Kind.BOSS else (5 if kind == Target.Kind.HEAVY else 4), t.vel)
+		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
+		fx.shards(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.vel)
+		Sfx.play("burst", randf_range(0.92, 1.08))
 		Sfx.play("hit", 1.0 + 0.08 * (b.hits - 1))
 		Sfx.play("snap", randf_range(0.95, 1.1), -6.0)
 		Sfx.haptic(18, 0.5)
@@ -568,7 +622,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	fx.hitstop()
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
 	fx.popup("+%d %s" % [gained, Loc.t("cut")], b.pos + Vector2(0, -22), Pal.INK)
-	fx.shards(t.pos, col, 3, t.vel)
+	fx.shards(t.pos, col, 2, t.vel)
 	Sfx.play("cut", randf_range(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
 	_resolved(t)
@@ -589,6 +643,7 @@ func _split(t: Target) -> void:
 		d.vel = Vector2(side * 160.0, -60.0)
 		d.aggression = t.aggression
 		level_total += 1
+		_maybe_intro(d)
 
 
 func _resolved(_t: Target) -> void:
@@ -633,6 +688,7 @@ func _breach(t: Target) -> void:
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
 	streak = 0
+	hud.bar.streak = 0
 	hud.bar.set_mult(1)
 	_resolved(t)
 	for o in targets:
@@ -701,6 +757,7 @@ func _finish_ball(b: Ball) -> void:
 			Sfx.haptic(16, 0.4)
 	else:
 		streak = 0
+	hud.bar.streak = streak
 	hud.bar.set_mult(_mult())
 
 

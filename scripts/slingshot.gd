@@ -380,7 +380,7 @@ func _draw_lashing() -> void:
 ## Short predicted path: same gravity and wall bounce as the ball, about
 ## 0.35 s of flight, so it guides without solving the shot.
 func _draw_aim_dots() -> void:
-	if _arc_alpha <= 0.0 or power < MIN_POWER:
+	if _arc_alpha <= 0.0 or power < MIN_POWER or not Loc.aim_guide:
 		return
 	var p := l.pouch_rest()
 	var v := aim_dir * launch_speed()

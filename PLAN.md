@@ -265,3 +265,37 @@ google/fonts, med lisensfiler i `fonts/`. Inter er fjernet.
 
 **Avvik:** rekorden er flyttet fra toppfeltet til tittel, pause og resultat. Til høyre i
 toppfeltet står nå de tre knutene (liv), som vist i designet.
+
+---
+
+# v3.1 – Subtil lyd, brudd-effekter, gjemming og nye fiender
+
+Tilbakemelding: mye bedre, men lydene er overveldende. Ønsker elegante brudd-effekter og
+mer av at fiender gjemmer seg, pluss bedre UI, brukervennlighet og mer krevende fiender.
+
+- **Lyd:** ny miks.
+  - Lyder: 5 ms myk start, dobbelt lavpasset støy, tanh-metning, lavere partialer og en
+    egen styrke per lyd (−8 til −27 dB).
+  - SFX-buss: lavpass 4,2 kHz, kompressor (−20 dB, 4:1) og et lite, mørkt rom.
+  - Samme lyd kan ikke spilles oftere enn hvert 60. ms, og det er maks 6 stemmer.
+  - Volumnivåer: av, lav, middels (standard) og høy. Vibrasjon er dempet til 80 %.
+- **Brudd:** drepte mål brytes opp etter egen form.
+  - Ring, Vokter og Snelle: buer (6–8).
+  - Sekskant og boss: kanter.
+  - Stav: to kapselhalvdeler.
+  - Dråpe og Skygge: dråper.
+  - I tillegg en tynn stråle-vifte på 0,26 s. Bossen sprekker i tre trinn.
+  - Alt er poolet data (64 fragmenter), uten glød.
+- **Gjemming:** Vakta søker dekning. Hvis et lavere mål står mellom spretteren og Vakta,
+  glir den inn bak det. Uten dekning unnviker den som før.
+- **Nye fiender:**
+  - **Snelle** (nivå 3+): eiker i ring. Vinsjer seg opp mot bjelken når du sikter eller
+    en ball nærmer seg, og senker seg igjen når det er rolig.
+  - **Skygge** (nivå 7+): månesigd. Toner ut, og da går skuddene rett gjennom den. Øyet
+    og snoren synes alltid, så den kan kappes.
+- **UI og brukervennlighet:**
+  - Introkort «NY FIENDE» første gang en type dukker opp (lagres), med en markeringsring
+    rundt målet.
+  - Seriemåler (tre prikker mot neste multiplikator).
+  - Innstillingspanel fra tittel og pause: lydnivå, vibrasjon, siktelinje og språk.
+  - Pausen er ryddigere: fortsett, start på nytt, innstillinger og meny.
