@@ -25,6 +25,7 @@ var rail: Rail
 var slingshot: Slingshot
 var hud: Hud
 var fx: Fx
+var backdrop: Backdrop
 var targets: Array[Target] = []
 var balls: Array[Ball] = []
 
@@ -39,6 +40,8 @@ var _first_shot := true
 func _ready() -> void:
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
+	backdrop = Backdrop.new()
+	add_child(backdrop)
 	world = Node2D.new()
 	add_child(world)
 	rail = Rail.new()
@@ -58,6 +61,16 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
+	var vignette_layer := CanvasLayer.new()
+	vignette_layer.layer = 5
+	add_child(vignette_layer)
+	var vignette := ColorRect.new()
+	vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/vignette.gdshader")
+	vignette.material = mat
+	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
 	fx.font = hud.caps_font()
@@ -72,6 +85,7 @@ func _ready() -> void:
 
 func _apply_layout() -> void:
 	rail.setup(layout, targets)
+	backdrop.setup(layout)
 	fx.l = layout
 	slingshot.setup(layout)
 	hud.setup(layout)
@@ -80,7 +94,7 @@ func _apply_layout() -> void:
 func _on_resize() -> void:
 	layout = Layout.compute(get_viewport())
 	for t in targets:
-		t.anchor.y = layout.rail_y
+		t.anchor.y = layout.rail_y + 3.0
 	_apply_layout()
 
 
@@ -130,7 +144,7 @@ func _start_level(n: int) -> void:
 		var x := 56.0 + (col + 0.5 + stagger) * col_w + _rng.randf_range(-8.0, 8.0)
 		x = clampf(x, 48.0, layout.size.x - 48.0)
 		var len := layout.play_h * (0.13 + 0.22 * row) * _rng.randf_range(0.92, 1.08)
-		t.spawn(_pick_kind(n), Vector2(x, layout.rail_y), 12.0, len, 0.25 + i * 0.06)
+		t.spawn(_pick_kind(n), Vector2(x, layout.rail_y + 3.0), 12.0, len, 0.25 + i * 0.06)
 	hud.bar.level = n
 	hud.bar.progress = 0.0
 	if n > 1:
@@ -214,9 +228,14 @@ func _update_eyes() -> void:
 func _step(dt: float) -> void:
 	var descent := _descent() if state == State.PLAY else 0.0
 	var band := layout.play_h * 0.15
+	var worst := 0.0
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
 			t.step(dt, descent, layout.danger_y, band, layout.size.y)
+			if t.phase == Target.Phase.HANGING:
+				worst = maxf(worst, t.danger)
+	backdrop.danger = worst
+	backdrop.descent = descent
 	slingshot.step(dt)
 	for b in balls:
 		if not b.active:
@@ -309,8 +328,9 @@ func _split(t: Target) -> void:
 			return
 		var ax := clampf(t.anchor.x + side * 38.0, 40.0, layout.size.x - 40.0)
 		var p := t.pos + Vector2(side * 16.0, 0)
-		var len := Vector2(ax, layout.rail_y).distance_to(p)
-		d.spawn(Target.Kind.DROP, Vector2(ax, layout.rail_y), len, len, 0.0)
+		var anchor := Vector2(ax, layout.rail_y + 3.0)
+		var len := anchor.distance_to(p)
+		d.spawn(Target.Kind.DROP, anchor, len, len, 0.0)
 		d.pos = p
 		d.vel = Vector2(side * 160.0, -60.0)
 		level_total += 1

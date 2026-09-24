@@ -16,6 +16,8 @@ const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 
 const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1}
 const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5}
 const ROD_HALF := 30.0
+const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
+const HOOK_TILT := 0.8
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7}
 
 var kind: Kind = Kind.RING
@@ -184,7 +186,7 @@ func _rope_step(dt: float) -> void:
 		var v := (cur - _prev[i]) * 0.985
 		_prev[i] = cur
 		_pts[i] = cur + v + g
-	_pts[0] = anchor
+	_pts[0] = eyelet()
 	if _attached:
 		_pts[last] = pos
 		_rope_len = maxf(length, pos.distance_to(anchor))
@@ -243,10 +245,17 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 	var body := Transform2D(body_rot, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
 	return Transform2D(0.0, pos + offset) * squash * body
 
-## Angle of the top rope segment relative to vertical (for the rail hooks).
+## Hook tilt, following the top rope segment's angle from vertical.
 func hook_angle() -> float:
 	var d := _pts[1] - _pts[0]
-	return atan2(-d.x, d.y)
+	return clampf(atan2(-d.x, d.y) * HOOK_TILT, -0.7, 0.7)
+
+
+## Where the string leaves the hook; `anchor` is the hook's pivot on the rail.
+func eyelet() -> Vector2:
+	var d := _pts[1] - _pts[0]
+	var a := clampf(atan2(-d.x, d.y) * HOOK_TILT, -0.7, 0.7) if d.length() > 0.01 else 0.0
+	return anchor + Vector2(0, HOOK_LEN).rotated(a)
 
 
 func _process(delta: float) -> void:
