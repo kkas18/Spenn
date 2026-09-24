@@ -114,8 +114,8 @@ lages per frame. Mål, baller, partikler, popups og lydspillere ligger i pooler.
 
 | Fase | Status | Merknad |
 |---|---|---|
-| P0 | – | |
-| P1 | – | |
+| P0 | Ferdig | Skjelett, eksportoppsett, CI-workflow, Loc/Sfx/Pal |
+| P1 | Ferdig | Toppfelt 11 %, målfelt 60 %, sprettert løftet så kraftbuen får 24 dp klaring over gestområdet (safe area regnes om til viewport-piksler), ammo-stabel til venstre for skaftet der lommen ikke kan krysse den. Mål i forskjøvne rader for å fylle feltet. |
 | P2 | – | |
 | P4 | – | |
 | P3 | – | |
