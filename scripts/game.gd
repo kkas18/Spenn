@@ -4,7 +4,7 @@ extends Node2D
 ## it. Also lives, streaks, chains, collisions and scoring. All nodes are created once
 ## in _ready(); targets, balls and effects are pooled.
 
-enum State { TITLE, PLAY, OVER }
+enum State { BOOT, INTRO, MAIN_MENU, STARTING, PLAYING, PAUSED, RESUMING, DEATH, GAME_OVER, RESTARTING }
 
 const MAX_TARGETS := 28
 const MAX_BALLS := 6
@@ -22,7 +22,7 @@ const Ammo := Slingshot.Ammo
 
 var layout: Layout
 var director := Director.new()
-var state := State.TITLE
+var state := State.BOOT
 var score := 0
 var lives := LIVES
 var streak := 0
@@ -60,7 +60,9 @@ var _time := 0.0
 var _knock_sfx_cd := 0.0
 var _shot_seq := 0
 var _shots := {}                # shot id -> {"balls": n, "hit": bool}
-var _over_shown := false
+var _last_tap := -10.0
+var _last_tap_pos := Vector2.ZERO
+var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
 
 
@@ -105,13 +107,13 @@ func _ready() -> void:
 	add_child(hud)
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
-	hud.pause_pressed.connect(_set_paused.bind(true))
-	hud.resume_pressed.connect(_set_paused.bind(false))
+	hud.pause_pressed.connect(_pause)
+	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
-	hud.menu_pressed.connect(_to_title)
+	hud.menu_pressed.connect(_to_menu)
 	get_viewport().size_changed.connect(_on_resize)
 	_apply_layout()
-	_to_title()
+	_boot()
 
 
 func _apply_layout() -> void:
@@ -127,7 +129,7 @@ func _on_resize() -> void:
 	for t in targets:
 		t.anchor.y = layout.rail_y + 3.0
 	_apply_layout()
-	if state == State.TITLE:
+	if state == State.MAIN_MENU:
 		title.setup(layout, hud.display_font())
 
 
@@ -150,22 +152,51 @@ func _clear_field() -> void:
 	reload_t = 0.0
 	slingshot.cancel()
 	_touch = -1
-
-
-func _to_title() -> void:
-	_clear_field()
 	_tension = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
-	state = State.TITLE
+
+
+## One place where the state changes; everything that differs per state
+## (input, music, what ticks) reads `state`.
+func _set_state(s: State) -> void:
+	state = s
 	_state_t = 0.0
+
+
+func _boot() -> void:
+	_set_state(State.BOOT)
+	title.visible = false
+	_set_state(State.INTRO)
+	hud.intro_seq.exiting.connect(_on_intro_exit, CONNECT_ONE_SHOT)
+	hud.intro_seq.play(not Prefs.intro_seen)
+
+
+## The intro's dark ground lifts: the letters hang in from the rail and the
+## menu chrome fades up underneath, so intro and menu are one continuous shot.
+func _on_intro_exit() -> void:
+	_to_menu()
+
+
+func _to_menu() -> void:
+	var from_game := state != State.INTRO
+	_set_state(State.MAIN_MENU)
+	hud.locked = true
+	if from_game:
+		hud.hide_game_over()
+		hud.close_pause()
+		hud.scrim_to(0.0, Motion.NORMAL)
+		hud.fade_hud(0.0, Motion.FAST)
+	_clear_field()
 	title.setup(layout, hud.display_font())
-	hud.show_title()
+	hud.show_menu()
+	Music.set_mode(Music.Mode.MENU)
+	Motion.after(Motion.NORMAL, func() -> void: hud.locked = false)
 
 
-## First release on the title starts a run: the letters' strings snap and
-## the first row of rings hangs in behind them.
+## First release on the menu starts a run: the letters' strings snap, the
+## HUD comes in piece by piece and the first row hangs in.
 func _start_run() -> void:
-	state = State.PLAY
+	_set_state(State.STARTING)
 	score = 0
 	lives = LIVES
 	streak = 0
@@ -177,9 +208,8 @@ func _start_run() -> void:
 	_phase_shown = 1
 	_rush_left = 0
 	_spawn_t = 2.5
-	_over_shown = false
+	_last_tap = -10.0
 	director.reset()
-	hud.show_play()
 	hud.bar.score = 0
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
@@ -187,16 +217,34 @@ func _start_run() -> void:
 	hud.bar.phase = 1
 	hud.bar.progress = 0.0
 	hud.bar.set_mult(1)
+	hud.hide_menu_ui()
+	hud.reveal_hud()
 	title.release()
-	hud.card(Loc.t("survive"), Loc.t("survive_sub"))
+	hud.card(Loc.t("event.survive"), Loc.t("event.surviveSub"))
 	_spawn_formation(Target.Kind.RING, 4)
+	Music.set_mode(Music.Mode.PLAY)
+	Motion.after(0.5, func() -> void:
+		if state == State.STARTING:
+			_set_state(State.PLAYING))
 
 
+## Restart: the button answers at once, results fade, the scrim lifts and
+## the field resets in place (no scene reload): back in play in ~0.5 s.
 func _restart() -> void:
-	_clear_field()
-	title.active = false
-	title.visible = false
-	_start_run()
+	if state != State.GAME_OVER and state != State.PAUSED:
+		return
+	_set_state(State.RESTARTING)
+	hud.locked = true
+	Sfx.play("restart")
+	hud.hide_game_over()
+	hud.close_pause()
+	hud.scrim_to(0.0, Motion.NORMAL)
+	Motion.after(Motion.FAST, func() -> void:
+		_clear_field()
+		title.active = false
+		title.visible = false
+		_start_run()
+		hud.locked = false)
 
 
 ## One target at the freest spot along the rail, high up.
@@ -256,7 +304,7 @@ func _boss_alive() -> bool:
 
 ## First time a kind ever appears it gets a short card and a marker ring.
 func _maybe_intro(t: Target) -> void:
-	if not Loc.seen.has(t.kind) and not _intro_queue.has(t):
+	if not Prefs.seen.has(t.kind) and not _intro_queue.has(t):
 		_intro_queue.append(t)
 
 
@@ -267,9 +315,9 @@ func _run_intros() -> void:
 	if t.phase == Target.Phase.HANGING and t.delay > 0.0:
 		return
 	_intro_queue.pop_front()
-	if t.phase != Target.Phase.HANGING or not Loc.first_sight(t.kind):
+	if t.phase != Target.Phase.HANGING or not Prefs.first_sight(t.kind):
 		return
-	var parts := Loc.t("e%d" % t.kind).split("|")
+	var parts := Loc.t("enemy.%d" % t.kind).split("|")
 	hud.intro(parts[0], parts[1] if parts.size() > 1 else "")
 	t.intro_t = 3.0
 	Sfx.play("intro")
@@ -307,15 +355,11 @@ func _process(delta: float) -> void:
 	_state_t += delta
 	_update_ammo(delta)
 	_update_eyes()
-	match state:
-		State.PLAY:
-			_run_intros()
-			_pace(delta)
-			_spawn_minions()
-		State.OVER:
-			if not _over_shown and _state_t > 0.75:
-				_over_shown = true
-				_show_results()
+	if state == State.PLAYING or state == State.STARTING:
+		_run_intros()
+		_pace(delta)
+		_spawn_minions()
+		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
 
 
 ## The endless pacing: regular spawns under a rising cap, events with a
@@ -334,16 +378,16 @@ func _pace(delta: float) -> void:
 		Director.Event.FORMATION:
 			var k := director.formation_kind(_rng)
 			_spawn_formation(k, 5 + mini(3, int(director.intensity())))
-			hud.card(Loc.t("formation"), Loc.t("formation_sub"))
+			hud.card(Loc.t("event.formation"), Loc.t("event.formationSub"))
 			Sfx.play("intro", 0.9)
 		Director.Event.RUSH:
 			_rush_left = 5 + int(director.intensity())
 			_rush_t = 0.6
-			hud.card(Loc.t("rush"), Loc.t("rush_sub"))
+			hud.card(Loc.t("event.rush"), Loc.t("event.rushSub"))
 			Sfx.play("whoosh", 0.8)
 		Director.Event.BOSS:
 			_spawn_boss()
-			hud.card(Loc.t("boss"), Loc.t("boss_sub"))
+			hud.card(Loc.t("event.boss"), Loc.t("event.bossSub"))
 			Sfx.play("boss")
 	if _rush_left > 0:
 		_rush_t -= delta
@@ -360,7 +404,7 @@ func _pace(delta: float) -> void:
 	hud.bar.progress = director.phase_progress()
 	if p != _phase_shown:
 		_phase_shown = p
-		fx.popup(Loc.t("phase") % p, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 24)
+		fx.popup(Loc.t("hud.phase") % p, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 24)
 		Sfx.play("streak", 0.85)
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
@@ -441,7 +485,7 @@ func _find_cover(t: Target, o: Vector2) -> void:
 
 
 func _step(dt: float) -> void:
-	var descent := director.descent(layout.scale) if state == State.PLAY else 0.0
+	var descent := director.descent(layout.scale) if (state == State.PLAYING or state == State.STARTING) else 0.0
 	var band := layout.play_h * 0.15
 	var worst := 0.0
 	_time += dt
@@ -466,11 +510,11 @@ func _step(dt: float) -> void:
 			_knock_sfx_cd = 0.1
 			Sfx.play("knock", randf_range(0.8, 1.0), -6.0)
 		_collide(b)
-	if state == State.PLAY:
+	if state == State.PLAYING or state == State.STARTING:
 		for t in targets:
 			if t.is_hittable() and t.bottom_y() >= layout.danger_y:
 				_breach(t)
-				if state != State.PLAY:
+				if state != State.PLAYING and state != State.STARTING:
 					break
 
 
@@ -604,7 +648,7 @@ func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	t.push(-n * 140.0 + slide * 0.1, contact)
 	fx.sparks(contact, Pal.METAL_LIGHT, 6)
 	fx.ring(contact, Pal.METAL_LIGHT, 14.0)
-	fx.popup(Loc.t("blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
+	fx.popup(Loc.t("popup.blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
 	Sfx.play("clank", randf_range(0.95, 1.08), -3.0)
 	Sfx.haptic(10, 0.3)
 
@@ -638,11 +682,11 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.ring(contact, col.lightened(0.15), t.radius)
 	var label := "+%d" % gained
 	if b.special:
-		label += " " + Loc.t("pierce")
+		label += " " + Loc.t("popup.pierce")
 	elif killed and kind == Target.Kind.SPLIT:
-		label += " " + Loc.t("split")
+		label += " " + Loc.t("popup.split")
 	elif b.hits >= 2:
-		label += " " + Loc.t("combo") % b.hits
+		label += " " + Loc.t("popup.combo") % b.hits
 	fx.popup(label, t.pos + Vector2(0, -t.radius - 14.0))
 	if b.hits >= 2:
 		fx.shake(2.0 + minf(b.hits - 2, 1))
@@ -682,7 +726,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	_add_score(gained, t.pos)
 	fx.hitstop()
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
-	fx.popup("+%d %s" % [gained, Loc.t("cut")], b.pos + Vector2(0, -22), Pal.INK)
+	fx.popup("+%d %s" % [gained, Loc.t("popup.cut")], b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
 	Sfx.play("cut", randf_range(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
@@ -712,11 +756,11 @@ func _kill_bonus(t: Target, was_close: bool, gained: int) -> int:
 	_chain_t = CHAIN_WINDOW
 	if _chain >= 3:
 		bonus += int(gained * 0.2 * mini(_chain - 2, 6))
-		fx.popup(Loc.t("chain") % _chain, t.pos + Vector2(0, t.radius + 26.0), Pal.GOLD, 16)
+		fx.popup(Loc.t("popup.chain") % _chain, t.pos + Vector2(0, t.radius + 26.0), Pal.GOLD, 16)
 		Sfx.play("streak", minf(1.25, 0.9 + 0.05 * _chain))
 	if was_close:
 		bonus += 50 * _mult()
-		fx.popup(Loc.t("close") + " +%d" % (50 * _mult()), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 18)
+		fx.popup(Loc.t("popup.close") + " +%d" % (50 * _mult()), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 18)
 		fx.slowmo(0.45, 0.28)
 		fx.punch(0.02)
 	return bonus
@@ -734,7 +778,7 @@ func _breach(t: Target) -> void:
 	fx.punch(0.02)
 	fx.sparks(at, Pal.CORAL, 10)
 	fx.ring(at, Pal.CORAL, 40.0)
-	fx.popup(Loc.t("life_lost"), at + Vector2(0, -30), Pal.CORAL, 20)
+	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
 	streak = 0
@@ -746,23 +790,44 @@ func _breach(t: Target) -> void:
 			o.length = maxf(40.0, o.length - 50.0 * layout.scale)
 			o.goal_length = o.length
 	if lives <= 0:
-		_game_over()
+		_begin_death(at)
 
 
-func _game_over() -> void:
-	state = State.OVER
-	_state_t = 0.0
+## Death: impact (shake, coral flash, sparks, low hit), then slow motion
+## 1.0 → 0.35 → 0.15 → near-still over ~0.6 s while the HUD fades and the
+## scene darkens; the results come in at ~0.9 s.
+func _begin_death(at: Vector2) -> void:
+	_set_state(State.DEATH)
+	hud.locked = true
 	slingshot.cancel()
 	_touch = -1
-	fx.slowmo(0.35, 0.8)
-	Sfx.play("lose")
+	fx.ring(at, Pal.CORAL, 70.0)
+	fx.sparks(at, Pal.CORAL, 10)
+	fx.shake(3.0)
+	fx.punch(0.03)
+	Sfx.play("death")
+	Sfx.haptic_pattern("impact")
+	Music.set_mode(Music.Mode.DEATH)
+	fx.hold_time(1.0)
+	var steps := [[0.15, 0.35], [0.3, 0.15], [0.6, 0.02]]
+	for st in steps:
+		Motion.after(st[0], func() -> void:
+			if state == State.DEATH:
+				fx.hold_time(st[1]))
+	hud.fade_hud(0.0, Motion.SLOW, 0.3)
+	hud.scrim_to(0.85, Motion.CINEMATIC, 0.3)
+	Motion.after(0.9, _show_results)
 
 
 func _show_results() -> void:
-	var is_record := Loc.submit_score(score)
+	if state != State.DEATH:
+		return
+	var prev := Prefs.record
+	var is_record := Prefs.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
-	var secs := int(director.elapsed)
-	hud.show_results(score, is_record, Loc.t("out_of_knots"), ["%d:%02d" % [secs / 60, secs % 60], "%d %%" % acc, best_streak, cuts])
+	_set_state(State.GAME_OVER)
+	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc)
+	Motion.after(0.6, func() -> void: hud.locked = false)
 
 
 # ---------------------------------------------------------------- scoring
@@ -785,7 +850,7 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 			lives += 1
 			hud.bar.lives = lives
 			hud.bar.knot_shake = 1.0
-			fx.popup(Loc.t("extra_knot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18)
+			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18)
 			Sfx.play("clear", 1.1)
 			Sfx.haptic(25, 0.5)
 
@@ -806,7 +871,7 @@ func _finish_ball(b: Ball) -> void:
 	if s.balls > 0:
 		return
 	_shots.erase(b.shot_id)
-	if state != State.PLAY:
+	if state != State.PLAYING and state != State.STARTING:
 		return
 	director.record_shot(s.hit)
 	if s.hit:
@@ -814,7 +879,7 @@ func _finish_ball(b: Ball) -> void:
 		best_streak = maxi(best_streak, streak)
 		if streak % 5 == 0:
 			_grant(Ammo.TRIPLE)
-			fx.popup(Loc.t("streak") % streak + " · " + Loc.t("triple"), Vector2(layout.center_x, layout.fork_y - 110.0), Pal.GOLD, 18)
+			fx.popup(Loc.t("popup.streak") % streak + " · " + Loc.t("popup.triple"), Vector2(layout.center_x, layout.fork_y - 110.0), Pal.GOLD, 18)
 			Sfx.play("streak")
 			Sfx.haptic(16, 0.4)
 	else:
@@ -833,7 +898,7 @@ func _grant(kind: int) -> void:
 
 
 func _update_ammo(delta: float) -> void:
-	if ammo.size() < AMMO_CAP and state != State.OVER:
+	if ammo.size() < AMMO_CAP and state != State.DEATH and state != State.GAME_OVER:
 		reload_t += delta
 		if reload_t >= director.reload_time():
 			reload_t = 0.0
@@ -859,48 +924,105 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 				fired += 1
 				break
 	_shots[_shot_seq] = {"balls": fired, "hit": false}
-	if state == State.TITLE:
+	if state == State.MAIN_MENU:
 		_start_run()
 
 
 # ---------------------------------------------------------------- system
 
-func _set_paused(on: bool) -> void:
-	if state != State.PLAY:
+## Pause: gameplay stops at once (tree paused), the presentation follows.
+func _pause() -> void:
+	if state != State.PLAYING and state != State.STARTING:
 		return
-	get_tree().paused = on
-	if on:
-		Engine.time_scale = 1.0
-		slingshot.cancel()
-		_touch = -1
-	hud.show_pause(on)
+	_set_state(State.PAUSED)
+	get_tree().paused = true
+	fx.hold_time(1.0)
+	slingshot.cancel()
+	_touch = -1
+	hud.open_pause()
+	Music.set_mode(Music.Mode.PAUSE)
+	Sfx.play("pause")
+	Sfx.haptic_pattern("soft")
+
+
+## Resume: menu out, a 3-2-1 over the dimmed field, then play.
+func _resume() -> void:
+	if state != State.PAUSED:
+		return
+	_set_state(State.RESUMING)
+	hud.locked = true
+	hud.close_pause()
+	Sfx.play("resume")
+	Sfx.haptic_pattern("soft")
+	hud.countdown(func() -> void:
+		if state != State.RESUMING:
+			return
+		get_tree().paused = false
+		fx.release_time()
+		_set_state(State.PLAYING)
+		Music.set_mode(Music.Mode.PLAY)
+		hud.locked = false)
 
 
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
-			if is_inside_tree() and (state == State.PLAY):
-				_set_paused(true)
+			if not is_inside_tree():
+				return
+			if state == State.PLAYING or state == State.STARTING:
+				_pause()
+			elif state == State.RESUMING:
+				# Backgrounded mid-countdown: fall back to the pause menu.
+				_set_state(State.PLAYING)
+				_pause()
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			match state:
-				State.TITLE:
+				State.INTRO:
+					hud.intro_seq.skip()
+				State.MAIN_MENU:
 					get_tree().quit()
-				State.OVER:
-					_to_title()
-				_:
-					_set_paused(not get_tree().paused)
+				State.GAME_OVER:
+					if not hud.locked:
+						_to_menu()
+				State.PAUSED:
+					if not hud.locked:
+						_resume()
+				State.PLAYING, State.STARTING:
+					_pause()
 
+
+const DOUBLE_TAP := 0.3        # s between taps
+const DOUBLE_TAP_SLOP := 90.0  # px between taps
 
 func _unhandled_input(e: InputEvent) -> void:
-	if get_tree().paused or state == State.OVER:
+	if get_tree().paused:
+		return
+	var aim_ok := state == State.MAIN_MENU or state == State.STARTING or state == State.PLAYING
+	if not aim_ok:
 		return
 	if e is InputEventScreenTouch:
-		if e.pressed and _touch == -1 and e.position.y > layout.danger_y - 40.0:
+		var in_aim_zone: bool = e.position.y > layout.danger_y - 40.0
+		if e.pressed and _touch == -1 and in_aim_zone:
 			if slingshot.begin_aim():
 				_touch = e.index
 				_origin = e.position
+			elif _deny_cd <= _time:
+				# No ball loaded: a short "not yet" instead of silence.
+				_deny_cd = _time + 0.5
+				Sfx.play("deny")
+				Sfx.haptic_pattern("error")
 		elif not e.pressed and e.index == _touch:
 			_touch = -1
 			slingshot.release()
+		elif e.pressed and not in_aim_zone and e.position.y > layout.top_bar_h and state != State.MAIN_MENU:
+			# Double-tap on the open field pauses. Taps there never aim, so
+			# this can't collide with shooting.
+			var now := Time.get_ticks_msec() / 1000.0
+			if now - _last_tap < DOUBLE_TAP and e.position.distance_to(_last_tap_pos) < DOUBLE_TAP_SLOP and _touch == -1:
+				_last_tap = -10.0
+				_pause()
+			else:
+				_last_tap = now
+				_last_tap_pos = e.position
 	elif e is InputEventScreenDrag and e.index == _touch:
 		slingshot.drag(e.position - _origin)

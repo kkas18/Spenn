@@ -29,6 +29,17 @@ const RECIPES := {
 	"intro": [[[392.0, 0.3], [587.0, 0.18]], 0.5, 6.0, 0.0, 0.0, -15.0],
 	"beat": [[[55.0, 0.7], [110.0, 0.15]], 0.18, 18.0, 0.0, -0.2, -16.0],
 	"token": [[[1318.0, 0.2]], 0.05, 60.0, 0.0, 0.0, -28.0],
+	"click": [[[1568.0, 0.18], [2349.0, 0.05]], 0.03, 90.0, 0.0, 0.0, -24.0],
+	"pause": [[[523.0, 0.3], [392.0, 0.2]], 0.28, 12.0, 0.0, -0.25, -17.0],
+	"resume": [[[392.0, 0.25], [587.0, 0.2]], 0.25, 12.0, 0.0, 0.2, -18.0],
+	"reveal": [[[523.0, 0.3], [784.0, 0.22], [1046.0, 0.08]], 1.1, 3.0, 0.0, 0.0, -15.0],
+	"death": [[[55.0, 0.8], [82.0, 0.3], [110.0, 0.15]], 0.9, 4.5, 0.25, -0.35, -7.0],
+	"count": [[[1760.0, 0.15]], 0.025, 120.0, 0.0, 0.0, -30.0],
+	"record": [[[659.0, 0.3], [988.0, 0.22], [1318.0, 0.14], [1976.0, 0.05]], 0.9, 4.0, 0.0, 0.02, -12.0],
+	"restart": [[[294.0, 0.2]], 0.3, 8.0, 0.35, 0.8, -22.0],
+	"deny": [[[147.0, 0.35], [156.0, 0.3]], 0.12, 25.0, 0.0, 0.0, -20.0],
+	"panel": [[[220.0, 0.08]], 0.22, 10.0, 0.35, 0.5, -28.0],
+	"countdown": [[[880.0, 0.25], [1320.0, 0.08]], 0.12, 22.0, 0.0, 0.0, -18.0],
 	"tick": [[[880.0, 0.3]], 0.03, 70.0, 0.0, 0.0, -22.0],
 	"reload": [[[523.0, 0.18]], 0.04, 60.0, 0.0, 0.1, -26.0],
 	"clear": [[[523.0, 0.35], [784.0, 0.22], [1046.0, 0.08]], 0.6, 5.0, 0.0, 0.0, -11.0],
@@ -77,15 +88,23 @@ func _ready() -> void:
 		_streams[name] = _synth(r[0], r[1], r[2], r[3], r[4])
 		_gain[name] = r[5]
 	apply_volume()
+	Prefs.changed.connect(apply_volume)
+
+
+func _exit_tree() -> void:
+	for p in _players:
+		p.stop()
+		p.stream = null
+	_streams.clear()
 
 
 func apply_volume() -> void:
-	AudioServer.set_bus_volume_db(_bus, LEVEL_DB[clampi(Loc.volume, 0, 3)])
-	AudioServer.set_bus_mute(_bus, Loc.volume == 0)
+	AudioServer.set_bus_volume_db(_bus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
+	AudioServer.set_bus_mute(_bus, Prefs.sfx_volume == 0)
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
-	if not _streams.has(name) or Loc.volume == 0:
+	if not _streams.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last.get(name, -1.0)) < MIN_GAP:
@@ -101,8 +120,27 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 
 ## Short vibration; amplitude 0..1 (ignored on devices without amplitude control).
 func haptic(ms: int, amplitude := 0.5) -> void:
-	if OS.has_feature("mobile") and Loc.haptics:
+	if OS.has_feature("mobile") and Prefs.haptics:
 		Input.vibrate_handheld(ms, amplitude * 0.8)
+
+
+## Named haptic vocabulary, used consistently across the game:
+## light (buttons), soft (pause/resume), impact (death), record (two
+## rising pulses), error (two quick low ticks).
+func haptic_pattern(name: String) -> void:
+	match name:
+		"light":
+			haptic(6, 0.2)
+		"soft":
+			haptic(12, 0.3)
+		"impact":
+			haptic(70, 0.9)
+		"record":
+			haptic(20, 0.5)
+			Motion.after(0.12, func() -> void: haptic(45, 0.85))
+		"error":
+			haptic(8, 0.3)
+			Motion.after(0.07, func() -> void: haptic(8, 0.3))
 
 
 func _synth(partials: Array, dur: float, decay: float, noise: float, glide: float) -> AudioStreamWAV:

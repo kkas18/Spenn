@@ -362,3 +362,107 @@ runde bør ende etter 1,5–3 min, mens de beste holder ut i 5.
 overlever ~3,6 min med 96 % treff, den slurvete 2,6–3,5 min, og snorkutt skjer 0–7 ganger per
 runde. Siden roboten sikter bedre enn et menneske, er forventet runde 1,5–2,5 min. Det
 passer til «ett forsøk til».
+
+---
+
+# v5 – Presentasjonslaget som eget system
+
+Kravspesifikasjon: premium intro, overganger, pause, game over, lyd og lokalisering.
+Implementert i spesifikasjonens rekkefølge.
+
+## Fase 1 – Fundament
+- **State-system** (`game.gd`): BOOT → INTRO → MAIN_MENU → STARTING → PLAYING ↔
+  PAUSED → RESUMING → PLAYING, eller DEATH → GAME_OVER → RESTARTING → STARTING. Alle
+  bytter går gjennom `_set_state()`. Input og tidsstyring leser tilstanden.
+- **Lokalisering** (`loc.gd`): alle tekster ligger under nøkler i punktnotasjon
+  (`game.title`, `pause.resume`, `gameOver.bestScore`, `record.new` …). Ingen tekst er
+  hardkodet i UI-et (grep-sjekket). `game.title` brukes i intro, meny og
+  tittelbokstaver. `language_changed` oppdaterer alt live, og tittelbokstavene henges
+  om hvis ordet endres.
+- **Design tokens** (`tokens.gd`, `Tok`): farger (Background, Surface, Primary,
+  TextPrimary/Secondary, Success, Danger), radius S/M/L, spacing XS–XL, typeskala og
+  minste berøringsflate.
+- **Motion-system** (`motion.gd`, autoload): FAST 120 / NORMAL 220 / SLOW 400 /
+  CINEMATIC 700 ms, med easing Standard/Enter/Exit/Emphasized. Driveren går i sanntid,
+  så UI beveger seg riktig under hit-stop, sakte film og pause, og den respekterer
+  reduserte animasjoner.
+- **Lagring** (`prefs.gd`): språk, musikk- og effektvolum, haptikk, reduserte
+  animasjoner, siktelinje, rekord, «intro sett» og sette fiender. Eldre lagringsfil
+  migreres.
+
+## Fase 2 – Gameplay-UX
+- Pauseknapp øverst til venstre: en diskret skive med 72 px (≥ 48 dp) berøringsflate,
+  større enn ikonet.
+- **Dobbelttrykk for pause:** to trykk innen 300 ms og 90 px på det åpne feltet over
+  sikteområdet. Dette området brukes aldri til å sikte, så det kan ikke kollidere med
+  skyting.
+- **Pause:** spillet stopper umiddelbart (treet pauses). Så mørkner scrimen (0–150 ms),
+  blur kommer (50–250 ms), og menyen skaleres 0,97 → 1 og toner inn (100–300 ms).
+  Menyen har Fortsett (gull), Start på nytt, Innstillinger og Hovedmeny, pluss hint om
+  dobbelttrykk.
+- **Fortsett:** nedtelling 3 → 2 → 1 (420 ms per tall, med lyd og lett haptikk) over
+  dempet felt, og scrimen løftes på siste tall.
+- **Restart:** tilbakestiller spilltilstanden uten å laste scenen på nytt. Du er tilbake i
+  spill på ~0,5 s.
+- **HUD:** poeng vises først, så pause (+80 ms), så resten (+160 ms), hver med fade og
+  6 px glid.
+- **Inputlås:** knapper går gjennom `_act()`, som låser i 250 ms, og overganger setter
+  `hud.locked`. Testet: 5 × «Prøv igjen» og 5 × «Hovedmeny» i samme frame gir én
+  omstart.
+
+## Fase 3 – Premium-overganger
+- **Intro** (`intro.gd`):
+  - 0–0,3 s: mørkt.
+  - 0,3–1,2 s: emblemet toner inn og skaleres 96 → 100 % (ease-out). Ballens lysrefleks
+    glir på plass med en lydaksent ved 0,85 s, og musikken starter der.
+  - 1,2–1,8 s: tittelen kommer inn bokstav for bokstav (opasitet, sporing 26 → 10 px,
+    blur → skarp, 8 px løft), fulgt av taglinen.
+  - 2,6–3,15 s: den mørke bunnen løftes og avslører menyverdenen, der bokstavene henger
+    seg inn fra bjelken.
+  - Senere oppstarter bruker en kort versjon (~1,3 s), og «trykk for å hoppe over» vises
+    når introen er sett.
+- **Meny → spill:** første skudd kapper bokstavenes snorer, HUD-en kommer inn med
+  stagger, og første rekke henger seg inn. Det er ingen svart skjerm.
+- **Død:**
+  - Treff: korallring, gnister, rist, dyp lyd og haptikk.
+  - Tid: 1,0 → 0,35 (150 ms) → 0,15 (300 ms) → nesten stille (600 ms).
+  - HUD-en fader fra 300 ms, scrimen mørkner fra 300 ms, og resultatet kommer ved 900 ms.
+  - Musikken filtreres ned og fader ut.
+- **Game over:**
+  - Poengsummen teller 0 → score på 0,8 s med myke tikk.
+  - Deretter vises beste resultat og en kompakt linje med tid og treff.
+  - Ved **ny rekord**: merket popper med liten overshoot, en ring av gullkorn åpner seg,
+    en egen klokkelyd spilles og haptikken gir to pulser.
+  - Knappene kommer inn etter 0,55 s, og input låses opp ved 0,6 s.
+
+## Fase 4 – Polish
+- `UIButton`: ved berøring 1,0 → 0,97 (120 ms), og ved slipp tilbake med liten overshoot
+  (220 ms). Klikklyd og svært lett haptikk.
+- Haptisk vokabular (`Sfx.haptic_pattern`): light, soft (pause/fortsett), impact (død),
+  record (to stigende pulser) og error (to raske, f.eks. når du sikter uten ball). Kan
+  slås av.
+- **Reduserte animasjoner:** ingen rist, kamerapuls eller blur, en tredjedel av strålene,
+  kortere varigheter og alltid kort intro.
+
+## Fase 5 – Lyd
+- Nye UI-lyder: click, panel, pause, resume, countdown, reveal (logo), death, count,
+  record, restart og deny.
+- **Musikksystem** (`music.gd`): to stems syntetiseres i en bakgrunnstråd og looper i
+  takt.
+  - **Stems:** en pad (Dm–B♭–F–C, 92 BPM) og en puls (arpeggio, myk kick, svak tikk).
+  - **Meny:** bare pad, litt mørk.
+  - **Spill:** pad og puls. Pulsen stiger med intensiteten.
+  - **Pause:** lavpass 700 Hz og lavere volum.
+  - **Død:** lavpass 350 Hz og fade over ~1,2 s.
+  - **Restart:** musikken kommer tilbake med rask fade.
+  - Musikkvolum og effektvolum stilles separat (av/lav/middels/høy).
+
+## Fase 6 – QA
+- Headless-oppstart uten skriptfeil. Hele reisen er kjørt og fotografert: intro → meny →
+  start → dobbelttrykk-pause → innstillinger → fortsett med nedtelling → død → game over
+  med ny rekord → omstart.
+- Går appen i bakgrunnen under spill eller nedtelling, havner den i pausemenyen.
+  Tilbake-knappen er tilpasset hver tilstand (hopper over intro, avslutter fra menyen,
+  går til menyen fra game over, fortsetter fra pause).
+- Kjent: headless-avslutning logger lydavspillinger som «leaked» med dummy-lyddriveren.
+  Det skjer bare ved avslutning, og både spillet og CI er upåvirket.

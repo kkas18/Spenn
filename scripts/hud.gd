@@ -1,53 +1,55 @@
 class_name Hud
 extends CanvasLayer
-## Everything drawn over the play field: the top bar (pause · score with
-## streak multiplier · knots, level/wave + progress below), the level card,
-## the title overlay, the pause menu and the results screen.
-## Type: Fraunces (display, numerals) over Manrope (tracked caps), both OFL.
+## The presentation layer, built on design tokens (`Tok`) and the motion
+## system (`Motion`): the minimal in-game bar, cards and enemy intros, the
+## blurred scrim, pause / settings / game-over panels, the resume
+## countdown, the main-menu chrome and the launch intro. All text comes from
+## `Loc` and is refreshed live on a language change.
 
 signal pause_pressed
 signal resume_pressed
 signal restart_pressed
 signal menu_pressed
 
-enum Mode { NONE, TITLE, PAUSE, OVER, SETTINGS }
-
-const CARD_IN := 0.25
-const CARD_HOLD := 1.0
-const CARD_OUT := 0.35
 const INTRO_TIME := 3.2
 
 var l: Layout
 var bar: TopBar
 var overlay: Overlay
-var mode := Mode.NONE
+var intro_seq: Intro
+var locked := false            # input lock while a transition runs
 
-var _menu: Control
-var _menu_title: Label
-var _menu_score: Label
-var _menu_badge: PanelContainer
-var _menu_badge_label: Label
-var _menu_record: Label
-var _stats: GridContainer
-var _stat_values: Array[Label] = []
-var _stat_names: Array[Label] = []
-var _btn_primary: Button
-var _btn_restart: Button
-var _btn_menu: Button
-var _btn_lang: Button
-var _btn_sound: Button
-var _btn_settings: Button
-var _btn_haptics: Button
-var _btn_guide: Button
-var _btn_back: Button
-var _settings_from := Mode.NONE
-var _title_bar: HBoxContainer
-var _t_sound: Button
-var _t_lang: Button
+var _scrim: ColorRect
+var _scrim_mat: ShaderMaterial
+var _pause: Control
+var _pause_box: Control
+var _settings: Control
+var _settings_box: Control
+var _settings_from := ""
+var _over: GameOver
+var _menu_bar: HBoxContainer
 var _theme: Theme
 var _font_caps: FontVariation
 var _font_num: FontVariation
 var _font_display: FontVariation
+
+var _pause_title: Label
+var _pause_best: Label
+var _pause_hint: Label
+var _b_resume: UIButton
+var _b_restart: UIButton
+var _b_settings: UIButton
+var _b_menu: UIButton
+var _s_title: Label
+var _s_music: UIButton
+var _s_sfx: UIButton
+var _s_haptics: UIButton
+var _s_motion: UIButton
+var _s_guide: UIButton
+var _s_lang: UIButton
+var _s_back: UIButton
+var _m_settings: UIButton
+var _m_lang: UIButton
 
 
 func _init() -> void:
@@ -60,30 +62,48 @@ func _ready() -> void:
 	bar = TopBar.new()
 	bar.hud = self
 	add_child(bar)
+	_scrim = ColorRect.new()
+	_scrim_mat = ShaderMaterial.new()
+	_scrim_mat.shader = preload("res://shaders/scrim.gdshader")
+	_scrim.material = _scrim_mat
+	_scrim_mat.set_shader_parameter("amount", 0.0)
+	_scrim_mat.set_shader_parameter("blur", 0.0)
+	_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scrim.visible = false
+	add_child(_scrim)
+	# Overlay sits above the scrim so the countdown reads over a dimmed field.
 	overlay = Overlay.new()
 	overlay.hud = self
 	add_child(overlay)
-	_build_title_bar()
-	_build_menu()
+	_build_menu_bar()
+	_build_pause()
+	_build_settings()
+	_over = GameOver.new()
+	_over.hud = self
+	_over.theme = _theme
+	add_child(_over)
+	intro_seq = Intro.new()
+	intro_seq.hud = self
+	add_child(intro_seq)
 	Loc.language_changed.connect(_refresh_text)
+	Prefs.changed.connect(_refresh_text)
 	_refresh_text()
 
 
 func setup(layout: Layout) -> void:
 	l = layout
-	bar.position = Vector2.ZERO
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq]:
+		c.position = Vector2.ZERO
+		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
-	overlay.position = Vector2.ZERO
-	overlay.size = l.size
-	_menu.size = l.size
-	# Every touch target is at least 48 dp.
-	var min_h := maxf(60.0, 48.0 * l.dp)
-	for b in [_btn_primary, _btn_restart, _btn_menu, _btn_lang, _btn_sound, _btn_settings, _btn_haptics, _btn_guide, _btn_back]:
-		b.custom_minimum_size = Vector2(maxf(300.0, 48.0 * l.dp), min_h)
-	for b in [_t_sound, _t_lang]:
+	var min_h := maxf(60.0, Tok.TOUCH_MIN_DP * l.dp)
+	for b: UIButton in [_b_resume, _b_restart, _b_settings, _b_menu, _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _s_back]:
+		b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
+	for b: UIButton in [_m_settings, _m_lang]:
 		b.custom_minimum_size = Vector2(maxf(64.0, 48.0 * l.dp), maxf(64.0, 48.0 * l.dp))
-	_title_bar.position = Vector2(l.margin, l.safe_top + 24.0)
-	_title_bar.size = Vector2(l.size.x - l.margin * 2.0, maxf(64.0, 48.0 * l.dp))
+	_menu_bar.position = Vector2(l.margin, l.safe_top + Tok.SPACE_LG)
+	_menu_bar.size = Vector2(l.size.x - l.margin * 2.0, maxf(64.0, 48.0 * l.dp))
+	_over.setup()
 
 
 func caps_font() -> Font:
@@ -98,85 +118,6 @@ func display_font() -> Font:
 	return _font_display
 
 
-func show_title() -> void:
-	mode = Mode.TITLE
-	bar.visible = false
-	_title_bar.visible = true
-	_menu.visible = false
-	overlay.title_t = 0.0
-	_refresh_text()
-
-
-func show_play() -> void:
-	mode = Mode.NONE
-	bar.visible = true
-	_title_bar.visible = false
-	_menu.visible = false
-
-
-func show_pause(on: bool) -> void:
-	mode = Mode.PAUSE if on else Mode.NONE
-	_refresh_text()
-	_menu.visible = on
-	if on:
-		_btn_primary.grab_focus.call_deferred()
-
-
-func show_results(score: int, is_record: bool, reason: String, stats: Array) -> void:
-	mode = Mode.OVER
-	_refresh_text()
-	_menu_title.text = reason
-	_menu_score.text = _group(score)
-	_menu_badge.visible = is_record
-	_menu_record.visible = not is_record
-	_menu_record.text = "%s  %s" % [Loc.t("record"), _group(Loc.record)]
-	for i in mini(stats.size(), _stat_values.size()):
-		_stat_values[i].text = str(stats[i])
-	_menu.visible = true
-
-
-func show_settings() -> void:
-	_settings_from = mode
-	mode = Mode.SETTINGS
-	_title_bar.visible = false
-	_refresh_text()
-	_menu.visible = true
-
-
-func _close_settings() -> void:
-	mode = _settings_from
-	_refresh_text()
-	if mode == Mode.TITLE:
-		_menu.visible = false
-		_title_bar.visible = true
-	else:
-		_menu.visible = true
-
-
-## "New enemy" card near the bottom of the field; the target gets a marker.
-func intro(name: String, desc: String) -> void:
-	overlay.intro_name = name
-	overlay.intro_desc = desc
-	overlay.intro_t = 0.0
-
-
-func intro_busy() -> bool:
-	return overlay.intro_t < INTRO_TIME
-
-
-func hide_menu() -> void:
-	if mode != Mode.TITLE:
-		mode = Mode.NONE
-	_menu.visible = false
-
-
-## Big centred card: level number (or the boss name) and a line under it.
-func card(title: String, sub: String) -> void:
-	overlay.card_title = title
-	overlay.card_sub = sub
-	overlay.card_t = 0.0
-
-
 static func _group(n: int) -> String:
 	var s := str(absi(n))
 	var out := ""
@@ -186,56 +127,180 @@ static func _group(n: int) -> String:
 	return ("-" if n < 0 else "") + s + out
 
 
-func _refresh_text() -> void:
-	_btn_restart.text = Loc.t("restart")
-	_btn_menu.text = Loc.t("menu")
-	_btn_lang.text = Loc.t("language")
-	_btn_sound.text = Loc.sound_label()
-	_btn_haptics.text = Loc.t("haptics_on") if Loc.haptics else Loc.t("haptics_off")
-	_btn_guide.text = Loc.t("guide_on") if Loc.aim_guide else Loc.t("guide_off")
-	_btn_settings.text = Loc.t("settings")
-	_btn_back.text = Loc.t("back")
-	_t_lang.text = "NO" if Loc.lang == "no" else "EN"
-	_t_sound.text = Loc.t("settings")
-	_menu_badge_label.text = Loc.t("new_record")
-	var names := [Loc.t("stat_time"), Loc.t("stat_acc"), Loc.t("stat_streak"), Loc.t("stat_cuts")]
-	for i in _stat_names.size():
-		_stat_names[i].text = names[i]
-	var over := mode == Mode.OVER
-	var settings := mode == Mode.SETTINGS
-	var pause := mode == Mode.PAUSE
-	_menu_score.visible = over
-	_stats.visible = over
-	_menu_badge.visible = _menu_badge.visible and over
-	_btn_primary.visible = over or pause
-	_btn_restart.visible = pause
-	_btn_settings.visible = pause
-	_btn_menu.visible = over or pause
-	for b in [_btn_sound, _btn_haptics, _btn_guide, _btn_lang, _btn_back]:
-		b.visible = settings
-	if over:
-		_btn_primary.text = Loc.t("play_again")
-		_btn_primary.theme_type_variation = &"PrimaryButton"
-	elif settings:
-		_menu_title.text = Loc.t("settings")
-		_menu_record.visible = false
+# ---------------------------------------------------------------- screens
+
+## Main menu chrome: settings + language buttons and the record/prompt copy.
+func show_menu() -> void:
+	bar.visible = false
+	_menu_bar.visible = true
+	_menu_bar.modulate.a = 0.0
+	Motion.to(_menu_bar, "modulate:a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.15)
+	overlay.menu_a = 0.0
+	Motion.to(overlay, "menu_a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.25)
+
+
+func hide_menu_ui() -> void:
+	Motion.to(_menu_bar, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+	Motion.to(overlay, "menu_a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+	Motion.after(Motion.FAST, func() -> void: _menu_bar.visible = false)
+
+
+## In-game bar comes in piece by piece: score, pause (+80 ms), the rest
+## (+160 ms), each fading and settling 6 px.
+func reveal_hud() -> void:
+	bar.visible = true
+	bar.modulate.a = 1.0
+	bar.a_score = 0.0
+	bar.a_pause = 0.0
+	bar.a_right = 0.0
+	Motion.to(bar, "a_score", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.0)
+	Motion.to(bar, "a_pause", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER)
+	Motion.to(bar, "a_right", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER * 2.0)
+
+
+func fade_hud(to: float, d: float, delay := 0.0) -> void:
+	Motion.to(bar, "modulate:a", to, d, Motion.Ease.EXIT, delay)
+
+
+func scrim_to(amount: float, d: float, delay := 0.0) -> void:
+	_scrim.visible = true
+	var blur := 0.0 if Prefs.reduced_motion else 3.0
+	Motion.to(_scrim_mat, "shader_parameter/blur", blur * amount, d, Motion.Ease.STANDARD, delay)
+	var tr := Motion.to(_scrim_mat, "shader_parameter/amount", amount, d, Motion.Ease.STANDARD, delay)
+	if amount <= 0.0:
+		tr.done = func() -> void: _scrim.visible = false
+
+
+## Pause: gameplay is already frozen; scrim darkens (0–150 ms), blur follows
+## (50–250 ms), the menu scales 0.97 → 1 and fades in (100–300 ms).
+func open_pause() -> void:
+	_refresh_text()
+	scrim_to(1.0, 0.25)
+	_open_panel(_pause, _pause_box, 0.1)
+	Sfx.play("panel")
+
+
+func close_pause() -> void:
+	_close_panel(_pause)
+
+
+func open_settings(from: String) -> void:
+	_settings_from = from
+	_refresh_text()
+	if from == "pause":
+		_close_panel(_pause)
 	else:
-		_menu_title.text = Loc.t("paused")
-		_btn_primary.text = Loc.t("resume")
-		_btn_primary.theme_type_variation = &""
-		_menu_record.visible = true
-		_menu_record.text = "%s  %s" % [Loc.t("record"), _group(Loc.record)]
+		hide_menu_ui()
+		scrim_to(1.0, 0.25)
+	_open_panel(_settings, _settings_box, 0.08)
+	Sfx.play("panel")
+
+
+func _close_settings() -> void:
+	_close_panel(_settings)
+	if _settings_from == "pause":
+		_open_panel(_pause, _pause_box, 0.08)
+	else:
+		scrim_to(0.0, 0.25)
+		show_menu()
+
+
+func _open_panel(p: Control, box: Control, delay: float) -> void:
+	p.visible = true
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	p.modulate.a = 0.0
+	box.scale = Vector2(0.97, 0.97)
+	Motion.to(p, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, delay)
+	Motion.to(box, "scale", Vector2.ONE, Motion.NORMAL, Motion.Ease.ENTER, delay)
+
+
+func _close_panel(p: Control) -> void:
+	if not p.visible:
+		return
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tr := Motion.to(p, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+	tr.done = func() -> void: p.visible = false
+
+
+## 3 → 2 → 1 over the dimmed game, then `cb`. Scrim lifts on the last beat.
+func countdown(cb: Callable) -> void:
+	for i in 3:
+		Motion.after(0.42 * i, func() -> void:
+			overlay.count_n = 3 - i
+			overlay.count_t = 0.0
+			Sfx.play("countdown", 1.0 + 0.06 * i)
+			Sfx.haptic_pattern("light"))
+	scrim_to(0.0, 0.35, 0.9)
+	Motion.after(1.26, func() -> void:
+		overlay.count_n = 0
+		cb.call())
+
+
+func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int) -> void:
+	_over.play(score, prev_best, is_record, secs, acc)
+
+
+func hide_game_over() -> void:
+	_over.close()
+
+
+## Big centred card: an event name and a line under it.
+func card(title: String, sub: String) -> void:
+	overlay.card_title = title
+	overlay.card_sub = sub
+	overlay.card_t = 0.0
+
+
+## "New enemy" card near the bottom of the field.
+func intro(name: String, desc: String) -> void:
+	overlay.intro_name = name
+	overlay.intro_desc = desc
+	overlay.intro_t = 0.0
+
+
+## A panel is up: cards and enemy intros hold back so nothing overlaps it.
+func modal_open() -> bool:
+	return _pause.visible or _settings.visible or _over.visible
+
+
+func intro_busy() -> bool:
+	return overlay.intro_t < INTRO_TIME
+
+
+## Every button routes here: ignored while locked, and it locks briefly
+## itself so a burst of taps can only ever act once.
+func _act(cb: Callable) -> void:
+	if locked:
+		return
+	locked = true
+	Motion.after(0.25, func() -> void: locked = false)
+	cb.call()
+
+
+func _refresh_text() -> void:
+	_pause_title.text = Loc.t("pause.title")
+	_pause_best.text = Loc.t("pause.best") % _group(Prefs.record)
+	_pause_hint.text = Loc.t("pause.hint")
+	_b_resume.text = Loc.t("pause.resume")
+	_b_restart.text = Loc.t("pause.restart")
+	_b_settings.text = Loc.t("pause.settings")
+	_b_menu.text = Loc.t("pause.mainMenu")
+	_s_title.text = Loc.t("settings.title")
+	_s_music.text = Loc.setting("settings.music", "settings.level.%d" % Prefs.music_volume)
+	_s_sfx.text = Loc.setting("settings.effects", "settings.level.%d" % Prefs.sfx_volume)
+	_s_haptics.text = Loc.setting("settings.haptics", Loc.on_off(Prefs.haptics))
+	_s_motion.text = Loc.setting("settings.reducedMotion", Loc.on_off(Prefs.reduced_motion))
+	_s_guide.text = Loc.setting("settings.aimGuide", Loc.on_off(Prefs.aim_guide))
+	_s_lang.text = Loc.setting("settings.language", "settings.languageName")
+	_s_back.text = Loc.t("settings.back")
+	_m_settings.text = Loc.t("menu.settings")
+	_m_lang.text = "NO" if Loc.lang == "no" else "EN"
+	_over.refresh_text()
 	bar.queue_redraw()
 	overlay.queue_redraw()
 
 
-func _on_primary() -> void:
-	Sfx.play("tick")
-	if mode == Mode.OVER:
-		restart_pressed.emit()
-	else:
-		resume_pressed.emit()
-
+# ---------------------------------------------------------------- building
 
 func _build_fonts() -> void:
 	var ts := TextServerManager.get_primary_interface()
@@ -244,7 +309,7 @@ func _build_fonts() -> void:
 	_font_caps = FontVariation.new()
 	_font_caps.base_font = manrope
 	_font_caps.variation_opentype = {ts.name_to_tag("wght"): 700}
-	_font_caps.spacing_glyph = 2
+	_font_caps.spacing_glyph = Tok.TRACKING
 	_font_num = FontVariation.new()
 	_font_num.base_font = fraunces
 	_font_num.variation_opentype = {ts.name_to_tag("wght"): 600, ts.name_to_tag("opsz"): 72}
@@ -254,26 +319,23 @@ func _build_fonts() -> void:
 	_font_display.variation_opentype = {ts.name_to_tag("wght"): 600, ts.name_to_tag("opsz"): 144}
 	_theme = Theme.new()
 	_theme.default_font = _font_caps
-	_theme.default_font_size = 17
-	var normal := _box(Color("161A21"), Color("2A303A"))
-	var hover := _box(Color("1B2029"), Color("363D49"))
-	var pressed := _box(Color("12151B"), Color("D4A94F", 0.6))
-	_theme.set_stylebox("normal", "Button", normal)
-	_theme.set_stylebox("focus", "Button", hover)
-	_theme.set_stylebox("hover", "Button", hover)
-	_theme.set_stylebox("pressed", "Button", pressed)
-	_theme.set_color("font_color", "Button", Pal.INK)
-	_theme.set_color("font_hover_color", "Button", Pal.INK)
-	_theme.set_color("font_pressed_color", "Button", Pal.GOLD_LIGHT)
-	_theme.set_color("font_focus_color", "Button", Pal.INK)
+	_theme.default_font_size = Tok.TYPE_BUTTON
+	_theme.set_stylebox("normal", "Button", _box(Tok.SURFACE, Tok.BORDER))
+	_theme.set_stylebox("hover", "Button", _box(Tok.SURFACE_HI, Tok.BORDER_HI))
+	_theme.set_stylebox("focus", "Button", _box(Tok.SURFACE_HI, Tok.BORDER_HI))
+	_theme.set_stylebox("pressed", "Button", _box(Tok.SURFACE_LO, Color(Tok.PRIMARY, 0.6)))
+	_theme.set_stylebox("disabled", "Button", _box(Tok.SURFACE_LO, Tok.BORDER))
+	for c in ["font_color", "font_hover_color", "font_focus_color"]:
+		_theme.set_color(c, "Button", Tok.TEXT_PRIMARY)
+	_theme.set_color("font_pressed_color", "Button", Tok.PRIMARY_HI)
 	# Primary: the one gold action on a screen.
 	_theme.set_type_variation(&"PrimaryButton", &"Button")
-	_theme.set_stylebox("normal", "PrimaryButton", _box(Pal.GOLD, Pal.GOLD))
-	_theme.set_stylebox("hover", "PrimaryButton", _box(Pal.GOLD_LIGHT, Pal.GOLD_LIGHT))
-	_theme.set_stylebox("focus", "PrimaryButton", _box(Pal.GOLD_LIGHT, Pal.GOLD_LIGHT))
-	_theme.set_stylebox("pressed", "PrimaryButton", _box(Pal.GOLD_DARK, Pal.GOLD_DARK))
+	_theme.set_stylebox("normal", "PrimaryButton", _box(Tok.PRIMARY, Tok.PRIMARY))
+	_theme.set_stylebox("hover", "PrimaryButton", _box(Tok.PRIMARY_HI, Tok.PRIMARY_HI))
+	_theme.set_stylebox("focus", "PrimaryButton", _box(Tok.PRIMARY_HI, Tok.PRIMARY_HI))
+	_theme.set_stylebox("pressed", "PrimaryButton", _box(Tok.PRIMARY_LO, Tok.PRIMARY_LO))
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		_theme.set_color(c, "PrimaryButton", Pal.BG)
+		_theme.set_color(c, "PrimaryButton", Tok.ON_PRIMARY)
 
 
 func _box(bg: Color, border: Color) -> StyleBoxFlat:
@@ -281,128 +343,111 @@ func _box(bg: Color, border: Color) -> StyleBoxFlat:
 	s.bg_color = bg
 	s.border_color = border
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(14)
-	s.content_margin_left = 20
-	s.content_margin_right = 20
-	s.shadow_color = Color(0, 0, 0, 0.35)
+	s.set_corner_radius_all(Tok.RADIUS_M)
+	s.content_margin_left = Tok.SPACE_LG
+	s.content_margin_right = Tok.SPACE_LG
+	s.shadow_color = Tok.SHADOW
 	s.shadow_offset = Pal.SHADOW_OFFSET
 	s.shadow_size = 2
 	s.anti_aliasing = true
 	return s
 
 
-func _build_title_bar() -> void:
-	_title_bar = HBoxContainer.new()
-	_title_bar.theme = _theme
-	_title_bar.visible = false
-	add_child(_title_bar)
-	_t_sound = Button.new()
-	_t_sound.pressed.connect(func() -> void: Sfx.play("tick"); show_settings())
-	_title_bar.add_child(_t_sound)
-	var gap := Control.new()
-	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_title_bar.add_child(gap)
-	_t_lang = Button.new()
-	_t_lang.pressed.connect(func() -> void: Sfx.play("tick"); Loc.toggle_language())
-	_title_bar.add_child(_t_lang)
-
-
-func _build_menu() -> void:
-	_menu = Control.new()
-	_menu.theme = _theme
-	_menu.visible = false
-	_menu.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_menu)
-	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.035, 0.045, 0.86)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_menu.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_menu.add_child(center)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 14)
-	center.add_child(box)
-	_menu_title = _label(15, Pal.INK_DIM, _font_caps)
-	_menu_score = _label(96, Pal.INK, _font_num)
-	box.add_child(_menu_title)
-	box.add_child(_menu_score)
-	_menu_badge = PanelContainer.new()
-	var badge_box := StyleBoxFlat.new()
-	badge_box.bg_color = Pal.GOLD
-	badge_box.set_corner_radius_all(12)
-	badge_box.content_margin_left = 14
-	badge_box.content_margin_right = 14
-	badge_box.content_margin_top = 4
-	badge_box.content_margin_bottom = 4
-	_menu_badge.add_theme_stylebox_override("panel", badge_box)
-	_menu_badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_menu_badge_label = _label(14, Pal.BG, _font_caps)
-	_menu_badge.add_child(_menu_badge_label)
-	box.add_child(_menu_badge)
-	_menu_record = _label(15, Pal.INK_DIM, _font_caps)
-	box.add_child(_menu_record)
-	_stats = GridContainer.new()
-	_stats.columns = 2
-	_stats.add_theme_constant_override("h_separation", 12)
-	_stats.add_theme_constant_override("v_separation", 12)
-	var tile := StyleBoxFlat.new()
-	tile.bg_color = Color("141820")
-	tile.border_color = Color("232933")
-	tile.set_border_width_all(1)
-	tile.set_corner_radius_all(14)
-	tile.set_content_margin_all(16)
-	for i in 4:
-		var p := PanelContainer.new()
-		p.add_theme_stylebox_override("panel", tile)
-		p.custom_minimum_size = Vector2(144, 0)
-		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 2)
-		var n := _label(12, Pal.INK_DIM, _font_caps)
-		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		var val := _label(34, Pal.INK, _font_num)
-		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		v.add_child(n)
-		v.add_child(val)
-		p.add_child(v)
-		_stats.add_child(p)
-		_stat_names.append(n)
-		_stat_values.append(val)
-	box.add_child(_stats)
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 16)
-	box.add_child(spacer)
-	_btn_primary = _button(_on_primary)
-	_btn_restart = _button(func() -> void: Sfx.play("tick"); restart_pressed.emit())
-	_btn_menu = _button(func() -> void: Sfx.play("tick"); menu_pressed.emit())
-	_btn_settings = _button(func() -> void: Sfx.play("tick"); show_settings())
-	_btn_sound = _button(func() -> void: Loc.toggle_sound(); Sfx.play("tick"))
-	_btn_haptics = _button(func() -> void: Loc.toggle_haptics(); Sfx.haptic(20, 0.6); Sfx.play("tick"))
-	_btn_guide = _button(func() -> void: Loc.toggle_aim_guide(); Sfx.play("tick"))
-	_btn_lang = _button(func() -> void: Sfx.play("tick"); Loc.toggle_language())
-	_btn_back = _button(func() -> void: Sfx.play("tick"); _close_settings())
-	for b in [_btn_primary, _btn_restart, _btn_settings, _btn_menu, _btn_sound, _btn_haptics, _btn_guide, _btn_lang, _btn_back]:
-		box.add_child(b)
-
-
-func _label(font_size: int, col: Color, font: Font) -> Label:
+func label(size: int, col: Color, font: Font) -> Label:
 	var lb := Label.new()
 	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lb.add_theme_font_override("font", font)
-	lb.add_theme_font_size_override("font_size", font_size)
+	lb.add_theme_font_size_override("font_size", size)
 	lb.add_theme_color_override("font_color", col)
 	return lb
 
 
-func _button(cb: Callable) -> Button:
-	var b := Button.new()
-	b.custom_minimum_size = Vector2(300, 60)
-	b.pressed.connect(cb)
+func button(cb: Callable, primary := false) -> UIButton:
+	var b := UIButton.new()
+	b.custom_minimum_size = Vector2(320, 60)
+	if primary:
+		b.theme_type_variation = &"PrimaryButton"
+	b.pressed.connect(func() -> void: _act(cb))
 	return b
 
 
-## Custom-drawn top bar: pause, score and knots share one baseline.
+## A full-screen panel with a centred column; returns [panel, column].
+func _panel() -> Array:
+	var p := Control.new()
+	p.theme = _theme
+	p.visible = false
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(p)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(center)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", Tok.SPACE_MD)
+	box.resized.connect(func() -> void: box.pivot_offset = box.size * 0.5)
+	center.add_child(box)
+	return [p, box]
+
+
+func _spacer(h: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, h)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _build_pause() -> void:
+	var pb := _panel()
+	_pause = pb[0]
+	_pause_box = pb[1]
+	_pause_title = label(Tok.TYPE_LABEL + 1, Tok.TEXT_SECONDARY, _font_caps)
+	_pause_best = label(Tok.TYPE_CAPTION + 1, Tok.TEXT_FAINT, _font_caps)
+	_pause_hint = label(Tok.TYPE_CAPTION, Tok.TEXT_FAINT, _font_caps)
+	_b_resume = button(func() -> void: resume_pressed.emit(), true)
+	_b_restart = button(func() -> void: restart_pressed.emit())
+	_b_settings = button(func() -> void: open_settings("pause"))
+	_b_menu = button(func() -> void: menu_pressed.emit())
+	for c: Control in [_pause_title, _pause_best, _spacer(Tok.SPACE_SM), _b_resume, _b_restart, _b_settings, _b_menu, _spacer(Tok.SPACE_SM), _pause_hint]:
+		_pause_box.add_child(c)
+
+
+func _build_settings() -> void:
+	var pb := _panel()
+	_settings = pb[0]
+	_settings_box = pb[1]
+	_s_title = label(Tok.TYPE_LABEL + 1, Tok.TEXT_SECONDARY, _font_caps)
+	_s_music = button(func() -> void: Prefs.cycle_music())
+	_s_sfx = button(func() -> void: Prefs.cycle_sfx(); Sfx.play("countdown"))
+	_s_haptics = button(func() -> void: Prefs.toggle_haptics(); Sfx.haptic_pattern("soft"))
+	_s_motion = button(func() -> void: Prefs.toggle_reduced_motion())
+	_s_guide = button(func() -> void: Prefs.toggle_aim_guide())
+	_s_lang = button(func() -> void: Loc.next_language())
+	_s_back = button(_close_settings)
+	for c: Control in [_s_title, _spacer(Tok.SPACE_SM), _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _spacer(Tok.SPACE_SM), _s_back]:
+		_settings_box.add_child(c)
+
+
+func _build_menu_bar() -> void:
+	_menu_bar = HBoxContainer.new()
+	_menu_bar.theme = _theme
+	_menu_bar.visible = false
+	add_child(_menu_bar)
+	_m_settings = button(func() -> void: open_settings("menu"))
+	_m_settings.custom_minimum_size = Vector2(64, 64)
+	_menu_bar.add_child(_m_settings)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_menu_bar.add_child(gap)
+	_m_lang = button(func() -> void: Loc.next_language())
+	_m_lang.custom_minimum_size = Vector2(64, 64)
+	_menu_bar.add_child(_m_lang)
+
+
+# ---------------------------------------------------------------- top bar
+
+## Minimal in-game bar: pause (top left, on a soft disc, with a touch area
+## larger than the icon), score with streak multiplier, knots and phase.
 class TopBar extends Control:
 	var hud: Hud
 	var score := 0
@@ -413,10 +458,13 @@ class TopBar extends Control:
 	var phase := 1
 	var progress := 0.0
 	var shown_progress := 0.0
-	var pulse := 0.0             # 0..1, decays; drives the 1.08 score pulse
+	var pulse := 0.0
 	var badge_pop := 0.0
 	var knot_shake := 0.0
-	var show_fps := false        # toggled by triple-tapping the knots
+	var show_fps := false
+	var a_score := 1.0             # staggered reveal alphas
+	var a_pause := 1.0
+	var a_right := 1.0
 	var _taps: Array[int] = []
 
 	func _ready() -> void:
@@ -433,8 +481,8 @@ class TopBar extends Control:
 
 	func pause_rect() -> Rect2:
 		var l := hud.l
-		var s := maxf(48.0 * l.dp, 64.0)
-		var c := Vector2(l.margin + 10.0, l.score_baseline - 14.0)
+		var s := maxf(Tok.TOUCH_MIN_DP * l.dp, 72.0)
+		var c := Vector2(l.margin + 14.0, l.score_baseline - 12.0)
 		return Rect2(c - Vector2(s, s) * 0.5, Vector2(s, s)).abs()
 
 	func knots_rect() -> Rect2:
@@ -444,7 +492,7 @@ class TopBar extends Control:
 
 	func _gui_input(e: InputEvent) -> void:
 		var press: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed)
-		if not press:
+		if not press or modulate.a < 0.5:
 			return
 		if pause_rect().has_point(e.position):
 			accept_event()
@@ -460,16 +508,17 @@ class TopBar extends Control:
 				show_fps = not show_fps
 
 	func _has_point(p: Vector2) -> bool:
-		return hud != null and hud.l != null and (pause_rect().has_point(p) or knots_rect().has_point(p))
+		return hud != null and hud.l != null and visible and (pause_rect().has_point(p) or knots_rect().has_point(p))
 
 	func _process(delta: float) -> void:
+		var rd := delta / maxf(Engine.time_scale, 0.001)
 		var diff := float(score) - shown_score
 		if absf(diff) > 0.01:
-			shown_score += signf(diff) * maxf(absf(diff) * Pal.damp(0.18, delta), minf(absf(diff), 60.0 * delta))
-		pulse = maxf(0.0, pulse - delta / 0.18)
-		badge_pop = maxf(0.0, badge_pop - delta / 0.3)
-		knot_shake = maxf(0.0, knot_shake - delta / 0.6)
-		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, delta))
+			shown_score += signf(diff) * maxf(absf(diff) * Pal.damp(0.18, rd), minf(absf(diff), 60.0 * rd))
+		pulse = maxf(0.0, pulse - rd / 0.18)
+		badge_pop = maxf(0.0, badge_pop - rd / 0.3)
+		knot_shake = maxf(0.0, knot_shake - rd / 0.6)
+		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, rd))
 		queue_redraw()
 
 	func _draw() -> void:
@@ -480,88 +529,100 @@ class TopBar extends Control:
 		var w := l.size.x
 		var num := hud.num_font()
 		var caps := hud.caps_font()
-		# Pause: two bars resting on the baseline.
-		var px := l.margin + 3.0
+		# Pause: two bars on a soft disc.
+		var pc := pause_rect().get_center()
+		var ap := a_pause
+		var dy := (1.0 - ap) * 6.0
+		draw_circle(pc + Vector2(0, dy), 24.0, Color(Tok.SURFACE, 0.7 * ap), true, -1.0, true)
+		draw_arc(pc + Vector2(0, dy), 24.0, 0.0, TAU, 32, Color(Tok.BORDER, 0.8 * ap), 1.0, true)
 		for i in 2:
-			var r := Rect2(px + i * 11.0, base - 24.0, 6.0, 24.0)
-			draw_rect(Rect2(r.position + Vector2(2, 2), r.size), Pal.SHADOW)
-			draw_rect(r, Pal.INK_DIM)
+			var r := Rect2(pc + Vector2(-8.0 + i * 11.0, -10.0 + dy), Vector2(5.0, 20.0))
+			draw_rect(r, Color(Tok.TEXT_PRIMARY, 0.85 * ap))
 		# Score (centre), pulsing about its own baseline centre.
+		var asc := a_score
 		var txt := Hud._group(int(round(shown_score)))
 		var fs := 52
 		var s := 1.0 + 0.08 * sin(pulse * PI)
 		var tw := num.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		draw_set_transform(Vector2(w * 0.5, base), 0.0, Vector2(s, s))
-		draw_string(num, Vector2(-tw * 0.5 + 2.0, 2.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Pal.SHADOW)
-		draw_string(num, Vector2(-tw * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Pal.INK)
+		draw_set_transform(Vector2(w * 0.5, base + (1.0 - asc) * 6.0), 0.0, Vector2(s, s))
+		draw_string(num, Vector2(-tw * 0.5 + 2.0, 2.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.SHADOW, Tok.SHADOW.a * asc))
+		draw_string(num, Vector2(-tw * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, asc))
 		draw_set_transform(Vector2.ZERO)
-		# Streak multiplier: a gold pill beside the score (gold = power).
+		var ar := a_right
+		var ry := (1.0 - ar) * 6.0
+		# Streak multiplier pill + streak meter beside the score.
+		var sx := w * 0.5 + tw * 0.5 * s + 10.0
 		if mult > 1:
 			var mt := "×%d" % mult
 			var mw := caps.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 16.0
 			var bs := 1.0 + 0.25 * sin(badge_pop * PI)
-			var bc := Vector2(w * 0.5 + tw * 0.5 * s + 10.0 + mw * 0.5, base - 12.0)
+			var bc := Vector2(sx + mw * 0.5, base - 12.0 + ry)
 			draw_set_transform(bc, 0.0, Vector2(bs, bs))
 			var rr := Rect2(-mw * 0.5, -12.0, mw, 24.0)
-			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Pal.SHADOW)
-			draw_rect(rr, Pal.GOLD)
-			draw_string(caps, Vector2(-mw * 0.5 + 8.0, 6.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Pal.BG)
+			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Color(Tok.SHADOW, Tok.SHADOW.a * ar))
+			draw_rect(rr, Color(Tok.PRIMARY, ar))
+			draw_string(caps, Vector2(-mw * 0.5 + 8.0, 6.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Tok.ON_PRIMARY)
 			draw_set_transform(Vector2.ZERO)
-		# Streak meter: three small dots toward the next multiplier.
+			sx += mw + 8.0
 		if mult < 4:
 			var filled := streak % 3
-			var sx := w * 0.5 + tw * 0.5 * s + 12.0
-			if mult > 1:
-				sx += caps.get_string_size("×%d" % mult, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 26.0
 			for i in 3:
-				var c := Pal.GOLD if i < filled else Color(Pal.INK_FAINT, 0.7)
-				draw_circle(Vector2(sx + i * 9.0, base - 4.0), 2.4, c, true, -1.0, true)
+				var c := Tok.PRIMARY if i < filled else Color(Tok.TEXT_FAINT, 0.7)
+				draw_circle(Vector2(sx + 2.0 + i * 9.0, base - 4.0 + ry), 2.4, Color(c, c.a * ar), true, -1.0, true)
 		# Knots (lives) on the right, same baseline.
 		for i in 3:
 			var cx := w - l.margin - 8.0 - (2 - i) * 22.0
 			var shake := 0.0
 			if i == lives and knot_shake > 0.0:
 				shake = sin(knot_shake * 40.0) * 4.0 * knot_shake
-			var c := Vector2(cx + shake, base - 10.0)
+			var c := Vector2(cx + shake, base - 10.0 + ry)
 			if i < lives:
-				draw_arc(c + Vector2(1.5, 1.5), 6.0, 0.0, TAU, 20, Pal.SHADOW, 2.6, true)
-				draw_arc(c, 6.0, 0.0, TAU, 20, Pal.INK, 2.6, true)
-				draw_line(c + Vector2(-3, 3), c + Vector2(3, -3), Pal.INK_DIM, 1.2, true)
+				draw_arc(c + Vector2(1.5, 1.5), 6.0, 0.0, TAU, 20, Color(Tok.SHADOW, Tok.SHADOW.a * ar), 2.6, true)
+				draw_arc(c, 6.0, 0.0, TAU, 20, Color(Tok.TEXT_PRIMARY, ar), 2.6, true)
+				draw_line(c + Vector2(-3, 3), c + Vector2(3, -3), Color(Tok.TEXT_SECONDARY, ar), 1.2, true)
 			else:
-				draw_line(c + Vector2(-7, 0), c + Vector2(-2, 0), Pal.INK_FAINT, 2.4, true)
-				draw_line(c + Vector2(2, 0), c + Vector2(7, 0), Pal.INK_FAINT, 2.4, true)
-		# Level · wave label 8 px under the score, progress bar 8 px under it.
-		var lv := Loc.t("phase") % phase
-		var ly := base + 10.0 + caps.get_ascent(13)
-		draw_string(caps, Vector2(0, ly), lv, HORIZONTAL_ALIGNMENT_CENTER, w, 13, Pal.INK_DIM)
+				draw_line(c + Vector2(-7, 0), c + Vector2(-2, 0), Color(Tok.TEXT_FAINT, ar), 2.4, true)
+				draw_line(c + Vector2(2, 0), c + Vector2(7, 0), Color(Tok.TEXT_FAINT, ar), 2.4, true)
+		# Phase label 10 px under the score, progress bar 8 px under it.
+		var lv := Loc.t("hud.phase") % phase
+		var ly := base + 10.0 + caps.get_ascent(13) + ry
+		draw_string(caps, Vector2(0, ly), lv, HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color(Tok.TEXT_SECONDARY, ar))
 		var bw := 132.0
 		var by := ly + caps.get_descent(13) + 8.0
 		var track := Rect2(w * 0.5 - bw * 0.5, by, bw, 3.0)
-		draw_rect(track, Color(Pal.INK_FAINT, 0.45))
-		draw_rect(Rect2(track.position, Vector2(bw * clampf(shown_progress, 0.0, 1.0), 3.0)), Pal.INK_DIM)
+		draw_rect(track, Color(Tok.TEXT_FAINT, 0.45 * ar))
+		draw_rect(Rect2(track.position, Vector2(bw * clampf(shown_progress, 0.0, 1.0), 3.0)), Color(Tok.TEXT_SECONDARY, ar))
 		if show_fps:
 			var fps := "%d FPS" % Engine.get_frames_per_second()
-			draw_string(caps, Vector2(0, ly), fps, HORIZONTAL_ALIGNMENT_RIGHT, w - l.margin, 11, Pal.INK_FAINT)
+			draw_string(caps, Vector2(0, ly), fps, HORIZONTAL_ALIGNMENT_RIGHT, w - l.margin, 11, Tok.TEXT_FAINT)
 
 
-## Non-interactive layer: title copy, level card and the aim hint.
+# ---------------------------------------------------------------- overlay
+
+## Non-interactive layer: main-menu copy, event cards, enemy intros and
+## the resume countdown.
 class Overlay extends Control:
 	var hud: Hud
 	var card_title := ""
 	var card_sub := ""
 	var card_t := 99.0
-	var title_t := 0.0
+	var menu_a := 0.0
 	var intro_name := ""
 	var intro_desc := ""
 	var intro_t := 99.0
+	var count_n := 0
+	var count_t := 0.0
+	var _clock := 0.0
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _process(delta: float) -> void:
-		card_t += delta
-		title_t += delta
-		intro_t += delta
+		var rd := delta / maxf(Engine.time_scale, 0.001)
+		card_t += rd
+		intro_t += rd
+		count_t += rd
+		_clock += rd
 		queue_redraw()
 
 	func _draw() -> void:
@@ -571,31 +632,177 @@ class Overlay extends Control:
 		var w := l.size.x
 		var caps := hud.caps_font()
 		var num := hud.num_font()
-		if hud.mode == Hud.Mode.TITLE:
+		var disp := hud.display_font()
+		if menu_a > 0.0:
+			var a := menu_a
 			var y := l.rail_y + l.play_h * 0.66
-			draw_string(caps, Vector2(0, y), Loc.t("record"), HORIZONTAL_ALIGNMENT_CENTER, w, 13, Pal.INK_DIM)
-			var rec := Hud._group(Loc.record)
-			draw_string(num, Vector2(2, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Pal.SHADOW)
-			draw_string(num, Vector2(0, y + 56.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Pal.INK)
-			var a := 0.55 + 0.45 * sin(title_t * 2.4)
-			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Pal.GOLD, a))
+			draw_string(caps, Vector2(0, y), Loc.t("menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color(Tok.TEXT_SECONDARY, a))
+			var rec := Hud._group(Prefs.record)
+			draw_string(num, Vector2(2, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Color(Tok.SHADOW, Tok.SHADOW.a * a))
+			draw_string(num, Vector2(0, y + 56.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Color(Tok.TEXT_PRIMARY, a))
+			var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
+			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Tok.PRIMARY, p))
+		if hud.modal_open():
+			return
 		if intro_t < Hud.INTRO_TIME and intro_name != "":
 			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))
 			var iy := l.danger_y - 150.0 + (1.0 - k) * 10.0
-			var disp := hud.display_font()
-			draw_string(caps, Vector2(0, iy), Loc.t("new_enemy"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Pal.GOLD, k))
+			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Tok.PRIMARY, k))
 			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
-			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Pal.INK, k))
-			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Pal.INK_DIM, k))
-		var total := Hud.CARD_IN + Hud.CARD_HOLD + Hud.CARD_OUT
+			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Tok.TEXT_PRIMARY, k))
+			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Tok.TEXT_SECONDARY, k))
+		var total := Motion.NORMAL + 1.0 + Motion.SLOW
 		if card_t < total and card_title != "":
 			var k := 1.0
-			if card_t < Hud.CARD_IN:
-				k = ease(card_t / Hud.CARD_IN, 0.4)
-			elif card_t > Hud.CARD_IN + Hud.CARD_HOLD:
-				k = 1.0 - (card_t - Hud.CARD_IN - Hud.CARD_HOLD) / Hud.CARD_OUT
-			var cy := l.rail_y + l.play_h * 0.46 + (1.0 - k) * 14.0
-			var disp := hud.display_font()
-			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, 64, Color(0, 0, 0, 0.35 * k))
-			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, 64, Color(Pal.INK, k))
-			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, 14, Color(Pal.INK_DIM, k))
+			if card_t < Motion.NORMAL:
+				k = Motion.ease_value(Motion.Ease.ENTER, card_t / Motion.NORMAL)
+			elif card_t > Motion.NORMAL + 1.0:
+				k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (card_t - Motion.NORMAL - 1.0) / Motion.SLOW)
+			var cy := l.rail_y + l.play_h * 0.46 + (1.0 - k) * 12.0
+			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(0, 0, 0, 0.35 * k))
+			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(Tok.TEXT_PRIMARY, k))
+			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, k))
+		if count_n > 0:
+			# Countdown digit: pops in (emphasized) and fades as the next nears.
+			var k := Motion.ease_value(Motion.Ease.EMPHASIZED, count_t / Motion.NORMAL)
+			var a := clampf(1.0 - (count_t - 0.25) / 0.17, 0.0, 1.0) * minf(1.0, count_t / 0.08)
+			var sc := lerpf(1.25, 1.0, k)
+			var c := Vector2(w * 0.5, l.rail_y + l.play_h * 0.46)
+			draw_set_transform(c, 0.0, Vector2(sc, sc))
+			var txt := str(count_n)
+			var tw := disp.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 140).x
+			draw_string(disp, Vector2(-tw * 0.5 + 4.0, 44.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 140, Color(0, 0, 0, 0.35 * a))
+			draw_string(disp, Vector2(-tw * 0.5, 40.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 140, Color(Tok.TEXT_PRIMARY, a))
+			draw_set_transform(Vector2.ZERO)
+
+
+# ---------------------------------------------------------------- game over
+
+## Results: title, score counting up (≈0.8 s, soft ticks), best score and
+## a compact stats line, a restrained new-record moment (badge pop, a ring
+## of gold grains, chime, two-step haptic), then the two actions.
+class GameOver extends Control:
+	var hud: Hud
+	var _t := -1.0
+	var _score := 0
+	var _prev := 0
+	var _record := false
+	var _secs := 0
+	var _acc := 0
+	var _ticked := 0.0
+	var _record_done := false
+	var _box: VBoxContainer
+	var _retry: UIButton
+	var _menu: UIButton
+
+	const COUNT_FROM := 0.15
+	const COUNT_D := 0.8
+
+	func _ready() -> void:
+		visible = false
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_box = VBoxContainer.new()
+		_box.add_theme_constant_override("separation", Tok.SPACE_MD)
+		add_child(_box)
+		_retry = hud.button(func() -> void: hud.restart_pressed.emit(), true)
+		_menu = hud.button(func() -> void: hud.menu_pressed.emit())
+		_box.add_child(_retry)
+		_box.add_child(_menu)
+
+	func setup() -> void:
+		var l := hud.l
+		var min_h := maxf(60.0, Tok.TOUCH_MIN_DP * l.dp)
+		for b in [_retry, _menu]:
+			b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
+		var bw := maxf(320.0, 48.0 * l.dp)
+		_box.position = Vector2(l.size.x * 0.5 - bw * 0.5, l.size.y * 0.66)
+		_box.size = Vector2(bw, 0)
+
+	func refresh_text() -> void:
+		_retry.text = Loc.t("gameOver.restart")
+		_menu.text = Loc.t("gameOver.mainMenu")
+
+	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int) -> void:
+		refresh_text()
+		_score = score
+		_prev = prev_best
+		_record = is_record
+		_secs = secs
+		_acc = acc
+		_t = 0.0
+		_ticked = 0.0
+		_record_done = false
+		visible = true
+		modulate.a = 1.0
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		_box.modulate.a = 0.0
+		_box.visible = true
+		var base_y := hud.l.size.y * 0.66
+		_box.position.y = base_y + 10.0
+		Motion.to(_box, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
+		Motion.to(_box, "position:y", base_y, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
+
+	func close() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tr := Motion.to(self, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+		tr.done = func() -> void:
+			visible = false
+			_t = -1.0
+
+	func _process(delta: float) -> void:
+		if _t < 0.0:
+			return
+		_t += delta / maxf(Engine.time_scale, 0.001)
+		var k := clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0)
+		if k > 0.0 and k < 1.0 and _t - _ticked > 0.07:
+			_ticked = _t
+			Sfx.play("count", lerpf(0.9, 1.25, k))
+		if _record and not _record_done and k >= 1.0:
+			_record_done = true
+			Sfx.play("record")
+			Sfx.haptic_pattern("record")
+		queue_redraw()
+
+	func _draw() -> void:
+		if _t < 0.0 or hud.l == null:
+			return
+		var l := hud.l
+		var w := l.size.x
+		var caps := hud.caps_font()
+		var num := hud.num_font()
+		var cy := l.size.y * 0.34
+		var ka := Motion.ease_value(Motion.Ease.ENTER, _t / Motion.NORMAL)
+		draw_string(caps, Vector2(0, cy - 96.0 + (1.0 - ka) * 8.0), Loc.t("gameOver.title"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(Tok.TEXT_SECONDARY, ka))
+		var k := Motion.ease_value(Motion.Ease.ENTER, clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0))
+		var shown := Hud._group(int(round(_score * k)))
+		var sa := minf(1.0, (_t - COUNT_FROM) / 0.15)
+		if sa > 0.0:
+			draw_string(num, Vector2(3, cy + 3.0), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(0, 0, 0, 0.35 * sa))
+			draw_string(num, Vector2(0, cy), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(Tok.TEXT_PRIMARY, sa))
+		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
+		if kb > 0.0:
+			var best_line := "%s  %s" % [Loc.t("gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
+			draw_string(caps, Vector2(0, cy + 52.0 + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
+		var ks := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.4) / Motion.NORMAL)
+		if ks > 0.0:
+			var stats := "%s %d:%02d   ·   %s %d %%" % [Loc.t("gameOver.time"), _secs / 60, _secs % 60, Loc.t("gameOver.accuracy"), _acc]
+			draw_string(caps, Vector2(0, cy + 84.0 + (1.0 - ks) * 6.0), stats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.TEXT_FAINT, ks))
+		if _record and _record_done:
+			# Badge pops with a small overshoot; a ring of gold grains opens.
+			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)
+			var bk := Motion.ease_value(Motion.Ease.EMPHASIZED, rt / Motion.SLOW)
+			var label := Loc.t("record.new")
+			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 28.0
+			var bc := Vector2(w * 0.5, cy - 150.0)
+			draw_set_transform(bc, 0.0, Vector2(bk, bk))
+			var rr := Rect2(-lw * 0.5, -15.0, lw, 30.0)
+			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Tok.SHADOW)
+			draw_rect(rr, Tok.PRIMARY)
+			draw_string(caps, Vector2(-lw * 0.5 + 14.0, 5.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Tok.ON_PRIMARY)
+			draw_set_transform(Vector2.ZERO)
+			if rt < 0.8 and not Prefs.reduced_motion:
+				var e := Motion.ease_value(Motion.Ease.ENTER, rt / 0.8)
+				for i in 18:
+					var a := i * TAU / 18.0
+					var p := bc + Vector2.from_angle(a) * lerpf(20.0, 110.0, e) * Vector2(1.6, 0.8)
+					draw_circle(p, lerpf(3.0, 1.0, e), Color(Tok.PRIMARY, 1.0 - e), true, -1.0, true)

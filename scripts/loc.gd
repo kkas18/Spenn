@@ -1,228 +1,174 @@
 extends Node
-## Strings (Norwegian / English), language choice and the persisted record.
+## Localization (autoload `Loc`). Every visible string lives here under a
+## dotted key; UI never hardcodes text. Switching language emits
+## `language_changed`, and every screen re-reads its strings live.
 
 signal language_changed
 
-const SAVE_PATH := "user://spenn.cfg"
+const LANGS := ["no", "en"]
 
 const STRINGS := {
 	"no": {
-		"level": "NIVÅ %d",
-		"record": "REKORD",
-		"paused": "PAUSE",
-		"resume": "FORTSETT",
-		"restart": "START PÅ NYTT",
-		"language": "SPRÅK: NORSK",
-		"game_over": "SNOREN NÅDDE BUNNEN",
-		"play_again": "SPILL IGJEN",
-		"new_record": "NY REKORD",
-		"hint": "DRA NED OG SLIPP",
-		"pierce": "GJENNOMSLAG",
-		"combo": "KOMBO ×%d",
-		"split": "SPLITT",
-		"level_clear": "NIVÅ %d FULLFØRT",
-		"wave": "BØLGE %d/%d",
-		"level_wave": "NIVÅ %d · BØLGE %d/%d",
-		"cut": "SNORKUTT",
-		"blocked": "SKJOLD",
-		"streak": "SERIE %d",
-		"triple": "TREDELT SKUDD",
-		"life_lost": "KNUTE RØK",
-		"boss": "SPINNEREN",
-		"boss_sub": "SKYT I SKJOLDGLIPEN",
-		"level_sub": "%d MÅL · %d BØLGER",
-		"level_sub1": "%d MÅL",
-		"play": "DRA FOR Å SPILLE",
-		"menu": "MENY",
-		"stat_level": "NIVÅ",
-		"stat_acc": "TREFF",
-		"stat_streak": "BESTE SERIE",
-		"stat_cuts": "SNORKUTT",
-		"out_of_knots": "ALLE KNUTENE RØK",
-		"phase": "FASE %d",
-		"survive": "OVERLEV",
-		"survive_sub": "HOLD DEM UNNA LINJEN",
-		"formation": "FORMASJON",
-		"formation_sub": "EN HEL REKKE PÅ EN GANG",
-		"rush": "STORM",
-		"rush_sub": "DYKKERE FRA BJELKEN",
-		"chain": "KJEDE ×%d",
-		"close": "NÆRE PÅ",
-		"extra_knot": "+1 KNUTE",
-		"stat_time": "TID",
-		"sound_0": "LYD AV",
-		"sound_1": "LYD LAV",
-		"sound_2": "LYD MIDDELS",
-		"sound_3": "LYD HØY",
-		"haptics_on": "VIBRASJON PÅ",
-		"haptics_off": "VIBRASJON AV",
-		"guide_on": "SIKTELINJE PÅ",
-		"guide_off": "SIKTELINJE AV",
-		"settings": "INNSTILLINGER",
-		"back": "TILBAKE",
-		"new_enemy": "NY FIENDE",
-		"hidden": "SKJULT",
-		"e0": "VAKT|Søker dekning bak andre når du sikter. Slipp før den flytter seg.",
-		"e1": "TUNGVEKT|To treff. Blir rasende og stuper etter det første.",
-		"e2": "SPLITTER|Deler seg i to dykkere.",
-		"e3": "PENDEL|Svinger alltid. Tim vendepunktet.",
-		"e4": "DYKKER|Skjelver, så stuper den. Skyt mens den skjelver.",
-		"e5": "VOKTER|Skjoldet vender mot deg. Bank via veggen eller kapp snoren.",
-		"e6": "SPINNEREN|Skyt i glipen mellom skjoldene.",
-		"e7": "SNELLE|Vinsjer seg opp når du sikter. Vær rask, eller bank via veggen.",
-		"e8": "SKYGGE|Blir usynlig i perioder. Skudd går gjennom den da.",
+		"game.title": "SPENN",
+		"game.tagline": "HOLD SNORENE UNNA LINJEN",
+		"menu.play": "DRA FOR Å SPILLE",
+		"menu.best": "REKORD",
+		"menu.settings": "INNSTILLINGER",
+		"menu.skip": "TRYKK FOR Å HOPPE OVER",
+		"hud.phase": "FASE %d",
+		"pause.title": "PAUSE",
+		"pause.resume": "FORTSETT",
+		"pause.restart": "START PÅ NYTT",
+		"pause.settings": "INNSTILLINGER",
+		"pause.mainMenu": "HOVEDMENY",
+		"pause.best": "REKORD  %s",
+		"pause.hint": "DOBBELTTRYKK FOR PAUSE",
+		"gameOver.title": "SPILLET ER OVER",
+		"gameOver.score": "POENG",
+		"gameOver.bestScore": "BESTE RESULTAT",
+		"gameOver.time": "TID",
+		"gameOver.accuracy": "TREFF",
+		"gameOver.restart": "PRØV IGJEN",
+		"gameOver.mainMenu": "HOVEDMENY",
+		"record.new": "NY REKORD",
+		"settings.title": "INNSTILLINGER",
+		"settings.music": "MUSIKK",
+		"settings.effects": "EFFEKTER",
+		"settings.haptics": "VIBRASJON",
+		"settings.reducedMotion": "REDUSERTE ANIMASJONER",
+		"settings.aimGuide": "SIKTELINJE",
+		"settings.language": "SPRÅK",
+		"settings.languageName": "NORSK",
+		"settings.back": "TILBAKE",
+		"settings.on": "PÅ",
+		"settings.off": "AV",
+		"settings.level.0": "AV",
+		"settings.level.1": "LAV",
+		"settings.level.2": "MIDDELS",
+		"settings.level.3": "HØY",
+		"event.survive": "OVERLEV",
+		"event.surviveSub": "HOLD DEM UNNA LINJEN",
+		"event.formation": "FORMASJON",
+		"event.formationSub": "EN HEL REKKE PÅ EN GANG",
+		"event.rush": "STORM",
+		"event.rushSub": "DYKKERE FRA BJELKEN",
+		"event.boss": "SPINNEREN",
+		"event.bossSub": "SKYT I SKJOLDGLIPEN",
+		"popup.pierce": "GJENNOMSLAG",
+		"popup.combo": "KOMBO ×%d",
+		"popup.split": "SPLITT",
+		"popup.cut": "SNORKUTT",
+		"popup.blocked": "SKJOLD",
+		"popup.streak": "SERIE %d",
+		"popup.triple": "TREDELT SKUDD",
+		"popup.lifeLost": "KNUTE RØK",
+		"popup.chain": "KJEDE ×%d",
+		"popup.close": "NÆRE PÅ",
+		"popup.extraKnot": "+1 KNUTE",
+		"enemy.new": "NY FIENDE",
+		"enemy.0": "VAKT|Søker dekning bak andre når du sikter. Slipp før den flytter seg.",
+		"enemy.1": "TUNGVEKT|To treff. Blir rasende og stuper etter det første.",
+		"enemy.2": "SPLITTER|Deler seg i to dykkere.",
+		"enemy.3": "PENDEL|Svinger alltid. Tim vendepunktet.",
+		"enemy.4": "DYKKER|Skjelver, så stuper den. Skyt mens den skjelver.",
+		"enemy.5": "VOKTER|Skjoldet vender mot deg. Bank via veggen eller kapp snoren.",
+		"enemy.6": "SPINNEREN|Skyt i glipen mellom skjoldene.",
+		"enemy.7": "SNELLE|Vinsjer seg opp når du sikter. Vær rask, eller bank via veggen.",
+		"enemy.8": "SKYGGE|Blir usynlig i perioder. Skudd går gjennom den da.",
 	},
 	"en": {
-		"level": "LEVEL %d",
-		"record": "BEST",
-		"paused": "PAUSED",
-		"resume": "RESUME",
-		"restart": "RESTART",
-		"language": "LANGUAGE: ENGLISH",
-		"game_over": "THE STRING HIT BOTTOM",
-		"play_again": "PLAY AGAIN",
-		"new_record": "NEW RECORD",
-		"hint": "PULL DOWN AND RELEASE",
-		"pierce": "PIERCE",
-		"combo": "COMBO ×%d",
-		"split": "SPLIT",
-		"level_clear": "LEVEL %d CLEAR",
-		"wave": "WAVE %d/%d",
-		"level_wave": "LEVEL %d · WAVE %d/%d",
-		"cut": "STRING CUT",
-		"blocked": "SHIELD",
-		"streak": "STREAK %d",
-		"triple": "TRIPLE SHOT",
-		"life_lost": "KNOT SNAPPED",
-		"boss": "THE SPINNER",
-		"boss_sub": "SHOOT THROUGH THE GAP",
-		"level_sub": "%d TARGETS · %d WAVES",
-		"level_sub1": "%d TARGETS",
-		"play": "PULL TO PLAY",
-		"menu": "MENU",
-		"stat_level": "LEVEL",
-		"stat_acc": "ACCURACY",
-		"stat_streak": "BEST STREAK",
-		"stat_cuts": "STRING CUTS",
-		"out_of_knots": "EVERY KNOT SNAPPED",
-		"phase": "PHASE %d",
-		"survive": "SURVIVE",
-		"survive_sub": "KEEP THEM OFF THE LINE",
-		"formation": "FORMATION",
-		"formation_sub": "A WHOLE ROW AT ONCE",
-		"rush": "RUSH",
-		"rush_sub": "DIVERS FROM THE RAIL",
-		"chain": "CHAIN ×%d",
-		"close": "CLOSE CALL",
-		"extra_knot": "+1 KNOT",
-		"stat_time": "TIME",
-		"sound_0": "SOUND OFF",
-		"sound_1": "SOUND LOW",
-		"sound_2": "SOUND MEDIUM",
-		"sound_3": "SOUND HIGH",
-		"haptics_on": "VIBRATION ON",
-		"haptics_off": "VIBRATION OFF",
-		"guide_on": "AIM GUIDE ON",
-		"guide_off": "AIM GUIDE OFF",
-		"settings": "SETTINGS",
-		"back": "BACK",
-		"new_enemy": "NEW ENEMY",
-		"hidden": "HIDDEN",
-		"e0": "WARDEN|Seeks cover behind others when aimed at. Release before it moves.",
-		"e1": "HEAVY|Two hits. Enrages and dives after the first.",
-		"e2": "SPLITTER|Breaks into two divers.",
-		"e3": "PENDULUM|Always swinging. Time the turn.",
-		"e4": "DIVER|Trembles, then dives. Shoot while it shakes.",
-		"e5": "SENTRY|Its shield faces you. Bank off a wall or cut the string.",
-		"e6": "THE SPINNER|Shoot through the gap between the plates.",
-		"e7": "REEL|Winches up when aimed at. Be quick, or bank off a wall.",
-		"e8": "SHADE|Fades out at times. Shots pass straight through.",
+		"game.title": "SPENN",
+		"game.tagline": "KEEP THE STRINGS OFF THE LINE",
+		"menu.play": "PULL TO PLAY",
+		"menu.best": "BEST",
+		"menu.settings": "SETTINGS",
+		"menu.skip": "TAP TO SKIP",
+		"hud.phase": "PHASE %d",
+		"pause.title": "PAUSED",
+		"pause.resume": "RESUME",
+		"pause.restart": "RESTART",
+		"pause.settings": "SETTINGS",
+		"pause.mainMenu": "MAIN MENU",
+		"pause.best": "BEST  %s",
+		"pause.hint": "DOUBLE-TAP TO PAUSE",
+		"gameOver.title": "GAME OVER",
+		"gameOver.score": "SCORE",
+		"gameOver.bestScore": "BEST SCORE",
+		"gameOver.time": "TIME",
+		"gameOver.accuracy": "ACCURACY",
+		"gameOver.restart": "TRY AGAIN",
+		"gameOver.mainMenu": "MAIN MENU",
+		"record.new": "NEW RECORD",
+		"settings.title": "SETTINGS",
+		"settings.music": "MUSIC",
+		"settings.effects": "EFFECTS",
+		"settings.haptics": "VIBRATION",
+		"settings.reducedMotion": "REDUCED MOTION",
+		"settings.aimGuide": "AIM GUIDE",
+		"settings.language": "LANGUAGE",
+		"settings.languageName": "ENGLISH",
+		"settings.back": "BACK",
+		"settings.on": "ON",
+		"settings.off": "OFF",
+		"settings.level.0": "OFF",
+		"settings.level.1": "LOW",
+		"settings.level.2": "MEDIUM",
+		"settings.level.3": "HIGH",
+		"event.survive": "SURVIVE",
+		"event.surviveSub": "KEEP THEM OFF THE LINE",
+		"event.formation": "FORMATION",
+		"event.formationSub": "A WHOLE ROW AT ONCE",
+		"event.rush": "RUSH",
+		"event.rushSub": "DIVERS FROM THE RAIL",
+		"event.boss": "THE SPINNER",
+		"event.bossSub": "SHOOT THROUGH THE GAP",
+		"popup.pierce": "PIERCE",
+		"popup.combo": "COMBO ×%d",
+		"popup.split": "SPLIT",
+		"popup.cut": "STRING CUT",
+		"popup.blocked": "SHIELD",
+		"popup.streak": "STREAK %d",
+		"popup.triple": "TRIPLE SHOT",
+		"popup.lifeLost": "KNOT SNAPPED",
+		"popup.chain": "CHAIN ×%d",
+		"popup.close": "CLOSE CALL",
+		"popup.extraKnot": "+1 KNOT",
+		"enemy.new": "NEW ENEMY",
+		"enemy.0": "WARDEN|Seeks cover behind others when aimed at. Release before it moves.",
+		"enemy.1": "HEAVY|Two hits. Enrages and dives after the first.",
+		"enemy.2": "SPLITTER|Breaks into two divers.",
+		"enemy.3": "PENDULUM|Always swinging. Time the turn.",
+		"enemy.4": "DIVER|Trembles, then dives. Shoot while it shakes.",
+		"enemy.5": "SENTRY|Its shield faces you. Bank off a wall or cut the string.",
+		"enemy.6": "THE SPINNER|Shoot through the gap between the plates.",
+		"enemy.7": "REEL|Winches up when aimed at. Be quick, or bank off a wall.",
+		"enemy.8": "SHADE|Fades out at times. Shots pass straight through.",
 	},
 }
 
-var lang := "no"
-var record := 0
-var volume := 2                 # 0 off, 1 low, 2 medium, 3 high
-var haptics := true
-var aim_guide := true
-var seen := {}                  # enemy kinds already introduced
-var sound_on: bool:
+var lang: String:
 	get:
-		return volume > 0
-var _cfg := ConfigFile.new()
-
-
-func _ready() -> void:
-	var sys := OS.get_locale_language()
-	lang = "no" if sys in ["nb", "nn", "no"] else "en"
-	if _cfg.load(SAVE_PATH) == OK:
-		lang = str(_cfg.get_value("settings", "lang", lang))
-		record = int(_cfg.get_value("stats", "record", 0))
-		volume = int(_cfg.get_value("settings", "volume", 2))
-		haptics = bool(_cfg.get_value("settings", "haptics", true))
-		aim_guide = bool(_cfg.get_value("settings", "aim_guide", true))
-		seen = _cfg.get_value("stats", "seen", {})
-	if not STRINGS.has(lang):
-		lang = "en"
+		return Prefs.lang
 
 
 func t(key: String) -> String:
-	return STRINGS[lang].get(key, key)
+	var table: Dictionary = STRINGS.get(lang, STRINGS["en"])
+	if table.has(key):
+		return table[key]
+	push_warning("Missing string: %s/%s" % [lang, key])
+	return STRINGS["en"].get(key, key)
 
 
-## Cycles off → low → medium → high.
-func toggle_sound() -> void:
-	volume = (volume + 1) % 4
-	_save()
-	Sfx.apply_volume()
+## "MUSIKK: MIDDELS" style setting line.
+func setting(key: String, value_key: String) -> String:
+	return "%s: %s" % [t(key), t(value_key)]
+
+
+func on_off(v: bool) -> String:
+	return "settings.on" if v else "settings.off"
+
+
+func next_language() -> void:
+	var i := LANGS.find(lang)
+	Prefs.set_lang(LANGS[(i + 1) % LANGS.size()])
 	language_changed.emit()
-
-
-func toggle_haptics() -> void:
-	haptics = not haptics
-	_save()
-	language_changed.emit()
-
-
-func toggle_aim_guide() -> void:
-	aim_guide = not aim_guide
-	_save()
-	language_changed.emit()
-
-
-func sound_label() -> String:
-	return t("sound_%d" % volume)
-
-
-## True the first time a kind shows up (persisted), so it gets an intro.
-func first_sight(kind: int) -> bool:
-	if seen.has(kind):
-		return false
-	seen[kind] = true
-	_save()
-	return true
-
-
-func toggle_language() -> void:
-	lang = "en" if lang == "no" else "no"
-	_save()
-	language_changed.emit()
-
-
-## Returns true when `score` is a new record.
-func submit_score(score: int) -> bool:
-	if score <= record:
-		return false
-	record = score
-	_save()
-	return true
-
-
-func _save() -> void:
-	_cfg.set_value("settings", "lang", lang)
-	_cfg.set_value("settings", "volume", volume)
-	_cfg.set_value("settings", "haptics", haptics)
-	_cfg.set_value("settings", "aim_guide", aim_guide)
-	_cfg.set_value("stats", "seen", seen)
-	_cfg.set_value("stats", "record", record)
-	_cfg.save(SAVE_PATH)

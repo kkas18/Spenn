@@ -4,7 +4,6 @@ extends Node2D
 ## swinging body. Balls knock them about; starting a run snaps the strings
 ## one by one so the letters drop out of the way.
 
-const WORD := "SPENN"
 const GOLD_INDEX := 2
 const K := 90.0
 const GRAVITY := 900.0
@@ -14,24 +13,39 @@ var font: Font
 var active := false
 var _letters: Array[Dictionary] = []
 var _snap_t := -1.0
+var _current := ""
 var _rng := RandomNumberGenerator.new()
 
 
 func setup(layout: Layout, display_font: Font) -> void:
 	l = layout
 	font = display_font
+	if not Loc.language_changed.is_connected(_on_language):
+		Loc.language_changed.connect(_on_language)
 	reset()
+
+
+## The title is localized; if the word differs, re-hang the letters.
+func _on_language() -> void:
+	if active and _snap_t < 0.0 and _word() != _current:
+		reset()
+
+
+func _word() -> String:
+	return Loc.t("game.title")
 
 
 func reset() -> void:
 	_rng.randomize()
 	_letters.clear()
-	var lens := [0.2, 0.33, 0.25, 0.36, 0.17]
-	for i in WORD.length():
-		var ax := l.size.x * (0.14 + 0.18 * i)
-		var len: float = l.play_h * lens[i]
+	_current = _word()
+	var lens := [0.2, 0.33, 0.25, 0.36, 0.17, 0.28, 0.22, 0.31]
+	var n := _current.length()
+	for i in n:
+		var ax := l.size.x * (0.14 + 0.72 * i / maxf(1.0, n - 1.0))
+		var len: float = l.play_h * lens[i % lens.size()]
 		_letters.append({
-			"ch": WORD[i], "anchor": Vector2(ax, l.rail_y + 3.0), "len": len,
+			"ch": _current[i], "anchor": Vector2(ax, l.rail_y + 3.0), "len": len,
 			"pos": Vector2(ax, l.rail_y + 3.0 + len * 0.3), "vel": Vector2(_rng.randf_range(-60, 60), 0),
 			"rot": 0.0, "spin": 0.0, "attached": true, "alpha": 1.0,
 		})

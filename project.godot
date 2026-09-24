@@ -15,8 +15,11 @@ boot_splash/show_image=false
 
 [autoload]
 
+Prefs="*res://scripts/prefs.gd"
 Loc="*res://scripts/loc.gd"
+Motion="*res://scripts/motion.gd"
 Sfx="*res://scripts/sfx.gd"
+Music="*res://scripts/music.gd"
 
 [display]
 

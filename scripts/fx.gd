@@ -32,6 +32,7 @@ var _shake_amp := 0.0
 var _hitstop_live := false
 var _drawn_last := false
 var _slow_scale := 1.0
+var _held := -1.0
 var _frags: Array[Dictionary] = []
 var _next_frag := 0
 var _queued: Array[Dictionary] = []   # staged bursts (boss)
@@ -217,6 +218,8 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 				f.r = _rng.randf_range(2.0, 4.5)
 	# Fine rays: a quick, thin fan that reads as the burst's energy.
 	var rays := 12 if kind != Target.Kind.BOSS else 20
+	if Prefs.reduced_motion:
+		rays /= 3
 	for i in rays:
 		var a := rot + i * TAU / rays + _rng.randf_range(-0.08, 0.08)
 		var f := _frag(Frag.RAY, at, Vector2.ZERO, col.lightened(0.25), RAY_LIFE)
@@ -262,6 +265,8 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
 
 
 func shake(amount := SHAKE_MAX) -> void:
+	if Prefs.reduced_motion:
+		return
 	_shake_amp = minf(SHAKE_MAX, maxf(_shake_amp, amount))
 	_shake_t = SHAKE_TIME
 
@@ -285,10 +290,24 @@ func slowmo(scale: float, real_dur: float) -> void:
 
 ## Brief zoom toward the centre of the field (camera punch).
 func punch(amount: float) -> void:
+	if Prefs.reduced_motion:
+		return
 	_punch = maxf(_punch, amount)
 
 
+## Direct control of game time (death sequence); overrides slow motion.
+func hold_time(scale: float) -> void:
+	_held = scale
+	_apply_time()
+
+
+func release_time() -> void:
+	_held = -1.0
+	_apply_time()
+
+
 func reset_time() -> void:
+	_held = -1.0
 	_slow_left = 0.0
 	_slow_scale = 1.0
 	_hitstop_live = false
@@ -298,6 +317,9 @@ func reset_time() -> void:
 
 func _apply_time() -> void:
 	if get_tree().paused:
+		return
+	if _held >= 0.0:
+		Engine.time_scale = _held
 		return
 	Engine.time_scale = 0.02 if _hitstop_live else (_slow_scale if _slow_left > 0.0 else 1.0)
 
