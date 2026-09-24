@@ -1,92 +1,111 @@
 extends Node
-## Procedurally synthesised sounds (no audio assets) and haptics.
-## Mixed to sit under the game, not on top of it: soft attacks, low-passed
-## noise, per-sound gain, a gentle low-pass + compressor + small room on the
-## Sfx bus, per-sound rate limits and a small voice pool.
+## Sound effects (autoload `Sfx`) and haptics.
+## Recorded sounds from the Kenney packs (CC0, see CREDITS.md), prepared by
+## tools/import_assets.py: trimmed, faded and matched to one loudness, so the
+## gains below are the mix. Each sound has several takes; a play picks one
+## that differs from the last, with a small random pitch drift, so repeats
+## never sound mechanical. A light high-shelf roll-off, a compressor and a
+## small dark room on the Sfx bus glue everything together.
 
-const RATE := 22050
-const POOL := 6
-const MIN_GAP := 0.06           # same sound can't retrigger faster than this
-const LEVEL_DB := [-80.0, -17.0, -10.0, -5.0]   # off, low, medium, high
+const POOL := 10
+const MIN_GAP := 0.05           # same sound can't retrigger faster than this
+const LEVEL_DB := [-80.0, -10.0, -4.0, 0.0]    # off, low, medium, high
+const DIR := "res://assets/sfx/"
 
-# name: [partials [freq, amp], duration, decay, noise, glide, gain dB]
-const RECIPES := {
-	"release": [[[98.0, 0.6], [147.0, 0.15]], 0.24, 12.0, 0.08, -0.3, -9.0],
-	"hit": [[[440.0, 0.55], [660.0, 0.12]], 0.14, 30.0, 0.04, -0.05, -9.0],
-	"thud": [[[196.0, 0.6], [294.0, 0.1]], 0.16, 24.0, 0.05, -0.15, -12.0],
-	"snap": [[[880.0, 0.2]], 0.07, 55.0, 0.25, -0.1, -20.0],
-	"knock": [[[262.0, 0.4]], 0.08, 45.0, 0.08, -0.1, -24.0],
-	"twang": [[[196.0, 0.4], [392.0, 0.12]], 0.35, 9.0, 0.0, -0.02, -27.0],
-	"clank": [[[988.0, 0.25], [1480.0, 0.12], [2217.0, 0.05]], 0.18, 26.0, 0.05, 0.0, -15.0],
-	"whoosh": [[[110.0, 0.1]], 0.26, 9.0, 0.45, -0.4, -24.0],
-	"cut": [[[1175.0, 0.18], [587.0, 0.25]], 0.22, 18.0, 0.12, -0.2, -13.0],
-	"burst": [[[523.0, 0.25], [784.0, 0.12]], 0.3, 12.0, 0.1, 0.1, -17.0],
-	"breach": [[[62.0, 0.7], [93.0, 0.2]], 0.55, 6.5, 0.15, -0.25, -8.0],
-	"boss": [[[98.0, 0.4], [147.0, 0.25], [185.0, 0.12]], 1.0, 3.0, 0.02, 0.0, -12.0],
-	"streak": [[[659.0, 0.3], [988.0, 0.15]], 0.3, 10.0, 0.0, 0.0, -15.0],
-	"reel": [[[330.0, 0.2], [495.0, 0.08]], 0.2, 14.0, 0.2, 0.35, -22.0],
-	"fade": [[[740.0, 0.15], [1110.0, 0.06]], 0.35, 8.0, 0.0, -0.3, -24.0],
-	"intro": [[[392.0, 0.3], [587.0, 0.18]], 0.5, 6.0, 0.0, 0.0, -15.0],
-	"beat": [[[55.0, 0.7], [110.0, 0.15]], 0.18, 18.0, 0.0, -0.2, -16.0],
-	"token": [[[1318.0, 0.2]], 0.05, 60.0, 0.0, 0.0, -28.0],
-	"click": [[[1568.0, 0.18], [2349.0, 0.05]], 0.03, 90.0, 0.0, 0.0, -24.0],
-	"pause": [[[523.0, 0.3], [392.0, 0.2]], 0.28, 12.0, 0.0, -0.25, -17.0],
-	"resume": [[[392.0, 0.25], [587.0, 0.2]], 0.25, 12.0, 0.0, 0.2, -18.0],
-	"reveal": [[[523.0, 0.3], [784.0, 0.22], [1046.0, 0.08]], 1.1, 3.0, 0.0, 0.0, -15.0],
-	"death": [[[55.0, 0.8], [82.0, 0.3], [110.0, 0.15]], 0.9, 4.5, 0.25, -0.35, -7.0],
-	"count": [[[1760.0, 0.15]], 0.025, 120.0, 0.0, 0.0, -30.0],
-	"record": [[[659.0, 0.3], [988.0, 0.22], [1318.0, 0.14], [1976.0, 0.05]], 0.9, 4.0, 0.0, 0.02, -12.0],
-	"restart": [[[294.0, 0.2]], 0.3, 8.0, 0.35, 0.8, -22.0],
-	"deny": [[[147.0, 0.35], [156.0, 0.3]], 0.12, 25.0, 0.0, 0.0, -20.0],
-	"panel": [[[220.0, 0.08]], 0.22, 10.0, 0.35, 0.5, -28.0],
-	"countdown": [[[880.0, 0.25], [1320.0, 0.08]], 0.12, 22.0, 0.0, 0.0, -18.0],
-	"tick": [[[880.0, 0.3]], 0.03, 70.0, 0.0, 0.0, -22.0],
-	"reload": [[[523.0, 0.18]], 0.04, 60.0, 0.0, 0.1, -26.0],
-	"clear": [[[523.0, 0.35], [784.0, 0.22], [1046.0, 0.08]], 0.6, 5.0, 0.0, 0.0, -11.0],
-	"lose": [[[220.0, 0.5], [330.0, 0.15]], 0.8, 3.6, 0.02, -0.4, -9.0],
+# name: [gain dB, pitch drift (±), takes]
+const MIX := {
+	# play field: frequent, kept low
+	"release": [-11.0, 0.03, 2],
+	"hit": [-9.0, 0.05, 5],
+	"thud": [-11.0, 0.05, 5],
+	"knock": [-17.0, 0.06, 5],
+	"snap": [-15.0, 0.06, 5],
+	"twang": [-19.0, 0.04, 2],
+	"clank": [-11.0, 0.04, 5],
+	"cut": [-9.0, 0.04, 2],
+	"burst": [-10.0, 0.05, 5],
+	"whoosh": [-19.0, 0.06, 3],
+	"reel": [-18.0, 0.04, 3],
+	"fade": [-16.0, 0.04, 3],
+	"token": [-22.0, 0.05, 2],
+	"tick": [-18.0, 0.0, 1],
+	"reload": [-18.0, 0.04, 1],
+	"beat": [-13.0, 0.0, 5],
+	# accents: rarer, allowed to speak
+	"breach": [-5.0, 0.04, 5],
+	"death": [-3.0, 0.0, 5],
+	"streak": [-13.0, 0.0, 3],
+	"boss": [-9.0, 0.0, 1],
+	"intro": [-11.0, 0.0, 1],
+	"clear": [-9.0, 0.0, 1],
+	"record": [-5.0, 0.0, 1],
+	"lose": [-7.0, 0.0, 1],
+	"reveal": [-8.0, 0.0, 1],
+	# interface
+	"click": [-15.0, 0.03, 4],
+	"panel": [-17.0, 0.03, 3],
+	"pause": [-13.0, 0.0, 1],
+	"resume": [-13.0, 0.0, 1],
+	"countdown": [-11.0, 0.0, 1],
+	"count": [-22.0, 0.0, 2],
+	"restart": [-13.0, 0.0, 1],
+	"deny": [-13.0, 0.0, 1],
 }
 
-var _streams := {}
-var _gain := {}
+var _takes := {}
 var _last := {}
+var _last_take := {}
 var _players: Array[AudioStreamPlayer] = []
-var _next := 0
+var _started: Array[float] = []
 var _bus := 0
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_rng.randomize()
 	_bus = AudioServer.bus_count
 	AudioServer.add_bus(_bus)
 	AudioServer.set_bus_name(_bus, "Sfx")
 	AudioServer.set_bus_send(_bus, &"Master")
-	# Take the edge off: roll off highs, hold peaks down, a small dark room.
-	var lp := AudioEffectLowPassFilter.new()
-	lp.cutoff_hz = 4200.0
-	AudioServer.add_bus_effect(_bus, lp)
+	# Glue: take the sharpest air off, hold peaks, a small dark room.
+	var shelf := AudioEffectHighShelfFilter.new()
+	shelf.cutoff_hz = 7000.0
+	shelf.gain = 0.6
+	AudioServer.add_bus_effect(_bus, shelf)
 	var comp := AudioEffectCompressor.new()
-	comp.threshold = -20.0
-	comp.ratio = 4.0
-	comp.attack_us = 2000.0
-	comp.release_ms = 180.0
+	comp.threshold = -16.0
+	comp.ratio = 3.0
+	comp.attack_us = 3000.0
+	comp.release_ms = 160.0
 	AudioServer.add_bus_effect(_bus, comp)
 	var room := AudioEffectReverb.new()
-	room.room_size = 0.28
-	room.damping = 0.8
-	room.spread = 0.5
-	room.hipass = 0.2
+	room.room_size = 0.3
+	room.damping = 0.75
+	room.spread = 0.6
+	room.hipass = 0.25
 	room.dry = 1.0
-	room.wet = 0.07
+	room.wet = 0.08
 	AudioServer.add_bus_effect(_bus, room)
+	var lim := AudioEffectHardLimiter.new()
+	lim.ceiling_db = -1.0
+	AudioServer.add_bus_effect(_bus, lim)
 	for i in POOL:
 		var p := AudioStreamPlayer.new()
 		p.bus = &"Sfx"
 		add_child(p)
 		_players.append(p)
-	for name in RECIPES:
-		var r: Array = RECIPES[name]
-		_streams[name] = _synth(r[0], r[1], r[2], r[3], r[4])
-		_gain[name] = r[5]
+		_started.append(-1.0)
+	for name: String in MIX:
+		var list: Array[AudioStream] = []
+		for i: int in MIX[name][2]:
+			var path := "%s%s_%d.ogg" % [DIR, name, i]
+			if ResourceLoader.exists(path):
+				list.append(load(path))
+		if list.is_empty():
+			push_warning("Sfx: no takes for %s" % name)
+		else:
+			_takes[name] = list
 	apply_volume()
 	Prefs.changed.connect(apply_volume)
 
@@ -95,7 +114,7 @@ func _exit_tree() -> void:
 	for p in _players:
 		p.stop()
 		p.stream = null
-	_streams.clear()
+	_takes.clear()
 
 
 func apply_volume() -> void:
@@ -104,18 +123,36 @@ func apply_volume() -> void:
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
-	if not _streams.has(name) or Prefs.sfx_volume == 0:
+	if not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last.get(name, -1.0)) < MIN_GAP:
 		return
 	_last[name] = now
-	var p := _players[_next]
-	_next = (_next + 1) % POOL
-	p.stream = _streams[name]
-	p.pitch_scale = clampf(pitch, 0.8, 1.25)
-	p.volume_db = _gain[name] + minf(volume_db, 0.0)
+	var list: Array = _takes[name]
+	var take := _rng.randi() % list.size()
+	if list.size() > 1 and take == int(_last_take.get(name, -1)):
+		take = (take + 1) % list.size()
+	_last_take[name] = take
+	var mix: Array = MIX[name]
+	var drift: float = mix[1]
+	var p := _players[_voice()]
+	p.stream = list[take]
+	p.pitch_scale = clampf(pitch * (1.0 + _rng.randf_range(-drift, drift)), 0.7, 1.35)
+	p.volume_db = float(mix[0]) + minf(volume_db, 0.0)
 	p.play()
+	_started[_players.find(p)] = now
+
+
+## A free voice, or the one that has played the longest.
+func _voice() -> int:
+	var oldest := 0
+	for i in POOL:
+		if not _players[i].playing:
+			return i
+		if _started[i] < _started[oldest]:
+			oldest = i
+	return oldest
 
 
 ## Short vibration; amplitude 0..1 (ignored on devices without amplitude control).
@@ -141,36 +178,3 @@ func haptic_pattern(name: String) -> void:
 		"error":
 			haptic(8, 0.3)
 			Motion.after(0.07, func() -> void: haptic(8, 0.3))
-
-
-func _synth(partials: Array, dur: float, decay: float, noise: float, glide: float) -> AudioStreamWAV:
-	var n := int(dur * RATE)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var phases := PackedFloat32Array()
-	phases.resize(partials.size())
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(dur) ^ partials.size()
-	var lp := 0.0
-	var lp2 := 0.0
-	for i in n:
-		var t := float(i) / RATE
-		# 5 ms attack, exponential decay, 20 ms fade at the tail: no clicks.
-		var env := exp(-decay * t) * minf(1.0, t * 200.0) * minf(1.0, (dur - t) * 50.0)
-		var f_mul := 1.0 + glide * (t / dur)
-		var s := 0.0
-		for k in partials.size():
-			phases[k] += TAU * partials[k][0] * f_mul / RATE
-			s += sin(phases[k]) * partials[k][1]
-		# Doubly low-passed noise: a soft breath, never hiss.
-		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.2
-		lp2 += (lp - lp2) * 0.2
-		s += lp2 * noise * 2.0 * exp(-decay * 2.0 * t)
-		var v := clampi(int(tanh(s * env * 0.9) * 0.5 * 32767.0), -32768, 32767)
-		data.encode_s16(i * 2, v)
-	var w := AudioStreamWAV.new()
-	w.format = AudioStreamWAV.FORMAT_16_BITS
-	w.mix_rate = RATE
-	w.stereo = false
-	w.data = data
-	return w

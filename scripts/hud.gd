@@ -47,6 +47,7 @@ var _s_haptics: UIButton
 var _s_motion: UIButton
 var _s_guide: UIButton
 var _s_lang: UIButton
+var _s_credits: Label
 var _s_back: UIButton
 var _m_settings: UIButton
 var _m_lang: UIButton
@@ -293,6 +294,7 @@ func _refresh_text() -> void:
 	_s_guide.text = Loc.setting("settings.aimGuide", Loc.on_off(Prefs.aim_guide))
 	_s_lang.text = Loc.setting("settings.language", "settings.languageName")
 	_s_back.text = Loc.t("settings.back")
+	_s_credits.text = Loc.t("settings.credits")
 	_m_settings.text = Loc.t("menu.settings")
 	_m_lang.text = "NO" if Loc.lang == "no" else "EN"
 	_over.refresh_text()
@@ -423,7 +425,11 @@ func _build_settings() -> void:
 	_s_guide = button(func() -> void: Prefs.toggle_aim_guide())
 	_s_lang = button(func() -> void: Loc.next_language())
 	_s_back = button(_close_settings)
-	for c: Control in [_s_title, _spacer(Tok.SPACE_SM), _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _spacer(Tok.SPACE_SM), _s_back]:
+	# Attribution for the music (CC BY 4.0) and the CC0 packs.
+	_s_credits = label(Tok.TYPE_CAPTION, Tok.TEXT_FAINT, _font_caps)
+	_s_credits.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_s_credits.custom_minimum_size = Vector2(440, 0)
+	for c: Control in [_s_title, _spacer(Tok.SPACE_SM), _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _spacer(Tok.SPACE_SM), _s_back, _spacer(Tok.SPACE_SM), _s_credits]:
 		_settings_box.add_child(c)
 
 

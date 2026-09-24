@@ -466,3 +466,77 @@ Implementert i spesifikasjonens rekkefølge.
   går til menyen fra game over, fortsetter fra pause).
 - Kjent: headless-avslutning logger lydavspillinger som «leaked» med dummy-lyddriveren.
   Det skjer bare ved avslutning, og både spillet og CI er upåvirket.
+
+---
+
+# v5.1 – Profesjonell lyd, ekte musikk og teksturbaserte effekter
+
+**Tilbakemelding:** effekter og animasjoner føltes svake, og musikk og lydeffekter hørtes
+uprofesjonelle ut. Årsaken var ikke Godot, men at all lyd var syntetisert i koden og alle
+partikler var tegnede prikker. Når nettverkstilgangen var åpnet, ble alt dette byttet ut
+med innspilte og tegnede ressurser med fri lisens.
+
+## Kilder og lisenser (detaljer i `CREDITS.md`)
+- **Musikk:** Kevin MacLeod (incompetech.com), CC BY 4.0. Kreditering vises i
+  innstillingene på norsk og engelsk.
+  - «Mesmerizing Galaxy» (loop-versjon, 124 BPM, 48 takter) brukes i spill.
+  - «Envision» brukes i menyen.
+- **Lyd og partikler:** Kenney, CC0 (Interface Sounds, Impact Sounds, Music Jingles og
+  Particle Pack).
+- `tools/import_assets.py` gjør hele prosesseringen, så den kan gjentas:
+  - **Lyd:** trimmer, legger på fades (2 ms inn, 25 ms ut), lydstyrkematcher alt til
+    −20 dBFS aktiv RMS med topper maks −1 dBFS, og koder om til mono OGG Vorbis.
+  - **Musikk:** kutter spillsporet på takten og legger en 10 ms equal-power-fold i
+    skjøten, så loopen er uten klikk. Menysporet får en innbakt 3 s crossfade fra slutt
+    til start. Begge sporene matches til −18 dBFS.
+  - **Teksturer:** beskjærer og skalerer ned til hvit-på-alfa, 64–128 px.
+
+## Lyd (`sfx.gd`)
+- 33 lydnavn med 1–5 opptak hver, totalt 87 filer (660 KB). Hver avspilling velger et
+  annet opptak enn forrige gang og legger på en liten pitch-drift (±3–6 %), så gjentakelser
+  ikke låter mekaniske.
+- **Miksen er én tabell (`MIX`):**
+  - Hyppige spillyder ligger lavt: treff −9 dB, avfyring −11, kontakt −17, token −22.
+  - Aksenter får plass: brudd −5, død −3, rekord −5.
+  - UI-lyder ligger diskré: −13 til −17 dB.
+- **Sfx-bussen:** high-shelf-demping over 7 kHz, kompressor, et lite mørkt rom og en
+  limiter på −1 dB. 10 stemmer; når alle er i bruk, tas den eldste.
+- **Valg av lyder:**
+  - Kjernelyder: avfyring = pluck, treff = plate, knusing = glass, skjold = metall,
+    snorkutt = scratch, brudd = tungt slag, hjerteslag = mykt dunk.
+  - Jingler (pizzicato/steel), valgt etter analysert tonehøydekontur: stigende for rekord
+    og clear, fallende for tap, to toner for intro og logo.
+  - Whoosh fantes ikke i pakkene, så den lages av skriptet: filtrert støy med
+    båndpass-sveip.
+- **Tapsjingel:** spilles på game over når det ikke er ny rekord (rekord har sin egen).
+
+## Musikk (`music.gd`)
+- Samme tilstandssystem som før:
+  - **Meny:** menysporet, lavpass 6,5 kHz.
+  - **Spill:** spillsporet, åpent, litt sterkere med intensiteten.
+  - **Pause:** lavpass 700 Hz, −5 dB.
+  - **Død:** 350 Hz og fade over 1,2 s.
+- Sporene crossfades i lineært domene (rask inn, rolig ut). Et spor som har fadet helt ut
+  stopper og starter fra toppen neste gang, så hver runde begynner på første slag.
+- I headless (CI) spilles ingen strømmer, så avslutningen er ren. Den gamle
+  lekkasjeadvarselen er også borte.
+
+## Effekter (`fx.gd`, `backdrop.gd`)
+- **Gnister:** korte strek (trace) som roteres etter fartsretningen, i stedet for runde
+  prikker.
+- **Røyk (ny, poolet data og ingen noder):** myke dotter (smoke) som blomstrer, driver
+  oppover og roterer. De tones mot bakgrunnsfargen, så de er matte og aldri glør.
+  - Knusing: 2 dotter (boss: 6).
+  - Brudd: 3 korall-dotter.
+  - Død: 6 store korall-dotter.
+- **Trykkring:** en myk tekstur-ring under den skarpe linjen, 220 ms.
+- **Støv i bakgrunnen:** myke partikler i flere dybder som toner inn og ut.
+- **Reduserte animasjoner:** halvparten så mange røykdotter.
+- **Stilreglene holdes:** ingen stjerner, flares eller glød.
+
+## QA
+- Headless-oppstart er ren, uten ERROR og uten WARNING.
+- Hele reisen er kjørt med skjermbilder: intro → meny → spill → pause → innstillinger (med
+  kreditering) → nedtelling → død (røyk og strekgnister) → game over med ny rekord →
+  omstart.
+- APK-størrelsen øker med ca. 3,4 MB (musikk 2,7 MB, lyd 0,66 MB, teksturer 48 KB).

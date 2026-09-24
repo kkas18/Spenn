@@ -693,6 +693,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if killed:
 		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
 		fx.shards(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.vel)
+		fx.puff(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.radius * (1.8 if kind == Target.Kind.BOSS else 1.3), 0.32)
 		Sfx.play("burst", randf_range(0.92, 1.08))
 		Sfx.play("hit", 1.0 + 0.08 * (b.hits - 1))
 		Sfx.play("snap", randf_range(0.95, 1.1), -6.0)
@@ -778,6 +779,7 @@ func _breach(t: Target) -> void:
 	fx.punch(0.02)
 	fx.sparks(at, Pal.CORAL, 10)
 	fx.ring(at, Pal.CORAL, 40.0)
+	fx.puff(at, Pal.CORAL, 3, 46.0, 0.3)
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
@@ -803,6 +805,7 @@ func _begin_death(at: Vector2) -> void:
 	_touch = -1
 	fx.ring(at, Pal.CORAL, 70.0)
 	fx.sparks(at, Pal.CORAL, 10)
+	fx.puff(at, Pal.CORAL, 6, 90.0, 0.36)
 	fx.shake(3.0)
 	fx.punch(0.03)
 	Sfx.play("death")
@@ -827,6 +830,8 @@ func _show_results() -> void:
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
 	_set_state(State.GAME_OVER)
 	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc)
+	if not is_record:
+		Sfx.play("lose")
 	Motion.after(0.6, func() -> void: hud.locked = false)
 
 

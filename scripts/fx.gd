@@ -1,8 +1,9 @@
 class_name Fx
 extends Node2D
 ## Pooled hit sparks and score popups, screen shake and hit-stop.
-## Popups, impact rings and shards are plain data drawn by this node, so
-## they cost no nodes at all.
+## Popups, impact rings, shards and smoke are plain data drawn by this node,
+## so they cost no nodes at all. Sparks, smoke and the soft pressure ring use
+## textures from the Kenney Particle Pack (CC0), tinted and kept matte.
 
 const SPARK_POOL := 8
 const POPUP_POOL := 8
@@ -12,12 +13,17 @@ const SHAKE_MAX := 3.0
 const SHAKE_TIME := 0.15
 const HITSTOP := 0.04
 const RING_POOL := 8
-const RING_LIFE := 0.18
+const RING_LIFE := 0.22
 const SHARD_POOL := 32
 const SHARD_LIFE := 0.9
 const FRAG_POOL := 64
 const FRAG_LIFE := 0.75
 const RAY_LIFE := 0.26
+const PUFF_POOL := 24
+
+const TEX_SMOKE: Array[Texture2D] = [preload("res://assets/particles/smoke_a.png"), preload("res://assets/particles/smoke_b.png")]
+const TEX_RING := preload("res://assets/particles/ring.png")
+const TEX_STREAK := preload("res://assets/particles/streak.png")
 
 var l: Layout
 var shake_target: Node2D
@@ -47,11 +53,13 @@ var _next_ring := 0
 var _shards: Array[Dictionary] = []
 var _next_shard := 0
 var _rng := RandomNumberGenerator.new()
+var _puffs: Array[Dictionary] = []
+var _next_puff := 0
 
 
 func _ready() -> void:
 	_rng.randomize()
-	var tex := _dot_texture()
+	var tex := TEX_STREAK
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1, 1, 1, 1))
 	ramp.set_color(1, Color(1, 1, 1, 0))
@@ -72,12 +80,11 @@ func _ready() -> void:
 		p.initial_velocity_max = 290.0
 		p.damping_min = 40.0
 		p.damping_max = 80.0
-		p.scale_amount_min = 0.6
-		p.scale_amount_max = 1.0
+		p.scale_amount_min = 0.3
+		p.scale_amount_max = 0.55
+		p.particle_flag_align_y = true
 		p.scale_amount_curve = size_curve
 		p.color_ramp = ramp
-		p.angular_velocity_min = -200.0
-		p.angular_velocity_max = 200.0
 		p.local_coords = false
 		add_child(p)
 		_sparks.append(p)
@@ -93,15 +100,9 @@ func _ready() -> void:
 		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
 		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20})
-
-
-func _dot_texture() -> ImageTexture:
-	var img := Image.create(12, 12, false, Image.FORMAT_RGBA8)
-	for y in 12:
-		for x in 12:
-			var d := Vector2(x + 0.5 - 6.0, y + 0.5 - 6.0).length()
-			img.set_pixel(x, y, Color(1, 1, 1, clampf(5.5 - d, 0.0, 1.0)))
-	return ImageTexture.create_from_image(img)
+	for i in PUFF_POOL:
+		_puffs.append({"t": -1.0, "life": 0.8, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
+			"spin": 0.0, "s0": 10.0, "s1": 30.0, "col": Pal.INK, "a": 0.3, "tex": 0})
 
 
 ## Sparks in the target's colour; aimed inward near screen edges so no
@@ -136,6 +137,29 @@ func ring(at: Vector2, col: Color, size := 30.0) -> void:
 	r.pos = at
 	r.col = col
 	r.r = size
+
+
+## Soft smoke that blooms and drifts up from a break, a breach or the end
+## of a run: tinted toward the background so it stays matte, never glows.
+func puff(at: Vector2, col: Color, count: int, size: float, alpha := 0.3) -> void:
+	if Prefs.reduced_motion:
+		count = maxi(1, count / 2)
+	var tint := col.lerp(Pal.BG, 0.35)
+	for i in count:
+		var d := _puffs[_next_puff]
+		_next_puff = (_next_puff + 1) % PUFF_POOL
+		var a := _rng.randf() * TAU
+		d.t = 0.0
+		d.life = _rng.randf_range(0.65, 1.0)
+		d.pos = at + Vector2.from_angle(a) * size * _rng.randf_range(0.0, 0.25)
+		d.vel = Vector2.from_angle(a) * size * _rng.randf_range(0.3, 0.8) + Vector2(0, -size * 0.35)
+		d.rot = _rng.randf() * TAU
+		d.spin = _rng.randf_range(-0.8, 0.8)
+		d.s0 = size * _rng.randf_range(0.45, 0.65)
+		d.s1 = size * _rng.randf_range(1.2, 1.6)
+		d.col = tint.lightened(_rng.randf_range(0.0, 0.12))
+		d.a = alpha * _rng.randf_range(0.7, 1.0)
+		d.tex = _rng.randi() % TEX_SMOKE.size()
 
 
 ## A broken target sheds a few chips of its own colour that tumble away.
@@ -336,6 +360,8 @@ func clear() -> void:
 	for k in _tokens:
 		k.t = -1.0
 	_queued.clear()
+	for d in _puffs:
+		d.t = -1.0
 	for s in _sparks:
 		s.emitting = false
 	_shake_t = 0.0
@@ -403,6 +429,16 @@ func _process(delta: float) -> void:
 				f.vel *= exp(-0.8 * delta)
 				f.pos += f.vel * delta
 				f.rot += f.spin * delta
+	for d in _puffs:
+		if d.t >= 0.0:
+			d.t += delta
+			if d.t > d.life:
+				d.t = -1.0
+				continue
+			any = true
+			d.vel *= exp(-2.4 * delta)
+			d.pos += d.vel * delta
+			d.rot += d.spin * delta
 	for r in _rings:
 		if r.t >= 0.0:
 			r.t += delta
@@ -434,11 +470,25 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	# Smoke sits behind everything else.
+	for d in _puffs:
+		if d.t < 0.0:
+			continue
+		var k: float = d.t / d.life
+		var e := 1.0 - pow(1.0 - k, 2.5)
+		var sz: float = lerpf(d.s0, d.s1, e)
+		var alpha: float = d.a * minf(1.0, k * 8.0) * (1.0 - k) * (1.0 - k)
+		draw_set_transform(d.pos, d.rot)
+		draw_texture_rect(TEX_SMOKE[d.tex], Rect2(-sz, -sz, sz * 2.0, sz * 2.0), false, Color(d.col, alpha))
+	draw_set_transform(Vector2.ZERO)
 	for r in _rings:
 		if r.t < 0.0:
 			continue
 		var k: float = r.t / RING_LIFE
 		var e := 1.0 - pow(1.0 - k, 3.0)
+		# Soft pressure wave under the crisp line.
+		var rr: float = lerpf(r.r * 0.5, r.r * 1.6, e)
+		draw_texture_rect(TEX_RING, Rect2(r.pos - Vector2(rr, rr), Vector2(rr, rr) * 2.0), false, Color(r.col, 0.3 * (1.0 - k)))
 		draw_arc(r.pos, lerpf(r.r * 0.35, r.r * 1.25, e), 0.0, TAU, 32, Color(r.col, 0.55 * (1.0 - k)), lerpf(3.0, 0.6, k), true)
 	for tk in _tokens:
 		if tk.t < 0.0 or tk.delay > 0.0:

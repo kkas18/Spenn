@@ -42,7 +42,7 @@ func _ready() -> void:
 			"beads": 1 + _rng.randi() % 3,
 		})
 	_dust = CPUParticles2D.new()
-	_dust.amount = 10
+	_dust.amount = 16
 	_dust.lifetime = 16.0
 	_dust.preprocess = 16.0
 	_dust.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
@@ -51,20 +51,19 @@ func _ready() -> void:
 	_dust.gravity = Vector2(0, -3)
 	_dust.initial_velocity_min = 6.0
 	_dust.initial_velocity_max = 14.0
-	_dust.scale_amount_min = 0.5
-	_dust.scale_amount_max = 1.0
-	_dust.color = Color(Pal.INK, 0.03)
-	_dust.texture = _soft_dot()
+	# Soft motes (Kenney Particle Pack, CC0) at a few depths: they drift in
+	# and out of the light instead of popping.
+	_dust.texture = preload("res://assets/particles/soft.png")
+	_dust.scale_amount_min = 0.07
+	_dust.scale_amount_max = 0.2
+	_dust.color = Color(Pal.INK, 0.07)
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0))
+	fade.set_color(1, Color(1, 1, 1, 0))
+	fade.add_point(0.3, Color(1, 1, 1, 1))
+	fade.add_point(0.7, Color(1, 1, 1, 1))
+	_dust.color_ramp = fade
 	add_child(_dust)
-
-
-func _soft_dot() -> ImageTexture:
-	var img := Image.create(12, 12, false, Image.FORMAT_RGBA8)
-	for y in 12:
-		for x in 12:
-			var d := Vector2(x + 0.5 - 6.0, y + 0.5 - 6.0).length() / 6.0
-			img.set_pixel(x, y, Color(1, 1, 1, clampf(1.0 - d * d, 0.0, 1.0)))
-	return ImageTexture.create_from_image(img)
 
 
 func setup(layout: Layout) -> void:
