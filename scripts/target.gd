@@ -31,6 +31,11 @@ var vel := Vector2.ZERO
 var body_rot := 0.0
 var danger := 0.0              # 0..1, how close to the danger line
 var rope_alpha := 1.0
+var squash_t := 1.0            # time since last hit (s)
+var squash_dir := Vector2.UP
+var spin := 0.0                # rad/s while falling
+var tilt := 0.0                # perspective tilt phase while falling
+var fall_t := 0.0
 
 var _pts := PackedVector2Array()
 var _prev := PackedVector2Array()
@@ -58,6 +63,11 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	body_rot = 0.0
 	danger = 0.0
 	rope_alpha = 1.0
+	squash_t = 1.0
+	spin = 0.0
+	tilt = 0.0
+	fall_t = 0.0
+	modulate.a = 1.0
 	_attached = true
 	_rope_len = start_len
 	for i in N:
@@ -96,6 +106,8 @@ func bottom_y() -> float:
 ## Returns true if the target died from this hit.
 func hit(impulse: Vector2) -> bool:
 	vel += impulse
+	squash_t = 0.0
+	squash_dir = impulse.normalized() if impulse.length() > 0.01 else Vector2.UP
 	hp -= 1
 	if hp > 0:
 		return false
@@ -120,10 +132,14 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
 			_rope_step(dt)
 		Phase.FALLING:
+			fall_t += dt
 			vel.y += GRAVITY * dt
 			pos += vel * dt
+			body_rot += spin * dt
+			tilt += 4.5 * dt
+			modulate.a = clampf(1.0 - (fall_t - 0.45) / 0.5, 0.0, 1.0)
 			_rope_step(dt)
-			if pos.y - radius > screen_h + 40.0 and rope_alpha <= 0.0:
+			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0) and rope_alpha <= 0.0:
 				phase = Phase.OFF
 				visible = false
 
@@ -174,13 +190,42 @@ func _rope_step(dt: float) -> void:
 			var off := d * ((l - seg) / l)
 			_pts[i] += off * (wa / sum)
 			_pts[i + 1] -= off * (wb / sum)
+	if not _attached:
+		# The recoiling stub folds against the rail instead of passing it.
+		for i in range(1, N):
+			_pts[i].y = maxf(_pts[i].y, anchor.y + 1.0)
 
 
 func _snap(impulse: Vector2) -> void:
 	phase = Phase.FALLING
 	_attached = false
 	vel = impulse * 0.5 + Vector2(0, -120)
+	spin = randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0)
+	# Whip recoil: the freed rope springs upward for a few frames.
+	for i in range(1, N):
+		var k := float(i) / (N - 1)
+		_prev[i] = _pts[i] + Vector2(randf_range(-2.0, 2.0), 9.0 + 12.0 * k)
 
+
+## Squash (1.25 x 0.8 along the hit) for 60 ms, then an elastic return;
+## while falling, a cosine on one axis reads as a perspective tilt.
+func body_xform() -> Transform2D:
+	var sx := 1.0
+	var sy := 1.0
+	var t := squash_t
+	if t < 0.06:
+		var k := t / 0.06
+		sx = 1.0 + 0.25 * k
+		sy = 1.0 - 0.2 * k
+	elif t < 0.6:
+		var e := exp(-(t - 0.06) * 12.0) * cos((t - 0.06) * 36.0)
+		sx = 1.0 + 0.25 * e
+		sy = 1.0 - 0.2 * e
+	var a := squash_dir.angle() + PI * 0.5
+	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
+	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
+	var body := Transform2D(body_rot, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
+	return Transform2D(0.0, pos) * squash * body
 
 ## Angle of the top rope segment relative to vertical (for the rail hooks).
 func hook_angle() -> float:
@@ -188,8 +233,9 @@ func hook_angle() -> float:
 	return atan2(-d.x, d.y)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if phase != Phase.OFF:
+		squash_t += delta
 		queue_redraw()
 
 
@@ -198,12 +244,14 @@ func _draw() -> void:
 		return
 	if rope_alpha > 0.0:
 		draw_polyline(_pts, Color(Pal.STRING, rope_alpha), 2.0, true)
-	var col := _color()
+	var col := color()
 	Pal.shadow_disc(self, pos, radius)
-	Pal.ring(self, pos, radius - 4.0, col, 8.0)
+	draw_set_transform_matrix(body_xform())
+	Pal.ring(self, Vector2.ZERO, radius - 4.0, col, 8.0)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-func _color() -> Color:
+func color() -> Color:
 	match kind:
 		Kind.HEAVY: return Pal.GREEN
 		Kind.SPLIT: return Pal.TEAL

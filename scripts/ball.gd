@@ -13,7 +13,12 @@ var pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var age := 0.0
 var hits := 0                  # targets hit during this shot
+var spin := 0.0                # visual rotation (rad)
 var _touched := {}             # target instance id -> cooldown (s)
+var _trail := PackedVector2Array()
+var _trail_t := 0.0
+
+const TRAIL := 6
 
 
 func _ready() -> void:
@@ -27,7 +32,11 @@ func fire(p: Vector2, v: Vector2, is_special: bool) -> void:
 	vel = v
 	age = 0.0
 	hits = 0
+	spin = 0.0
 	_touched.clear()
+	_trail.resize(TRAIL + 1)
+	_trail.fill(p)
+	_trail_t = 0.0
 	visible = true
 
 
@@ -49,6 +58,13 @@ func step(dt: float, l: Layout) -> bool:
 	age += dt
 	vel.y += GRAVITY * dt
 	pos += vel * dt
+	spin += vel.length() / RADIUS * dt * (1.0 if vel.x >= 0.0 else -1.0) * 0.35
+	_trail_t += dt
+	if _trail_t >= 1.0 / 60.0:
+		_trail_t = 0.0
+		for i in range(TRAIL, 0, -1):
+			_trail[i] = _trail[i - 1]
+	_trail[0] = pos
 	for id in _touched.keys():
 		_touched[id] -= dt
 		if _touched[id] <= 0.0:
@@ -73,7 +89,11 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if not active:
 		return
-	draw_ball(self, pos, RADIUS, special, 0.0, vel.normalized())
+	# Six fading segments, matte gold, no glow.
+	for i in TRAIL:
+		var k := 1.0 - float(i) / TRAIL
+		draw_line(_trail[i], _trail[i + 1], Color(Pal.GOLD_DARK, 0.4 * k), RADIUS * 1.5 * k, true)
+	draw_ball(self, pos, RADIUS, special, spin, vel.normalized())
 
 
 ## Matte gold ball lit from the upper left. `rot` turns the seam so spin

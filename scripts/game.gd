@@ -24,6 +24,7 @@ var world: Node2D
 var rail: Rail
 var slingshot: Slingshot
 var hud: Hud
+var fx: Fx
 var targets: Array[Target] = []
 var balls: Array[Ball] = []
 
@@ -53,8 +54,13 @@ func _ready() -> void:
 		b.z_index = 1
 		world.add_child(b)
 		balls.append(b)
+	fx = Fx.new()
+	fx.z_index = 2
+	fx.shake_target = world
+	world.add_child(fx)
 	hud = Hud.new()
 	add_child(hud)
+	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
 	hud.pause_pressed.connect(_set_paused.bind(true))
 	hud.resume_pressed.connect(_set_paused.bind(false))
@@ -66,6 +72,7 @@ func _ready() -> void:
 
 func _apply_layout() -> void:
 	rail.setup(layout, targets)
+	fx.l = layout
 	slingshot.setup(layout)
 	hud.setup(layout)
 
@@ -79,7 +86,9 @@ func _on_resize() -> void:
 
 func _new_game() -> void:
 	get_tree().paused = false
+	Engine.time_scale = 1.0
 	hud.hide_menu()
+	fx.clear()
 	for t in targets:
 		t.phase = Target.Phase.OFF
 		t.visible = false
@@ -124,6 +133,8 @@ func _start_level(n: int) -> void:
 		t.spawn(_pick_kind(n), Vector2(x, layout.rail_y), 12.0, len, 0.25 + i * 0.06)
 	hud.bar.level = n
 	hud.bar.progress = 0.0
+	if n > 1:
+		fx.popup(Loc.t("level") % n, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.42), Pal.INK, 26)
 
 
 func _pick_kind(n: int) -> Target.Kind:
@@ -214,19 +225,43 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		b.pos = cp + n * (rr + 0.5)
 		impulse = -n * 260.0
 	var kind := t.kind
+	var col := t.color()
 	var killed := t.hit(impulse)
-	score += t.points() * b.hits
+	var gained := t.points() * b.hits
+	score += gained
 	hud.bar.score = score
+	hud.bar.pulse = 1.0
+	# Response: hit-stop, sparks, popup, sound and haptics on every hit.
+	fx.hitstop()
+	fx.sparks(cp, col, 10 if killed else 6)
+	var label := "+%d" % gained
+	if b.special:
+		label += " " + Loc.t("pierce")
+	elif killed and kind == Target.Kind.SPLIT:
+		label += " " + Loc.t("split")
+	elif b.hits >= 2:
+		label += " " + Loc.t("combo") % b.hits
+	fx.popup(label, t.pos + Vector2(0, -t.radius - 14.0))
+	if b.hits >= 2:
+		fx.shake(2.0 + minf(b.hits - 2, 1))
 	if killed:
+		Sfx.play("hit", 1.0 + 0.08 * (b.hits - 1))
+		Sfx.play("snap", randf_range(0.95, 1.1), -6.0)
+		Sfx.haptic(18, 0.5)
 		level_cleared += 1
 		if kind == Target.Kind.SPLIT:
 			_split(t)
+	else:
+		Sfx.play("thud", 1.0 + 0.05 * (b.hits - 1))
+		Sfx.haptic(12, 0.35)
 	if b.hits == 2:
 		_grant_pierce()
 	hud.bar.progress = float(level_cleared) / float(maxi(level_total, 1))
 	if level_cleared >= level_total and state == State.PLAY:
 		state = State.CLEARING
 		_clear_t = 1.4
+		Sfx.play("clear")
+		fx.popup(Loc.t("level_clear") % level, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.42), Pal.INK, 26)
 
 
 func _split(t: Target) -> void:
@@ -281,6 +316,9 @@ func _lose() -> void:
 	slingshot.cancel()
 	_touch = -1
 	var is_record := Loc.submit_score(score)
+	fx.shake()
+	Sfx.play("lose")
+	Sfx.haptic(60, 0.8)
 	hud.show_game_over(score, is_record)
 
 
@@ -288,6 +326,7 @@ func _set_paused(on: bool) -> void:
 	if state == State.OVER:
 		return
 	get_tree().paused = on
+	Engine.time_scale = 1.0
 	hud.show_pause(on)
 	if on:
 		slingshot.cancel()
