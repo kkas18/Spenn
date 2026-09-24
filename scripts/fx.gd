@@ -53,6 +53,7 @@ var _next_ring := 0
 var _shards: Array[Dictionary] = []
 var _next_shard := 0
 var _rng := RandomNumberGenerator.new()
+var _links: Array[Dictionary] = []
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _puffs: Array[Dictionary] = []
 var _next_puff := 0
@@ -126,7 +127,7 @@ func sparks(at: Vector2, col: Color, count := 8) -> void:
 	p.direction = dir
 	p.spread = spread
 	p.color = col
-	p.amount = clampi(count, 6, 10)
+	p.amount = Device.count(clampi(count, 6, 10))
 	p.restart()
 
 
@@ -140,6 +141,19 @@ func ring(at: Vector2, col: Color, size := 30.0) -> void:
 	r.r = size
 
 
+## A brief dashed tether between two targets working together (0.5 s).
+## Re-issued while the pairing lasts; it only refreshes, never stacks.
+func link(a: Vector2, b: Vector2, col: Color) -> void:
+	for k in _links:
+		if k.a.distance_to(a) < 30.0 and k.b.distance_to(b) < 30.0:
+			k.a = a
+			k.b = b
+			k.t = minf(k.t, 0.1)
+			return
+	if _links.size() < 6:
+		_links.append({"a": a, "b": b, "col": col, "t": 0.0})
+
+
 ## Runs `cb` after `delay` seconds of game time (slowed by hit-stop).
 func after(delay: float, cb: Callable) -> void:
 	_later.append({"t": delay, "cb": cb})
@@ -150,6 +164,7 @@ func after(delay: float, cb: Callable) -> void:
 func puff(at: Vector2, col: Color, count: int, size: float, alpha := 0.3) -> void:
 	if Prefs.reduced_motion:
 		count = maxi(1, count / 2)
+	count = Device.count(count)
 	var tint := col.lerp(Pal.BG, 0.35)
 	for i in count:
 		var d := _puffs[_next_puff]
@@ -253,6 +268,7 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 	var rays := 12 if kind != Target.Kind.BOSS else 20
 	if Prefs.reduced_motion:
 		rays /= 3
+	rays = Device.count(rays)
 	for i in rays:
 		var a := rot + i * TAU / rays + _rng.randf_range(-0.08, 0.08)
 		var f := _frag(Frag.RAY, at, Vector2.ZERO, col.lightened(0.25), RAY_LIFE)
@@ -268,7 +284,7 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 ## Jelly bursts into blobs: a ring of droplets of mixed size flung out and
 ## falling, a few slow heavy ones, and a soft wet splash ring. No rays.
 func _splash(at: Vector2, radius: float, col: Color, inherit: Vector2) -> void:
-	var n := 14 if not Prefs.reduced_motion else 7
+	var n := Device.count(14 if not Prefs.reduced_motion else 7)
 	for i in n:
 		var a := i * TAU / n + _rng.randf_range(-0.2, 0.2)
 		var sp := _rng.randf_range(110.0, 300.0)
@@ -386,6 +402,7 @@ func clear() -> void:
 		k.t = -1.0
 	_queued.clear()
 	_later.clear()
+	_links.clear()
 	for d in _puffs:
 		d.t = -1.0
 	for s in _sparks:
@@ -430,6 +447,12 @@ func _process(delta: float) -> void:
 		if k.t >= TOKEN_TIME:
 			k.t = -1.0
 			Sfx.play("token", _rng.randf_range(0.95, 1.2))
+		else:
+			any = true
+	for k in _links.duplicate():
+		k.t += delta
+		if k.t > 0.5:
+			_links.erase(k)
 		else:
 			any = true
 	for q in _later.duplicate():
@@ -512,6 +535,9 @@ func _draw() -> void:
 		draw_set_transform(d.pos, d.rot)
 		draw_texture_rect(TEX_SMOKE[d.tex], Rect2(-sz, -sz, sz * 2.0, sz * 2.0), false, Color(d.col, alpha))
 	draw_set_transform(Vector2.ZERO)
+	for k in _links:
+		var a := 1.0 - float(k.t) / 0.5
+		draw_dashed_line(k.a, k.b, Color(k.col, 0.5 * a), 2.0, 7.0, true)
 	for r in _rings:
 		if r.t < 0.0:
 			continue

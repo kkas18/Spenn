@@ -456,6 +456,9 @@ func _update_eyes() -> void:
 		for f in flights:
 			_read_flight(t, f)
 		t.has_cover = false
+		t.covered = false
+		if t.guard_of != null and (not is_instance_valid(t.guard_of) or not t.guard_of.is_hittable() or not t.guard_of.aimed):
+			t.guard_of = null
 		if t.aimed and t.kind == Target.Kind.RING:
 			_find_cover(t, o)
 		_slide_room(t)
@@ -471,6 +474,7 @@ func _update_eyes() -> void:
 		if not t.has_look:
 			t.look_at = slingshot.pouch
 			t.has_look = true
+	_guard_allies(path)
 	# Everything in the line of fire narrows its eye: it is watching you.
 	for t in targets:
 		t.squint = t.aimed or (t.threat_lvl > 0.2 and t.is_hittable())
@@ -498,6 +502,55 @@ func _read_threat(t: Target, path: PackedVector2Array) -> void:
 		var lean := path[mini(bi + 1, path.size() - 1)].x - path[maxi(bi - 1, 0)].x
 		side = -lean if absf(lean) > 0.5 else (1.0 if t.pos.x < layout.center_x else -1.0)
 	t.dodge_dir = signf(side)
+
+
+## Teamwork: when you aim at a smaller enemy, a sturdy neighbour (Tungvekt
+## or Vokter) that hangs lower, i.e. between it and you, slides into the
+## shot line to take the hit; the one it shields trusts it and holds still.
+## A dashed link shows the pairing for a moment so it can be read.
+func _guard_allies(path: PackedVector2Array) -> void:
+	if path.is_empty():
+		return
+	for t in targets:
+		if not t.aimed or t.kind in Target.GUARD_KINDS or t.kind == Target.Kind.BOSS:
+			continue
+		for g in targets:
+			if g == t or not (g.kind in Target.GUARD_KINDS) or not g.is_hittable():
+				continue
+			if g.guard_of == t:
+				t.covered = true
+				break
+			if g.guard_of != null:
+				continue
+			if g.pos.y < t.pos.y + 25.0:
+				continue
+			var x := _path_x_at(path, g.pos.y)
+			if is_nan(x):
+				continue
+			var off := x - g.pos.x
+			if absf(off) > 190.0 * layout.scale:
+				continue
+			var ax := g.anchor.x + off
+			if ax < g.slide_lo - 2.0 or ax > g.slide_hi + 2.0:
+				continue
+			if absf(off) < g.radius * 0.5 or g.guard(x, t):
+				t.covered = true
+				fx.link(g.pos, t.pos, g.color())
+				break
+	for g in targets:
+		if g.guard_of != null and is_instance_valid(g.guard_of):
+			g.look_at = g.guard_of.pos
+			g.has_look = true
+
+
+## Where the predicted shot crosses height `y` (NaN if it never does).
+func _path_x_at(path: PackedVector2Array, y: float) -> float:
+	var prev := layout.pouch_rest()
+	for p in path:
+		if (prev.y - y) * (p.y - y) <= 0.0 and prev.y != p.y:
+			return lerpf(prev.x, p.x, (y - prev.y) / (p.y - prev.y))
+		prev = p
+	return NAN
 
 
 ## A ball's next 0.6 s (gravity only), sampled at 30 Hz.

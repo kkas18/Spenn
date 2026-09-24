@@ -42,7 +42,8 @@ func _ready() -> void:
 			"beads": 1 + _rng.randi() % 3,
 		})
 	_dust = CPUParticles2D.new()
-	_dust.amount = 16
+	_dust.amount = Device.count(16)
+	Device.tier_changed.connect(func() -> void: _dust.amount = Device.count(16))
 	_dust.lifetime = 16.0
 	_dust.preprocess = 16.0
 	_dust.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE

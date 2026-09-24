@@ -728,3 +728,64 @@ bytte til et engelsk navn når språket er engelsk.
   (`game.titleAccent`).
 - **Appnavnet på telefonen:** «Spenn» med norsk systemspråk (nb/nn/no), ellers «Taut»
   (`config/name_localized`, `package/name`).
+
+---
+
+# v5.5 – Ekte kraft, tydelig ammo, samarbeidende fiender og telefontilpasning
+
+**Tilbakemelding:** ammo-kolonnen var uklar, og ballen gikk like fort uansett hvor mye
+strikken ble dratt. Fiendene skal samarbeide og skjerme hverandre. Spillet skal bruke
+hele skjermen og tilpasse seg telefonen (Samsung Galaxy osv.) automatisk.
+
+## Kraft
+- **Feilen:** kraften ble målt på pungens korte visuelle vei (`max_pull` ≈ 115 px, rundt
+  1,5 cm finger). Nesten alle drag ga derfor full kraft.
+- **Nå:** kraften følger fingerens vei over en fysisk avstand, `drag_range` = 220 dp
+  (≈ 3,5 cm på alle telefoner), og strikken strekkes i samme forhold.
+- **Fart:** 620 → 2250 px/s med en svak kurve (`power^1.15`). Myke drag lobber i bue,
+  fulle drag flyr.
+
+## Ammo
+- **Hva som var galt:** ladde kuler i kø ble tegnet som tomme ringer, akkurat som tomme
+  plasser.
+- **Nå:** et lite mørkt stativ ved skaftet med reservekulene som ekte gullkuler, tegnet
+  som ballen i luften. Gjennomslag viser stålbåndet, trippel viser tre frø.
+- **Lading:** plassen som lades, fyller seg med en voksende kule og en tynn
+  fremdriftsring. Tomme plasser er svake fordypninger.
+- Kulen i strikken er neste skudd og står ikke i stativet.
+
+## Samarbeid (livvakter)
+- **Hvem og når:** når du sikter på en mindre fiende, kan en Tungvekt eller Vokter som
+  henger lavere (mellom deg og den) gli inn i skuddlinjen. Skjæringspunktet regnes ut fra
+  den forutsagte banen.
+- **Signal:** først et kort, lesbart øyeblikk der livvaktens øye vender seg mot den den
+  beskytter. En stiplet linje i livvaktens farge viser paret.
+- **Den beskyttede:** stoler på livvakten og holder seg i ro. Livvakten flykter ikke fra
+  skuddlinjen mens den er på vakt.
+- **Begrensninger:** krever aggresjon ≥ 0,25. Rasende Tungvekter vokter ikke. Nedkjøling
+  2,4 → 1,2 s.
+- **Motspill:** skudd via veggen, et snorkutt, eller å skyte livvakten først. Tungvekten
+  har 2 liv.
+
+## Telefontilpasning (`Device`, ny autoload)
+- **Leser telefonen:** modell, kjerner, minne og oppdateringsfrekvens. Velger
+  effektnivå: høy (8+ kjerner og ≥ 5,5 GB), middels eller lav.
+- **Effekter etter nivå:** partikkelmengder skaleres (gnister, røyk, dråper, stråler,
+  støv) med ×1 / ×0,8 / ×0,5.
+- **Live-tilpasning:** faller bildefrekvensen under ~80 % i 4 s under spill, går nivået
+  ned ett trinn, aldri opp igjen i samme økt.
+- **Bildefrekvens:** tegner i panelets egen takt (60/90/120 Hz), ikke raskere.
+- **Skjermen:** holdes våken under spill.
+- **Hele skjermen:** immersive fullskjerm og stretch «expand» fyller alle formater, fra
+  16:9 til 21:9 og sammenleggbare. Trygg sone holder HUD unna kamerahull og gestlinje.
+  Dragavstand og måleenheter er fysiske (dp), så følelsen er lik på alle tettheter.
+
+## Balansering
+Menneskelignende bot, snitt av 4 runder:
+
+| Versjon | Overlevelse (snitt) |
+|---|---|
+| v5.4 | 135 s |
+| v5.5 | 126 s |
+
+Litt lavere, fordi livvaktene tar skudd.

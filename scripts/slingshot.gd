@@ -134,14 +134,15 @@ func drag(offset: Vector2) -> void:
 	var ang := 0.0
 	if v.length() > 0.01:
 		ang = clampf(Vector2.DOWN.angle_to(v), -deg_to_rad(80), deg_to_rad(80))
-	v = Vector2.DOWN.rotated(ang) * minf(v.length(), l.max_pull)
-	var p := rest + v
+	# Power comes from how far the finger travelled (a physical distance);
+	# the pouch shows it by stretching the band in proportion.
+	power = clampf(v.length() / l.drag_range, 0.0, 1.0)
+	var dir := Vector2.DOWN.rotated(ang)
+	var p := rest + dir * l.max_pull * power
 	p.x = maxf(p.x, l.pouch_min_x())
 	pouch = p
-	var pull := pouch - rest
-	power = clampf(pull.length() / l.max_pull, 0.0, 1.0)
-	if pull.length() > 0.01:
-		aim_dir = -pull.normalized()
+	if v.length() > 0.01:
+		aim_dir = -dir
 	if power >= 0.995 and not _at_max:
 		_at_max = true
 		Sfx.haptic(14, 0.35)
@@ -409,8 +410,10 @@ func predict(max_t := 1.2) -> PackedVector2Array:
 	return out
 
 
+## Soft pulls lob, full pulls fly: a wide range with a slight curve so the
+## difference is felt across the whole pull.
 func launch_speed() -> float:
-	return lerpf(950.0, 2150.0, power) * l.scale
+	return lerpf(620.0, 2250.0, pow(power, 1.15)) * l.scale
 
 
 func _draw_pouch() -> void:
@@ -434,39 +437,38 @@ func _draw_pouch() -> void:
 				_front.draw_circle(pouch + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 5.0, 2.2, Pal.GOLD_DARK, true, -1.0, true)
 
 
+## The spare balls, as real balls resting in a small rack beside the
+## handle (the one in the pouch is the next shot). The slot being refilled
+## shows a ball growing in as it reloads; empty slots are faint dimples.
 func _draw_ammo() -> void:
-	for i in 5:
-		var p := Vector2(l.ammo_x, l.ammo_top + i * l.ammo_step)
-		if i < _ammo.size():
-			_draw_ammo_icon(p, _ammo[i], i == 0)
-		elif i == _ammo.size() and _reload > 0.0:
-			_front.draw_arc(p, 7.0, -PI * 0.5, -PI * 0.5 + TAU * _reload, 24, Color(Pal.GOLD_DARK, 0.7), 1.5, true)
+	var slots := 4
+	var top := Vector2(l.ammo_x, l.ammo_top)
+	var bottom := top + Vector2(0, (slots - 1) * l.ammo_step)
+	# The rack: a short dark channel, lit from the upper left.
+	_front.draw_line(top + Vector2(2, -12), bottom + Vector2(2, 14), Pal.SHADOW, 22.0, true)
+	_front.draw_line(top + Vector2(0, -12), bottom + Vector2(0, 12), Color(Pal.METAL_DARK, 0.9), 20.0, true)
+	_front.draw_line(top + Vector2(-9, -10), bottom + Vector2(-9, 10), Color(Pal.METAL_LIGHT, 0.25), 1.2, true)
+	for i in slots:
+		var p := top + Vector2(0, i * l.ammo_step)
+		var idx := i + 1
+		if idx < _ammo.size():
+			_draw_ammo_icon(p, _ammo[idx], true)
+		elif idx == _ammo.size() and _reload > 0.0:
+			var r := 7.5 * ease(_reload, 0.6)
+			Pal.disc(_front, p, 7.5, Color(0, 0, 0, 0.25))
+			if r > 0.5:
+				_front.draw_circle(p, r, Color(Pal.GOLD_DARK, 0.85), true, -1.0, true)
+			_front.draw_arc(p, 8.5, -PI * 0.5, -PI * 0.5 + TAU * _reload, 24, Color(Pal.GOLD, 0.55), 1.2, true)
 		else:
-			_front.draw_arc(p, 7.0, 0.0, TAU, 24, Color(Pal.INK_FAINT, 0.35), 1.0, true)
+			Pal.disc(_front, p, 7.5, Color(0, 0, 0, 0.28))
 
 
-func _draw_ammo_icon(p: Vector2, kind: int, current: bool) -> void:
-	var col := Pal.GOLD if current else Pal.GOLD_DARK
-	if kind == Ammo.PIERCE:
-		var r := 9.0
-		var diamond := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
-		if current:
-			var sh := PackedVector2Array()
-			for q in diamond:
-				sh.append(q + Vector2(2, 2))
-			_front.draw_colored_polygon(sh, Pal.SHADOW)
-			_front.draw_colored_polygon(diamond, col)
-		else:
-			diamond.append(diamond[0])
-			_front.draw_polyline(diamond, col, 2.0, true)
-		return
-	if current:
-		_front.draw_circle(p + Vector2(2, 2), 8.0, Pal.SHADOW, true, -1.0, true)
-		_front.draw_circle(p, 8.0, col, true, -1.0, true)
-	else:
-		_front.draw_arc(p, 7.0, 0.0, TAU, 24, col, 2.0, true)
+func _draw_ammo_icon(p: Vector2, kind: int, _current: bool) -> void:
+	# A real ball, drawn exactly like the one in flight; power-ups carry
+	# their mark (pierce: the steel band; triple: three seeds).
+	Ball.draw_ball(_front, p, 8.0, kind == Ammo.PIERCE, 0.6, Vector2.UP, true)
 	if kind == Ammo.TRIPLE:
-		# Three seeds: this ball splits into a fan of three.
-		var seed_col := Pal.GOLD_DARK if current else Pal.GOLD
 		for k in 3:
-			_front.draw_circle(p + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 3.6, 1.7, seed_col, true, -1.0, true)
+			_front.draw_circle(p + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 3.4, 1.6, Pal.GOLD_DARK, true, -1.0, true)
+
+

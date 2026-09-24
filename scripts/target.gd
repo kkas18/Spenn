@@ -73,6 +73,11 @@ var _taunt := -1.0             # time into a taunt (<0: none)
 var _taunt_in := 3.0           # until the next unprompted taunt
 var _taunt_delay := -1.0       # a near miss is mocked a moment later
 static var _last_tease_ms := 0
+# Teamwork: a sturdy one steps into the line of fire to shield an ally.
+var covered := false           # an ally is guarding this one: it holds still
+var _guard_wait := -1.0        # reaction time before the guard moves
+var _guard_x := 0.0
+var guard_of: Target = null    # whom this one is shielding (eye follows it)
 var _queued_x := NAN           # erratic: the real slide after the feint
 var _queued_speed := 0.0
 var phase: Phase = Phase.OFF
@@ -174,6 +179,9 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	pop_t = 0.0
 	_gone = false
 	_hue_shift = randf_range(-0.035, 0.035)
+	covered = false
+	_guard_wait = -1.0
+	guard_of = null
 	smug = 0.0
 	_taunt = -1.0
 	_taunt_in = randf_range(2.0, 4.0)
@@ -266,6 +274,30 @@ static func is_soft_kind(k: int) -> bool:
 
 
 const TAUNT_TIME := 0.9
+const GUARD_KINDS := [Kind.HEAVY, Kind.SHIELD]
+
+
+## Asked to shield `ally`: after a short, readable beat (the eye turns to
+## the ally) the hook slides so the body sits on the shot line at `x`.
+func guard(x: float, ally: Target) -> bool:
+	if not (kind in GUARD_KINDS) or aggression < 0.25 or enraged or _dodge_cd > 0.0 or _guard_wait >= 0.0:
+		return false
+	_guard_x = x
+	guard_of = ally
+	_guard_wait = lerpf(0.45, 0.2, aggression)
+	return true
+
+
+func _guard_step(dt: float) -> void:
+	if _guard_wait < 0.0:
+		return
+	_guard_wait -= dt
+	if _guard_wait < 0.0:
+		var sc := _screen_h / 1280.0
+		_slide(anchor.x + (_guard_x - pos.x), EVADE[kind][2] * 1.2 * sc)
+		_dodge_cd = lerpf(2.4, 1.2, aggression)
+		startle_t = 0.2
+
 
 
 ## The closer to the line, the smugger (bold ones sooner, timid ones never);
@@ -574,6 +606,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 func _brain(dt: float) -> void:
 	var a := aggression
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
+	_guard_step(dt)
 	_wander(dt)
 	match kind:
 		Kind.RING:
@@ -666,8 +699,14 @@ func _evade(dt: float) -> void:
 	var a := aggression
 	var prof: Array = EVADE[kind]
 	var threatened := aimed or incoming
+	if guard_of != null:
+		# On guard duty: standing in the line of fire is the point.
+		return
 	if not threatened:
 		_aim_t = maxf(0.0, _aim_t - dt * 2.0)
+		return
+	if covered and not incoming:
+		# Shielded by a teammate: trusts it and stays put.
 		return
 	if _dodge_cd > 0.0 or a < prof[4]:
 		return

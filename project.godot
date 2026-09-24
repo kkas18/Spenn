@@ -21,6 +21,7 @@ boot_splash/show_image=false
 [autoload]
 
 Prefs="*res://scripts/prefs.gd"
+Device="*res://scripts/device.gd"
 Loc="*res://scripts/loc.gd"
 Motion="*res://scripts/motion.gd"
 Sfx="*res://scripts/sfx.gd"
@@ -35,6 +36,7 @@ window/size/window_height_override=880
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+window/energy_saving/keep_screen_on=true
 
 [input_devices]
 

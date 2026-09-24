@@ -23,7 +23,8 @@ var fork_y := 0.0              # y of the fork tips / pouch rest line
 var fork_half := 62.0          # half distance between fork tips
 var crotch_y := 0.0
 var handle_end_y := 0.0
-var max_pull := 130.0
+var max_pull := 130.0           # how far the pouch itself moves (visual)
+var drag_range := 330.0         # finger travel for full power: ~3.5 cm on any phone
 var arc_radius := 152.0
 var ammo_x := 0.0
 var ammo_top := 0.0
@@ -67,6 +68,9 @@ func _place() -> void:
 	var gesture := maxf(safe_bottom, MIN_GESTURE_DP * dp)
 	var floor_y := h - gesture - ARC_CLEARANCE_DP * dp
 	max_pull = clampf(h * 0.09, 100.0, 150.0)
+	# Power follows the finger over a physical distance, not the pouch's
+	# short visual travel, so a small pull really is a soft shot.
+	drag_range = clampf(220.0 * dp, 220.0, 480.0)
 	arc_radius = max_pull + ARC_GAP
 	var min_fork := danger_y + 70.0
 	if floor_y - arc_radius < min_fork:
@@ -77,8 +81,8 @@ func _place() -> void:
 	crotch_y = fork_y + 64.0
 	handle_end_y = minf(fork_y + h * 0.13, h - gesture - 10.0)
 
-	# Ammo: vertical stack left of the shaft, clear of every band position.
-	ammo_step = 28.0
+	# Ammo: a rack of spare balls left of the shaft, clear of every band.
+	ammo_step = 26.0
 	ammo_x = center_x - fork_half - 88.0
 	ammo_top = fork_y + 22.0
 	margin = 24.0
