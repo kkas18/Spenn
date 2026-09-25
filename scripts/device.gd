@@ -31,8 +31,10 @@ func _ready() -> void:
 	tier = _detect()
 	# Never let the phone dim or lock mid-run.
 	DisplayServer.screen_set_keep_on(true)
-	# Render at the panel's own rate (60/90/120 Hz), no faster.
-	Engine.max_fps = int(round(refresh_hz)) if OS.has_feature("mobile") else 0
+	# Frames are paced by v-sync at the panel's own rate (60/90/120 Hz). No
+	# max_fps cap: a timer cap equal to the refresh rate fights v-sync and
+	# drops frames now and then.
+	Engine.max_fps = 0
 	print("Device: %s, %d cores, %.0f Hz, tier %s" % [model, OS.get_processor_count(), refresh_hz, Tier.keys()[tier]])
 
 

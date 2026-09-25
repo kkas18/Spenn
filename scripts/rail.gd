@@ -40,44 +40,67 @@ func _draw() -> void:
 	if l == null:
 		return
 	# A steel beam: soft cast shadow below, dark lower lip, body, lit top
-	# edge (light from the upper left) and a row of rivets. It follows the
-	# flex when a breach yanks it.
+	# edge (light from the upper left) and a row of rivets. At rest it is a
+	# handful of plain rects, which the renderer batches into one call; only
+	# while a breach flexes it does it follow the dip as polylines.
 	var y := l.rail_y - 6.0
-	_line.clear()
-	for i in 33:
-		var x := l.size.x * i / 32.0
-		_line.append(Vector2(x, y + offset_at(x)))
-	for k in 4:
-		draw_set_transform(Vector2(0, 12.0 + k * 4.0))
-		draw_polyline(_line, Color(0, 0, 0, 0.16 - k * 0.035), 5.0)
-	draw_set_transform(Vector2(0, 5.0))
-	draw_polyline(_line, Pal.METAL_DARK, 11.0)
-	draw_set_transform(Vector2(0, 4.0))
-	draw_polyline(_line, Pal.METAL, 8.0)
-	draw_set_transform(Vector2(0, 0.8))
-	draw_polyline(_line, Pal.METAL_LIGHT, 1.6)
-	draw_set_transform(Vector2(0, 9.2))
-	draw_polyline(_line, Color(0, 0, 0, 0.35), 1.2)
+	var w := l.size.x
+	if _flex_amp > 0.0 and _flex_t < 1.2:
+		_line.clear()
+		for i in 33:
+			var x := w * i / 32.0
+			_line.append(Vector2(x, y + offset_at(x)))
+		for k in 4:
+			draw_set_transform(Vector2(0, 12.0 + k * 4.0))
+			draw_polyline(_line, Color(0, 0, 0, 0.16 - k * 0.035), 5.0)
+		draw_set_transform(Vector2(0, 5.0))
+		draw_polyline(_line, Pal.METAL_DARK, 11.0)
+		draw_set_transform(Vector2(0, 4.0))
+		draw_polyline(_line, Pal.METAL, 8.0)
+		draw_set_transform(Vector2(0, 0.8))
+		draw_polyline(_line, Pal.METAL_LIGHT, 1.6)
+		draw_set_transform(Vector2(0, 9.2))
+		draw_polyline(_line, Color(0, 0, 0, 0.35), 1.2)
+		draw_set_transform(Vector2.ZERO)
+	else:
+		for k in 4:
+			draw_rect(Rect2(0, y + 9.5 + k * 4.0, w, 5.0), Color(0, 0, 0, 0.16 - k * 0.035))
+		draw_rect(Rect2(0, y - 0.5, w, 11.0), Pal.METAL_DARK)
+		draw_rect(Rect2(0, y, w, 8.0), Pal.METAL)
+		draw_rect(Rect2(0, y, w, 1.6), Pal.METAL_LIGHT)
+		draw_rect(Rect2(0, y + 8.6, w, 1.2), Color(0, 0, 0, 0.35))
+	# Hooks in two passes (plates and stems, then eyelets) so each pass is a
+	# single batch however many strings hang from the beam.
+	for t in targets:
+		if _shows(t):
+			_hook_plate(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
 	draw_set_transform(Vector2.ZERO)
 	var x := 32.0
-	while x < l.size.x:
+	while x < w:
 		var p := Vector2(x, y + 4.5 + offset_at(x))
 		Pal.disc(self, p + Vector2(0.8, 0.8), 2.0, Color(0, 0, 0, 0.45))
 		Pal.disc(self, p, 1.8, Pal.METAL_LIGHT)
 		Pal.disc(self, p - Vector2(0.5, 0.5), 0.8, Color(Pal.INK, 0.5))
 		x += 64.0
 	for t in targets:
-		if t.phase == Target.Phase.OFF or t.rope_alpha <= 0.0 or t.delay > 0.0:
-			continue
-		_hook(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
+		if _shows(t):
+			_hook_eye(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
+	draw_set_transform(Vector2.ZERO)
 
 
-func _hook(at: Vector2, angle: float, alpha: float) -> void:
+func _shows(t: Target) -> bool:
+	return t.phase != Target.Phase.OFF and t.rope_alpha > 0.0 and t.delay <= 0.0
+
+
+## Mount plate and stem; the string ties into the eyelet below.
+func _hook_plate(at: Vector2, angle: float, alpha: float) -> void:
 	draw_set_transform(at, angle)
-	# Mount plate, stem and eyelet; the string ties into the eyelet.
 	draw_rect(Rect2(-4.0 + 2.0, -1.0 + 2.0, 8.0, 3.0), Color(Pal.SHADOW, Pal.SHADOW.a * alpha))
 	draw_rect(Rect2(-4.0, -1.0, 8.0, 3.0), Color(Pal.METAL_LIGHT, alpha))
-	draw_line(Vector2(0, 2.0), Vector2(0, 5.0), Color(Pal.METAL, alpha), 2.0, true)
-	draw_arc(Vector2(1.2, 9.2), 3.6, 0.0, TAU, 16, Color(Pal.METAL_DARK, alpha), 2.0, true)
-	draw_arc(Vector2(0, 8.0), 3.6, 0.0, TAU, 16, Color(Pal.METAL_LIGHT, alpha), 1.6, true)
-	draw_set_transform(Vector2.ZERO)
+	draw_rect(Rect2(-1.0, 2.0, 2.0, 3.2), Color(Pal.METAL, alpha))
+
+
+func _hook_eye(at: Vector2, angle: float, alpha: float) -> void:
+	draw_set_transform(at, angle)
+	Pal.hoop(self, Vector2(1.2, 9.2), 4.6, Color(Pal.METAL_DARK, alpha))
+	Pal.hoop(self, Vector2(0, 8.0), 4.4, Color(Pal.METAL_LIGHT, alpha))

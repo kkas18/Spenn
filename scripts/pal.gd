@@ -71,8 +71,56 @@ static func soft_shadow(ci: CanvasItem, center: Vector2, half: Vector2, alpha :=
 	ci.draw_texture_rect(soft_shadow_tex(), Rect2(center - h, h * 2.0), false, Color(SOFT_SHADOW, SOFT_SHADOW.a * alpha))
 
 
+static var _circle_tex: ImageTexture
+
+
+## A white disc with a smooth edge and mipmaps, built once. Discs drawn
+## from it are plain textured rects, which the renderer batches: dozens of
+## eyes, rivets and beads cost a single draw call instead of one each.
+static func circle_tex() -> ImageTexture:
+	if _circle_tex == null:
+		var n := 128
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		var c := n * 0.5
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - c, y + 0.5 - c).length()
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(c - 1.5 - d + 0.5, 0.0, 1.0)))
+		img.generate_mipmaps()
+		_circle_tex = ImageTexture.create_from_image(img)
+	return _circle_tex
+
+
+static var _hoop_tex: ImageTexture
+
+
+## A thin ring (inner radius 58 % of the outer), for eyelets and hoops,
+## batched like the discs.
+static func hoop_tex() -> ImageTexture:
+	if _hoop_tex == null:
+		var n := 64
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		var c := n * 0.5
+		var ro := c - 1.5
+		var ri := ro * 0.58
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - c, y + 0.5 - c).length()
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(minf(ro - d, d - ri) + 0.5, 0.0, 1.0)))
+		img.generate_mipmaps()
+		_hoop_tex = ImageTexture.create_from_image(img)
+	return _hoop_tex
+
+
+static func hoop(ci: CanvasItem, pos: Vector2, r: float, col: Color) -> void:
+	ci.draw_texture_rect(hoop_tex(), Rect2(pos.x - r, pos.y - r, r * 2.0, r * 2.0), false, col)
+
+
+## A filled disc. Drawn a hair larger than `r` to make up for the soft
+## (filtered) edge, so it matches an antialiased circle of radius `r`.
 static func disc(ci: CanvasItem, pos: Vector2, r: float, col: Color) -> void:
-	ci.draw_circle(pos, r, col, true, -1.0, true)
+	var e := r + 0.45
+	ci.draw_texture_rect(circle_tex(), Rect2(pos.x - e, pos.y - e, e * 2.0, e * 2.0), false, col)
 
 
 static func ring(ci: CanvasItem, pos: Vector2, r: float, col: Color, w: float) -> void:

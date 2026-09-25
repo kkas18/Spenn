@@ -46,6 +46,14 @@ var _ball_in_pouch := true
 var _load_anim := 1.0
 var _was_empty := false
 
+# Menu demo: a ghost finger pulls the pouch down and lets go, a ghost ball
+# flies, and the whole thing loops until the player touches the screen.
+const DEMO_CYCLE := 2.9
+const DEMO_DIR := Vector2(0.21, 0.978)   # pull down, a touch to the right
+var demo := false
+var _demo_t := 0.0
+var _demo_ball := -1.0            # time since the demo released (<0: not yet)
+
 var _band_l: Line2D
 var _band_r: Line2D
 var _under_l: Line2D
@@ -64,6 +72,8 @@ func _ready() -> void:
 	curve.add_point(Vector2(0.65, 0.84))
 	curve.add_point(Vector2(1.0, 0.95))
 	_fork = Node2D.new()
+	_fork.material = ShaderMaterial.new()
+	(_fork.material as ShaderMaterial).shader = preload("res://shaders/lit.gdshader")
 	add_child(_fork)
 	_fork.draw.connect(_draw_fork)
 	_under_l = _make_band(Pal.BAND_DARK, curve)
@@ -198,7 +208,11 @@ func step(dt: float) -> void:
 func _process(delta: float) -> void:
 	if l == null:
 		return
-	var target_alpha := 1.0 if mode == Mode.AIM else 0.0
+	if demo and mode == Mode.IDLE:
+		_demo_step(delta)
+	elif _demo_t > 0.0:
+		_demo_reset()
+	var target_alpha := 1.0 if (mode == Mode.AIM or (demo and power > MIN_POWER)) else 0.0
 	_arc_alpha = move_toward(_arc_alpha, target_alpha, delta / ARC_FADE)
 	_load_anim = minf(1.0, _load_anim + delta / 0.14)
 	# The pouch lies across the pull; after release it tips with its velocity.
@@ -213,6 +227,58 @@ func _process(delta: float) -> void:
 	if _arc_alpha > 0.0 or target_alpha > 0.0:
 		queue_redraw()
 	_front.queue_redraw()
+
+
+func _demo_step(delta: float) -> void:
+	var rest := l.pouch_rest()
+	_demo_t += delta
+	if _demo_t >= DEMO_CYCLE:
+		_demo_t = 0.0
+		_demo_ball = -1.0
+		_load_anim = 0.0
+	if _demo_t < 1.4:
+		# Press, then pull down smoothly to 85 % and hold a beat.
+		var k := Motion.ease_value(Motion.Ease.STANDARD, clampf((_demo_t - 0.4) / 0.8, 0.0, 1.0))
+		power = 0.85 * k
+		pouch = rest + DEMO_DIR * l.max_pull * power
+		pouch_vel = Vector2.ZERO
+		aim_dir = -DEMO_DIR
+	else:
+		if _demo_ball < 0.0:
+			_demo_ball = 0.0
+			power = 0.0
+			Sfx.play("release", 1.0, -10.0)
+		# Let go: the same damped spring as a real release.
+		pouch_vel += (-SPRING_K * (pouch - rest) - SPRING_C * pouch_vel) * delta
+		pouch += pouch_vel * delta
+		_demo_ball += delta
+
+
+func _demo_reset() -> void:
+	_demo_t = 0.0
+	_demo_ball = -1.0
+	if mode == Mode.IDLE:
+		pouch = l.pouch_rest()
+		pouch_vel = Vector2.ZERO
+		power = 0.0
+
+
+## The ghost finger: a soft touch mark that presses in, drags the pouch and
+## lifts off; then a ghost ball flies up the aimed line and fades.
+func _draw_demo() -> void:
+	if not demo or _demo_t <= 0.0:
+		return
+	var t := _demo_t
+	var a := minf(1.0, t / 0.35) * (1.0 - clampf((t - 1.45) / 0.35, 0.0, 1.0))
+	if a > 0.0:
+		var p := pouch + DEMO_DIR * 36.0
+		var press := clampf((t - 0.25) / 0.15, 0.0, 1.0) * (1.0 - clampf((t - 1.4) / 0.1, 0.0, 1.0))
+		Pal.hoop(_front, p, lerpf(24.0, 19.0, press), Color(Pal.INK, 0.55 * a))
+		Pal.disc(_front, p, lerpf(10.0, 13.0, press), Color(Pal.INK, 0.28 * a))
+	if _demo_ball >= 0.0 and _demo_ball < 0.6:
+		var b := l.pouch_rest() - DEMO_DIR * (1500.0 * l.scale * _demo_ball)
+		var fade := 1.0 - _demo_ball / 0.6
+		Pal.disc(_front, b, Ball.RADIUS, Color(Pal.GOLD, 0.5 * fade))
 
 
 func _tip(side: int) -> Vector2:
@@ -300,43 +366,80 @@ func _fork_paths() -> Array:
 	]
 
 
+## The fork as polished metal: tubes along the arms, shaft and grip with
+## domed caps, lit by the scene's one light (shaders/lit.gdshader), over a
+## soft contact shadow. Two draw calls; redrawn only on layout change.
 func _draw_fork() -> void:
 	var paths := _fork_paths()
 	var caps := [[_tip(-1), ARM_W], [_tip(1), ARM_W], [paths[2][0][1], GRIP_W]]
-	# Layers: shadow, dark edge (down/right), light edge (up/left), body.
-	var layers := [
-		[Pal.SHADOW_OFFSET, Pal.SHADOW, 0.0],
-		[Vector2(1.5, 1.5), Pal.METAL_DARK, 0.0],
-		[Vector2(-1.5, -1.5), Pal.METAL_LIGHT, 0.0],
-		[Vector2.ZERO, Pal.METAL, -3.0],
-	]
-	for layer in layers:
-		var off: Vector2 = layer[0]
-		var col: Color = layer[1]
-		var shrink: float = layer[2]
-		for p in paths:
-			var pts: PackedVector2Array = p[0]
-			var moved := PackedVector2Array()
-			for q in pts:
-				moved.append(q + off)
-			_fork.draw_polyline(moved, col, p[1] + shrink, true)
-		for c in caps:
-			Pal.disc(_fork, c[0] + off, (c[1] + shrink) * 0.5, col)
-	# Grip wrap: a few fine grooves to read as a handle.
+	var pts := PackedVector2Array()
+	var nrm := PackedVector2Array()
+	var idx := PackedInt32Array()
+	for p in paths:
+		_fork_tube(p[0], p[1] * 0.5, pts, nrm, idx)
+	for c in caps:
+		_fork_cap(c[0], c[1] * 0.5, pts, nrm, idx)
+	var ci := _fork.get_canvas_item()
+	var sh := PackedVector2Array()
+	var uv := PackedVector2Array()
+	for n in nrm:
+		sh.append(Vector2(4.0 + n.x, n.y))
+		uv.append(Vector2(24.0 + n.x, n.y))
+	RenderingServer.canvas_item_add_set_transform(ci, Transform2D(0.0, Pal.SHADOW_OFFSET * 1.3))
+	RenderingServer.canvas_item_add_triangle_array(ci, idx, pts, PackedColorArray([Color(0, 0, 0, 0.45)]), sh)
+	RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
+	RenderingServer.canvas_item_add_triangle_array(ci, idx, pts, PackedColorArray([Pal.METAL_LIGHT]), uv)
+
+
+## A tube along a path: each point extruded both ways along its normal,
+## with the normal itself as the surface normal at the edges.
+func _fork_tube(path: PackedVector2Array, hw: float, pts: PackedVector2Array, nrm: PackedVector2Array, idx: PackedInt32Array) -> void:
+	var base := pts.size()
+	var n := path.size()
+	for i in n:
+		var t := path[mini(i + 1, n - 1)] - path[maxi(i - 1, 0)]
+		var nn := t.normalized().orthogonal()
+		pts.append(path[i] - nn * hw)
+		nrm.append(-nn)
+		pts.append(path[i] + nn * hw)
+		nrm.append(nn)
+	for i in n - 1:
+		var a := base + i * 2
+		idx.append_array([a, a + 1, a + 3, a, a + 3, a + 2])
+
+
+## A domed round end.
+func _fork_cap(c: Vector2, r: float, pts: PackedVector2Array, nrm: PackedVector2Array, idx: PackedInt32Array) -> void:
+	var base := pts.size()
+	pts.append(c)
+	nrm.append(Vector2.ZERO)
+	for i in 20:
+		var d := Vector2.from_angle(i * TAU / 20.0)
+		pts.append(c + d * r)
+		nrm.append(d)
+	for i in 20:
+		idx.append_array([base, base + 1 + i, base + 1 + (i + 1) % 20])
+
+
+## Grip wrap: a few fine grooves so it reads as a handle (front layer).
+func _draw_grip() -> void:
+	var paths := _fork_paths()
 	var g0: Vector2 = paths[2][0][0]
 	var g1: Vector2 = paths[2][0][1]
 	for i in 4:
 		var y := lerpf(g0.y + 10.0, g1.y - 4.0, float(i) / 3.0)
-		_fork.draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
+		_front.draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
 
 
 func _draw_front() -> void:
 	if l == null:
 		return
+	_draw_grip()
 	_draw_lashing()
 	_draw_aim_dots()
 	_draw_pouch()
 	_draw_ammo()
+	_draw_demo()
 
 
 func _draw_lashing() -> void:
@@ -429,7 +532,7 @@ func _draw_pouch() -> void:
 		shadow.append(q + Vector2(1.0, 2.0))
 	_front.draw_polyline(shadow, Pal.BAND_DARK, 9.0, true)
 	_front.draw_polyline(pts, Pal.POUCH, 8.0, true)
-	if _ball_in_pouch and has_ball():
+	if _ball_in_pouch and has_ball() and not (demo and _demo_ball >= 0.0):
 		var s := ease(_load_anim, -2.0)
 		Ball.draw_ball(_front, pouch, Ball.RADIUS * lerpf(0.4, 1.0, s), _ammo[0] == Ammo.PIERCE, 0.0, Vector2.UP)
 		if _ammo[0] == Ammo.TRIPLE:

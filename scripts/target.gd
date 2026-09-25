@@ -61,8 +61,6 @@ var _sv := PackedFloat32Array()  # soft: radial velocity per spoke
 var _last_vel := Vector2.ZERO
 var _ring_t := 1.0             # rigid: time since the last knock (metal ring)
 var _ring_dir := Vector2.RIGHT
-var _feint := 0.0              # erratic: a false start the other way first
-var _feint_dir := 0.0
 var _wander_t := 3.0           # idle drift along the rail
 var _hue_shift := 0.0          # each one a slightly different shade of its kind
 var _dropping := false        # still paying out its string on the way in
@@ -151,6 +149,32 @@ var _blink_in := 4.0
 var _blink_t := 0.0
 var _clock := 0.0
 
+var _body: Node2D                  # lit layer: string, shadow, body (see rendering)
+var _face: Node2D                  # face layer: eye, mouth, details
+var _xf := Transform2D.IDENTITY    # this frame's body transform
+var _jit := Vector2.ZERO           # this frame's tremble, shared by every layer
+var _m_pts := PackedVector2Array()  # body mesh (body space)
+var _m_base := PackedVector2Array() # rest positions (jelly moves from these)
+var _m_uv := PackedVector2Array()   # band-coded normals
+var _m_sh := PackedVector2Array()   # the same, in the shadow band
+var _m_idx := PackedInt32Array()
+var _m_col := PackedColorArray()
+var _m_dv := PackedInt32Array()     # vertices the jelly moves
+var _m_dd := PackedVector2Array()   # ... along this direction
+var _m_ds := PackedFloat32Array()   # ... by the surface at this spoke
+var _m_mem := 0                     # leading vertices: the membrane
+var _m_dim := Vector2i(-1, -1)      # vertex range at reduced alpha (cracked ring)
+var _m_key := -1
+var _one_col := PackedColorArray([Color.WHITE])
+var _r_mid := PackedVector2Array()  # string strip (world space)
+var _r_pts := PackedVector2Array()
+var _r_uv := PackedVector2Array()
+var _r_idx := PackedInt32Array()
+var _p_pts := PackedVector2Array()  # armour plates (world space)
+var _p_uv := PackedVector2Array()
+var _p_idx := PackedInt32Array()
+var _p_col := PackedColorArray()
+
 var _pts := PackedVector2Array()
 var _prev := PackedVector2Array()
 var _rope_len := 0.0
@@ -164,17 +188,18 @@ func _ready() -> void:
 	_prev.resize(N)
 	_sd.resize(SOFT_N)
 	_sv.resize(SOFT_N)
+	_setup_canvas()
 	visible = false
 
 
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
 	kind = k
 	soft = k in SOFT_KINDS
+	_m_key = -1
 	_sd.fill(0.0)
 	_sv.fill(0.0)
 	_last_vel = Vector2.ZERO
 	_ring_t = 1.0
-	_feint = 0.0
 	_wander_t = randf_range(2.0, 5.0)
 	_queued_x = NAN
 	pop_t = 0.0
@@ -287,6 +312,8 @@ func _land() -> void:
 		_ring_t = 0.0
 		_ring_dir = Vector2.DOWN
 	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
+
+
 const GUARD_KINDS := [Kind.HEAVY, Kind.SHIELD]
 
 
@@ -384,25 +411,6 @@ func _soft_step(dt: float) -> void:
 	mean /= SOFT_N
 	for i in SOFT_N:
 		_sd[i] -= mean
-
-
-## Radial offset of the jelly surface at a body-space angle.
-func _soft_at(a: float) -> float:
-	var f := fposmod(a, TAU) / TAU * SOFT_N
-	var i := int(f) % SOFT_N
-	var w := f - floorf(f)
-	w = w * w * (3.0 - 2.0 * w)
-	return lerpf(_sd[i], _sd[(i + 1) % SOFT_N], w)
-
-
-## A body-space point pushed out (or in) by the jelly surface.
-func _sp(p: Vector2) -> Vector2:
-	if not soft:
-		return p
-	var l := p.length()
-	if l < 0.001:
-		return p
-	return p + p / l * _soft_at(p.angle()) * minf(1.0, l / radius)
 
 
 func is_hittable() -> bool:
@@ -935,8 +943,9 @@ func _snap(impulse: Vector2) -> void:
 
 
 ## Squash (1.25 x 0.8 along the hit) for 60 ms, then an elastic return;
-## while falling, a cosine on one axis reads as a perspective tilt.
-func body_xform(offset := Vector2.ZERO) -> Transform2D:
+## while falling, a cosine on one axis reads as a perspective tilt. The
+## tremble is computed once per frame (`_jit`) so every layer moves as one.
+func body_xform() -> Transform2D:
 	var sx := 1.0
 	var sy := 1.0
 	var t := squash_t
@@ -967,15 +976,21 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 		wig = sin(_taunt * TAU * 3.2) * 0.28 * env
 		bob = Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * env)
 	var body := Transform2D(body_rot + wig, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
-	var jitter := Vector2.ZERO
+	return Transform2D(0.0, pos + _jit + bob) * squash * body
+
+
+## This frame's tremble: the lunge telegraph, a struck shell ringing and a
+## timid one's nerves.
+func _tremble() -> Vector2:
+	var j := Vector2.ZERO
 	if tele_t > 0.0:
-		jitter = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
+		j = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
 	if not soft and _ring_t < 0.16:
-		# Struck shell: a short, stiff vibration along the blow.
-		jitter += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
+		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
-		jitter += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
-	return Transform2D(0.0, pos + offset + jitter + bob) * squash * body
+		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
+	return j
+
 
 ## Hook tilt, following the top rope segment's angle from vertical.
 func hook_angle() -> float:
@@ -991,14 +1006,19 @@ func eyelet() -> Vector2:
 
 
 func _process(delta: float) -> void:
-	if phase == Phase.OFF:
+	if phase == Phase.OFF or delay > 0.0:
 		return
 	intro_t = maxf(0.0, intro_t - delta)
 	_ring_t += delta
 	squash_t += delta
 	_clock += delta
 	_update_eye(delta)
-	queue_redraw()
+	_jit = _tremble()
+	_xf = body_xform()
+	_body.transform = _xf
+	_face.transform = _xf
+	_body.queue_redraw()
+	_face.queue_redraw()
 
 
 func _update_eye(delta: float) -> void:
@@ -1050,69 +1070,464 @@ func _base_color() -> Color:
 	return base
 
 
-func _draw() -> void:
+# ---------------------------------------------------------------- rendering
+# Each target draws through two child canvas items that follow the body's
+# transform. `_body` carries the shared lit material (shaders/lit.gdshader)
+# and holds the string, the contact shadow and the body as triangle meshes,
+# one draw call each; the light is computed per pixel from a normal per
+# vertex, so jelly and shells shade as real solids. `_face` holds the eye,
+# mouth and small details, mostly circle sprites that batch into one call.
+# A body's mesh is built once per kind and health (shells never rebuild it);
+# jelly only moves its vertices along the surface of its spring field.
+
+const SHADOW_OFF := Vector2(5.0, 6.0)
+const B_JELLY := 0.0
+const B_SHADOW := 4.0
+const B_CORD := 8.0
+const B_WIRE := 12.0
+const B_SHELL := 16.0
+const B_MEMBRANE := 20.0
+const B_METAL := 24.0
+const ROPE_SUB := 2                 # smoothing steps per rope segment
+
+static var _lit: ShaderMaterial
+static var _dir_cache := {}
+
+
+## Unit directions around a circle, cached per segment count.
+static func _dirs(seg: int) -> PackedVector2Array:
+	if not _dir_cache.has(seg):
+		var a := PackedVector2Array()
+		for i in seg:
+			a.append(Vector2.from_angle(i * TAU / seg))
+		_dir_cache[seg] = a
+	return _dir_cache[seg]
+
+
+func _setup_canvas() -> void:
+	if _lit == null:
+		_lit = ShaderMaterial.new()
+		_lit.shader = preload("res://shaders/lit.gdshader")
+	_body = Node2D.new()
+	_body.material = _lit
+	add_child(_body)
+	_body.draw.connect(_draw_body)
+	_face = Node2D.new()
+	add_child(_face)
+	_face.draw.connect(_draw_face)
+
+
+func _draw_body() -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
+	var ci := _body.get_canvas_item()
+	var inv := _xf.affine_inverse()
 	if rope_alpha > 0.0:
-		# Two-tone string: dark underside down/right, body, and a fine lit edge
-		# up/left. Near the danger line it pulls tighter and lighter.
-		# Each string takes its target's colour: a dyed cord for jelly, a
-		# darker tinted wire for rigid shells.
-		var tint := _base_color()
-		var sc := (tint.darkened(0.2) if soft else tint.darkened(0.42).lerp(Pal.STRING, 0.3)).lerp(Pal.INK_DIM, danger * 0.5)
-		var w := (2.4 if soft else 1.8) + danger * 0.6
-		draw_set_transform(Vector2(0.9, 1.1))
-		draw_polyline(_pts, Color(Pal.METAL_DARK, 0.8 * rope_alpha), w, true)
-		draw_set_transform(Vector2.ZERO)
-		draw_polyline(_pts, Color(sc, rope_alpha), w, true)
-		draw_set_transform(Vector2(-0.45, -0.45))
-		draw_polyline(_pts, Color(Pal.INK_DIM, 0.35 * rope_alpha), 0.7, true)
-		draw_set_transform(Vector2.ZERO)
-		if fray_t > 0.0 and _attached:
-			# Frayed: a few loose fibres at the nearest point, blinking faster
-			# as the fray is about to mend.
-			var q := _pts[1]
-			for i in range(1, 4):
-				if _pts[i].distance_to(_fray_at) < q.distance_to(_fray_at):
-					q = _pts[i]
-			var blink := 0.6 + 0.4 * sin(_clock * lerpf(6.0, 18.0, 1.0 - fray_t / 4.0))
-			for k in 3:
-				var a := -0.9 + k * 0.9
-				draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
-				draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+		RenderingServer.canvas_item_add_set_transform(ci, inv)
+		_draw_rope(ci)
+		RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
 	if _gone:
 		return
+	_mesh_update()
+	var keep := 1.0 - 0.9 * hidden_amt
 	var col := color()
-	var dark := col.darkened(0.45)
-	var light := col.lightened(0.22)
-	if hidden_amt > 0.0:
-		# Skygge fades as a whole; only a faint outline and the eye remain.
-		var keep := 1.0 - 0.9 * hidden_amt
-		col.a *= keep
-		dark.a *= keep
-		light.a *= keep
+	col.a *= keep
+	# Contact shadow: the same mesh, pushed down and right in world space.
+	RenderingServer.canvas_item_add_set_transform(ci, Transform2D(0.0, inv.basis_xform(SHADOW_OFF)))
+	_one_col[0] = Color(0.0, 0.0, 0.0, Pal.SHADOW.a * keep)
+	RenderingServer.canvas_item_add_triangle_array(ci, _m_idx, _m_pts, _one_col, _m_sh)
+	RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
+	_mesh_colors(col)
+	RenderingServer.canvas_item_add_triangle_array(ci, _m_idx, _m_pts, _m_col, _m_uv)
+	if kind == Kind.SHIELD or kind == Kind.BOSS:
+		RenderingServer.canvas_item_add_set_transform(ci, inv)
+		_draw_plates(ci, keep)
+		RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
+
+
+## The string: the Verlet points smoothed (Catmull-Rom) and extruded into a
+## strip whose normal runs across it, lit as a cord (jelly) or a wire
+## (shells). World space.
+func _draw_rope(ci: RID) -> void:
+	var m := (N - 1) * ROPE_SUB + 1
+	_r_mid.resize(m)
+	var k := 0
+	for i in N - 1:
+		var p0 := _pts[maxi(i - 1, 0)]
+		var p1 := _pts[i]
+		var p2 := _pts[i + 1]
+		var p3 := _pts[mini(i + 2, N - 1)]
+		for s in ROPE_SUB:
+			var t := float(s) / ROPE_SUB
+			var t2 := t * t
+			_r_mid[k] = 0.5 * ((2.0 * p1) + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t2 * t)
+			k += 1
+	_r_mid[k] = _pts[N - 1]
+	var hw := (1.6 if soft else 1.1) + danger * 0.3
+	var band := B_CORD if soft else B_WIRE
+	_r_pts.resize(m * 2)
+	_r_uv.resize(m * 2)
+	var run := 0.0
+	for i in m:
+		var t := _r_mid[mini(i + 1, m - 1)] - _r_mid[maxi(i - 1, 0)]
+		var nn := t.orthogonal().normalized() if t.length_squared() > 1e-6 else Vector2.RIGHT
+		if i > 0:
+			run += _r_mid[i].distance_to(_r_mid[i - 1])
+		_r_pts[i * 2] = _r_mid[i] - nn * hw
+		_r_pts[i * 2 + 1] = _r_mid[i] + nn * hw
+		_r_uv[i * 2] = Vector2(band - 1.0, run)
+		_r_uv[i * 2 + 1] = Vector2(band + 1.0, run)
+	if _r_idx.size() != (m - 1) * 6:
+		_r_idx.resize((m - 1) * 6)
+		for i in m - 1:
+			var a := i * 2
+			_r_idx[i * 6] = a
+			_r_idx[i * 6 + 1] = a + 1
+			_r_idx[i * 6 + 2] = a + 3
+			_r_idx[i * 6 + 3] = a
+			_r_idx[i * 6 + 4] = a + 3
+			_r_idx[i * 6 + 5] = a + 2
+	# Each string takes its target's colour: a dyed cord for jelly, a
+	# darker tinted wire for shells; near the line it pales under strain.
+	var tint := _base_color()
+	var sc := (tint.darkened(0.2) if soft else tint.darkened(0.35).lerp(Pal.STRING, 0.3)).lerp(Pal.INK_DIM, danger * 0.5)
+	_one_col[0] = Color(sc, rope_alpha)
+	RenderingServer.canvas_item_add_triangle_array(ci, _r_idx, _r_pts, _one_col, _r_uv)
+
+
+## Rebuilds the mesh when the kind or health changed; jelly then moves its
+## surface vertices by the spring field every frame.
+func _mesh_update() -> void:
+	var key := int(kind) * 16 + hp
+	if key != _m_key:
+		_m_key = key
+		_mesh_build()
+	if soft:
+		for k in _m_dv.size():
+			var i := _m_dv[k]
+			_m_pts[i] = _m_base[i] + _m_dd[k] * _soft_lin(_m_ds[k])
+
+
+func _soft_lin(s: float) -> float:
+	var i := int(s)
+	var w := s - float(i)
+	i = i % SOFT_N
+	return lerpf(_sd[i], _sd[(i + 1) % SOFT_N], w * w * (3.0 - 2.0 * w))
+
+
+func _mesh_colors(col: Color) -> void:
+	var n := _m_pts.size()
+	if _m_col.size() != n:
+		_m_col.resize(n)
+	_m_col.fill(col)
+	if _m_mem > 0:
+		var mem := col.darkened(0.55)
+		mem.a = col.a * (0.88 if soft else 1.0)
+		for i in _m_mem:
+			_m_col[i] = mem
+	if _m_dim.x >= 0:
+		var dim := Color(col, col.a * 0.55)
+		for i in range(_m_dim.x, _m_dim.y):
+			_m_col[i] = dim
+
+
+func _mesh_build() -> void:
+	_m_base.clear()
+	_m_uv.clear()
+	_m_sh.clear()
+	_m_idx.clear()
+	_m_dv.clear()
+	_m_dd.clear()
+	_m_ds.clear()
+	_m_mem = 0
+	_m_dim = Vector2i(-1, -1)
+	var b := B_JELLY if soft else B_SHELL
+	var r := radius
+	match kind:
+		Kind.RING:
+			_membrane(r - 8.0, 24)
+			_ring_tube(r - 5.0, 4.5, 32, b)
+		Kind.HEAVY:
+			_membrane(r - 14.5, 20)
+			if hp > 1:
+				_ring_tube(r - 3.0, 2.5, 36, b)
+			else:
+				# Cracked outer ring after the first hit.
+				_m_dim.x = _m_base.size()
+				for i in 6:
+					var a := i * TAU / 6.0 + 0.2
+					_arc_tube(r - 3.0, a, a + 0.62, 2.0, 5, b)
+				_m_dim.y = _m_base.size()
+			_ring_tube(r - 13.0, 3.0, 32, b)
+		Kind.SHIELD:
+			_membrane(r - 7.5, 22)
+			_ring_tube(r - 5.0, 4.0, 32, b)
+		Kind.REEL:
+			_membrane(r - 6.0, 20)
+			_ring_tube(r - 4.0, 3.5, 32, b)
+			for i in 4:
+				var d := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0)
+				_bar(d * 11.0, d * (r - 7.0), 1.5, b)
+		Kind.SPLIT:
+			_membrane_poly(_hex(r - 7.0, 4))
+			_poly_tube(_hex(r - 4.0, 4), 4.0, b)
+			_bar(Vector2(0, -r + 8.0), Vector2(0, -r * 0.55), 1.0, b)
+			_bar(Vector2(0, r - 8.0), Vector2(0, r * 0.55), 1.0, b)
+		Kind.ROD:
+			_capsule(ROD_HALF, r, b)
+		Kind.DROP:
+			_fan(_drop_outline(r), Vector2(0.0, -r * 0.1), b)
+		Kind.SHADE:
+			_fan(_crescent(r), Vector2(-r * 0.55, 0.0), b)
+		Kind.BOSS:
+			_fan(_hex(r, 3), Vector2.ZERO, b)
+	_m_pts = _m_base.duplicate()
+
+
+## Adds a vertex: position, surface normal (length 1 on a silhouette, 0
+## facing the viewer), material band, whether it lies on the outer
+## silhouette (where the contact shadow fades out), and the direction the
+## jelly surface moves it (none for shells).
+func _v(p: Vector2, n: Vector2, band: float, sil: bool, dd := Vector2.ZERO) -> int:
+	var i := _m_base.size()
+	_m_base.append(p)
+	_m_uv.append(Vector2(band + n.x, n.y))
+	_m_sh.append(Vector2(B_SHADOW + n.x, n.y) if sil else Vector2(B_SHADOW, 0.0))
+	if soft and dd != Vector2.ZERO:
+		_m_dv.append(i)
+		_m_dd.append(dd)
+		_m_ds.append(fposmod(p.angle(), TAU) / TAU * SOFT_N)
+	return i
+
+
+## How the jelly surface moves a point of a polygonal body: outward, less
+## toward the middle.
+func _poly_dd(p: Vector2) -> Vector2:
+	var l := p.length()
+	return p / l * minf(1.0, l / radius) if l > 0.001 else Vector2.ZERO
+
+
+func _quads(base: int, n: int, closed: bool) -> void:
+	for i in (n if closed else n - 1):
+		var a := base + i * 2
+		var b := base + ((i + 1) % n) * 2
+		_m_idx.append_array([a, a + 1, b + 1, a, b + 1, b])
+
+
+## The recessed inside of a ring: a flat disc under the face.
+func _membrane(rr: float, seg: int) -> void:
+	var c := _v(Vector2.ZERO, Vector2.ZERO, B_MEMBRANE, false)
+	var dirs := _dirs(seg)
+	for i in seg:
+		_v(dirs[i] * rr, dirs[i], B_MEMBRANE, false, dirs[i])
+	for i in seg:
+		_m_idx.append_array([c, c + 1 + i, c + 1 + (i + 1) % seg])
+	_m_mem = _m_base.size()
+
+
+func _membrane_poly(rim: PackedVector2Array) -> void:
+	var c := _v(Vector2.ZERO, Vector2.ZERO, B_MEMBRANE, false)
+	var n := rim.size()
+	for p in rim:
+		_v(p, p.normalized(), B_MEMBRANE, false, _poly_dd(p))
+	for i in n:
+		_m_idx.append_array([c, c + 1 + i, c + 1 + (i + 1) % n])
+	_m_mem = _m_base.size()
+
+
+## A round tube: the ring bodies. Inner edge normal points in, outer out.
+func _ring_tube(rm: float, hw: float, seg: int, band: float) -> void:
+	var dirs := _dirs(seg)
+	var base := _m_base.size()
+	for d in dirs:
+		_v(d * (rm - hw), -d, band, false, d)
+		_v(d * (rm + hw), d, band, true, d)
+	_quads(base, seg, true)
+
+
+func _arc_tube(rm: float, a0: float, a1: float, hw: float, steps: int, band: float) -> void:
+	var base := _m_base.size()
+	for k in steps + 1:
+		var d := Vector2.from_angle(lerpf(a0, a1, float(k) / steps))
+		_v(d * (rm - hw), -d, band, false, d)
+		_v(d * (rm + hw), d, band, true, d)
+	_quads(base, steps + 1, false)
+
+
+## A straight rod (spokes, the splitter's marks).
+func _bar(a: Vector2, b: Vector2, hw: float, band: float) -> void:
+	var n := (b - a).normalized().orthogonal()
+	var base := _m_base.size()
+	_v(a - n * hw, -n, band, false)
+	_v(a + n * hw, n, band, false)
+	_v(b - n * hw, -n, band, false)
+	_v(b + n * hw, n, band, false)
+	_quads(base, 2, false)
+
+
+## A tube along a closed polygon (the splitter's hexagon).
+func _poly_tube(path: PackedVector2Array, hw: float, band: float) -> void:
+	var n := path.size()
+	var base := _m_base.size()
+	for i in n:
+		var p := path[i]
+		var nn := (path[(i + 1) % n] - path[(i - 1 + n) % n]).normalized().orthogonal()
+		if nn.dot(p) < 0.0:
+			nn = -nn
+		var dd := _poly_dd(p)
+		_v(p - nn * hw, -nn, band, false, dd)
+		_v(p + nn * hw, nn, band, true, dd)
+	_quads(base, n, true)
+
+
+## A filled body, domed: normals face the viewer at `c` and turn out to
+## the silhouette at the rim.
+func _fan(rim: PackedVector2Array, c: Vector2, band: float) -> void:
+	var n := rim.size()
+	var ci := _v(c, Vector2.ZERO, band, false, _poly_dd(c))
+	for i in n:
+		var p := rim[i]
+		var nn := (rim[(i + 1) % n] - rim[(i - 1 + n) % n]).normalized().orthogonal()
+		if nn.dot(p - c) < 0.0:
+			nn = -nn
+		_v(p, nn, band, true, _poly_dd(p))
+	for i in n:
+		_m_idx.append_array([ci, ci + 1 + i, ci + 1 + (i + 1) % n])
+
+
+## The pendulum's capsule: a spine along its axis faces the viewer, the
+## outline turns away, so it shades as a rounded bar.
+func _capsule(h: float, r: float, band: float) -> void:
+	var rim := PackedVector2Array()
+	for k in 5:
+		rim.append(Vector2(lerpf(-h, h, k / 4.0), -r))
+	for k in range(1, 8):
+		rim.append(Vector2(h, 0.0) + Vector2.from_angle(-PI * 0.5 + PI * k / 8.0) * r)
+	for k in 5:
+		rim.append(Vector2(lerpf(h, -h, k / 4.0), r))
+	for k in range(1, 8):
+		rim.append(Vector2(-h, 0.0) + Vector2.from_angle(PI * 0.5 + PI * k / 8.0) * r)
+	var base := _m_base.size()
+	for p in rim:
+		var s := Vector2(clampf(p.x, -h, h), 0.0)
+		_v(s, Vector2.ZERO, band, false)
+		_v(p, (p - s).normalized(), band, true)
+	_quads(base, rim.size(), true)
+
+
+## A hexagon (corner up), each edge split into `sub` pieces.
+func _hex(r: float, sub: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in 6:
+		var a := Vector2.from_angle(i * TAU / 6.0 + PI / 6.0) * r
+		var b := Vector2.from_angle((i + 1) * TAU / 6.0 + PI / 6.0) * r
+		for k in sub:
+			out.append(a.lerp(b, float(k) / sub))
+	return out
+
+
+func _drop_outline(r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(0, -r * 1.75)])
+	for i in 17:
+		var a := -PI * 0.5 + 0.62 + (TAU - 1.24) * i / 16.0
+		pts.append(Vector2.from_angle(a) * r)
+	return pts
+
+
+## Crescent: outer half-circle and an inner half-ellipse sharing the tips,
+## thick on the left, tapering to points top and bottom. Never self-crosses.
+func _crescent(r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := -PI * 0.5 + PI * i / 16.0
+		pts.append(Vector2(-cos(a) * r, sin(a) * r))
+	for i in range(1, 16):
+		var a := PI * 0.5 - PI * i / 16.0
+		pts.append(Vector2(-cos(a) * r * 0.22, sin(a) * r * 0.96))
+	return pts
+
+
+## Plates that do not turn with the body (the Vokter's front plate, the
+## Spinneren's two orbiting plates): polished metal arcs with their own
+## shadow, in world space, one draw call.
+func _draw_plates(ci: RID, keep: float) -> void:
+	_p_pts.clear()
+	_p_uv.clear()
+	_p_idx.clear()
+	_p_col.clear()
+	var metal := Color(Pal.METAL_LIGHT, keep)
+	var sh := Color(0.0, 0.0, 0.0, Pal.SHADOW.a * keep)
+	match kind:
+		Kind.SHIELD:
+			_plate(radius + 5.0, shield_ang, SHIELD_HALF, 4.0, metal, sh)
+		Kind.BOSS:
+			for k in 2:
+				_plate(radius + 11.0, orbit + PI * k, BOSS_ARC_HALF, 3.5, metal, sh)
+	RenderingServer.canvas_item_add_triangle_array(ci, _p_idx, _p_pts, _p_col, _p_uv)
+
+
+func _plate(r: float, center: float, half: float, hw: float, metal: Color, sh: Color) -> void:
+	for pass_i in 2:
+		var shadow := pass_i == 0
+		var c := pos + (SHADOW_OFF if shadow else Vector2.ZERO)
+		var band := B_SHADOW if shadow else B_METAL
+		var base := _p_pts.size()
+		var steps := 12
+		for k in steps + 1:
+			var d := Vector2.from_angle(lerpf(center - half, center + half, float(k) / steps))
+			_p_pts.append(c + d * (r - hw))
+			_p_uv.append(Vector2(band - d.x, -d.y))
+			_p_pts.append(c + d * (r + hw))
+			_p_uv.append(Vector2(band + d.x, d.y))
+			_p_col.append(sh if shadow else metal)
+			_p_col.append(sh if shadow else metal)
+		for k in steps:
+			var a := base + k * 2
+			_p_idx.append_array([a, a + 1, a + 3, a, a + 3, a + 2])
+
+
+# ---------------------------------------------------------------- face
+
+## Face layer, in body space: the jelly's bubbles and the shells' rivets,
+## then eye and mouth. World-space extras (the frayed string, the first-
+## sighting ring, the boss's health) are drawn through the inverse.
+func _draw_face() -> void:
+	if phase == Phase.OFF or delay > 0.0:
+		return
+	var f := _face
+	var inv := _xf.affine_inverse()
+	f.draw_set_transform_matrix(inv)
+	if fray_t > 0.0 and _attached and rope_alpha > 0.0:
+		# Frayed: a few loose fibres at the nearest point, blinking faster
+		# as the fray is about to mend.
+		var q := _pts[1]
+		for i in range(1, 4):
+			if _pts[i].distance_to(_fray_at) < q.distance_to(_fray_at):
+				q = _pts[i]
+		var blink := 0.6 + 0.4 * sin(_clock * lerpf(6.0, 18.0, 1.0 - fray_t / 4.0))
+		for k in 3:
+			var a := -0.9 + k * 0.9
+			f.draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+			f.draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+	if _gone:
+		f.draw_set_transform_matrix(Transform2D.IDENTITY)
+		return
 	if intro_t > 0.0:
 		# First sighting: a slow dashed ring marks the new enemy.
 		var k := minf(1.0, intro_t / 0.5)
 		for i in 12:
 			var a0 := _clock * 0.8 + i * TAU / 12.0
-			draw_arc(pos, radius + 16.0, a0, a0 + 0.3, 6, Color(Pal.INK, 0.5 * k), 1.5, true)
-	# Soft contact shadow, sharp shadow, dark rim (down/right), light rim
-	# (up/left), body: one light source for everything.
-	draw_set_transform_matrix(body_xform(Pal.SHADOW_OFFSET * 2.0))
-	var half := Vector2(ROD_HALF + radius, radius) if kind == Kind.ROD else Vector2(radius, radius)
-	Pal.soft_shadow(self, Vector2.ZERO, half)
-	_shape(Pal.SHADOW_OFFSET, Color(Pal.SHADOW, Pal.SHADOW.a * (1.0 - hidden_amt)), 0.0)
-	_skin(col)
-	_shape(Vector2(1.2, 1.2), dark, 0.0)
-	_shape(Vector2(-1.0, -1.0), light, 0.0)
-	_shape(Vector2.ZERO, col, -2.0)
+			f.draw_arc(pos, radius + 16.0, a0, a0 + 0.3, 6, Color(Pal.INK, 0.5 * k), 1.5, true)
+	if kind == Kind.BOSS and phase == Phase.HANGING:
+		var hp_max: int = HP[kind]
+		for i in hp_max:
+			var x := (i - (hp_max - 1) * 0.5) * 10.0
+			Pal.disc(f, pos + Vector2(x, radius + 26.0), 2.6, Color(Pal.INK, 0.85) if i < hp else Color(Pal.INK_FAINT, 0.6))
+	f.draw_set_transform_matrix(Transform2D.IDENTITY)
+	var col := color()
+	col.a *= 1.0 - 0.9 * hidden_amt
 	_details(col)
-	_gloss()
-	_armor()
-	draw_set_transform_matrix(body_xform())
 	_eye()
-	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## Radius of the open centre of ring-shaped bodies (where the face sits).
@@ -1126,46 +1541,21 @@ func _hole() -> float:
 	return 0.0
 
 
-## The inside of the body: a coloured membrane filling the ring's centre so
-## the face sits on the creature, not on the wall behind it. Jelly is a
-## little translucent and has slow bubbles rising through it.
-func _skin(col: Color) -> void:
-	var h := _hole()
-	if h <= 0.0:
-		return
-	draw_set_transform_matrix(body_xform())
-	var fill := col.darkened(0.62)
-	fill.a = col.a * (0.82 if soft else 0.95)
-	if kind == Kind.SPLIT:
-		var hex := PackedVector2Array()
-		for i in 6:
-			hex.append(_sp(Vector2.from_angle(i * TAU / 6.0 + PI / 6.0) * (h + 2.0)))
-		draw_colored_polygon(hex, fill)
-	else:
-		var pts := PackedVector2Array()
-		for i in 24:
-			var a := i * TAU / 24.0
-			pts.append(Vector2.from_angle(a) * (h + 1.5 + (_soft_at(a) if soft else 0.0)))
-		draw_colored_polygon(pts, fill)
-	# Soft inner shading: darker toward the lower right.
-	Pal.disc(self, Vector2(h * 0.25, h * 0.3), h * 0.7, Color(0, 0, 0, 0.18 * col.a))
-	if soft:
-		for i in 3:
-			var ph := _clock * (7.0 + i * 2.5) + i * 17.0 + _hue_shift * 300.0
-			var y := h * 0.7 - fposmod(ph, h * 1.4)
-			var x := sin(_clock * 0.9 + i * 2.1) * h * 0.45
-			var fade := 1.0 - absf(y) / (h * 0.75)
-			if fade > 0.0:
-				Pal.disc(self, Vector2(x, y), 1.4 + i * 0.5, Color(col.lightened(0.35), 0.28 * fade * col.a))
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-
-
-## Material details on the shell: rivets on the heavy's rings, bolts on the
-## sentry, a hub on the reel.
+## Bubbles rising slowly through jelly; rivets on the heavy's ring (gone
+## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
+	var f := _face
 	if soft:
+		var h := _hole()
+		if h > 0.0:
+			for i in 3:
+				var ph := _clock * (7.0 + i * 2.5) + i * 17.0 + _hue_shift * 300.0
+				var y := h * 0.7 - fposmod(ph, h * 1.4)
+				var x := sin(_clock * 0.9 + i * 2.1) * h * 0.45
+				var fade := 1.0 - absf(y) / (h * 0.75)
+				if fade > 0.0:
+					Pal.disc(f, Vector2(x, y), 1.4 + i * 0.5, Color(col.lightened(0.35), 0.3 * fade * col.a))
 		return
-	draw_set_transform_matrix(body_xform())
 	var rv := Color(col.lightened(0.45), col.a)
 	var sh := Color(0, 0, 0, 0.4 * col.a)
 	match kind:
@@ -1173,156 +1563,23 @@ func _details(col: Color) -> void:
 			if hp > 1:
 				for i in 8:
 					var p := Vector2.from_angle(i * TAU / 8.0 + 0.2) * (radius - 3.0)
-					Pal.disc(self, p + Vector2(0.7, 0.7), 1.5, sh)
-					Pal.disc(self, p, 1.3, rv)
+					Pal.disc(f, p + Vector2(0.7, 0.7), 1.5, sh)
+					Pal.disc(f, p, 1.3, rv)
 		Kind.SHIELD:
 			for i in 4:
 				var p := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0) * (radius - 5.0)
-				Pal.disc(self, p + Vector2(0.7, 0.7), 2.0, sh)
-				Pal.disc(self, p, 1.8, rv)
+				Pal.disc(f, p + Vector2(0.7, 0.7), 2.0, sh)
+				Pal.disc(f, p, 1.8, rv)
 		Kind.REEL:
-			Pal.ring(self, Vector2.ZERO, 10.5, Color(col.darkened(0.3), col.a), 2.0)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-
-
-## Specular: a short highlight on the upper left of the surface (the one
-## light), glossier on jelly than on painted shells. Stays put in world
-## space while the body turns.
-func _gloss() -> void:
-	var k := (0.42 if soft else 0.26) * (1.0 - hidden_amt) * modulate.a
-	if k <= 0.0:
-		return
-	var c := Color(1, 1, 1, k)
-	draw_set_transform(pos + (Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * sin(PI * _taunt / TAUNT_TIME)) if _taunt >= 0.0 else Vector2.ZERO))
-	match kind:
-		Kind.RING, Kind.SHIELD, Kind.REEL:
-			var r := radius - (5.0 if kind != Kind.REEL else 4.0)
-			draw_arc(Vector2.ZERO, r + (_soft_at(-2.2 - body_rot) if soft else 0.0), -2.65, -1.75, 10, c, 2.4, true)
-		Kind.HEAVY:
-			draw_arc(Vector2.ZERO, radius - 3.0, -2.6, -1.8, 10, c, 1.8, true)
-			draw_arc(Vector2.ZERO, radius - 13.0, -2.6, -1.9, 8, c, 1.8, true)
-		Kind.SPLIT:
-			draw_arc(Vector2.ZERO, radius - 5.0, -2.5, -1.9, 6, c, 2.2, true)
-		Kind.ROD:
-			draw_set_transform(pos, body_rot)
-			draw_line(Vector2(-ROD_HALF, -radius * 0.55), Vector2(ROD_HALF * 0.6, -radius * 0.55), c, 2.4, true)
-		_:
-			draw_set_transform(pos + Vector2(-radius * 0.38, -radius * 0.42), -0.6, Vector2(1.6, 1.0))
-			draw_circle(Vector2.ZERO, radius * 0.16, c, true, -1.0, true)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-
-
-## Plates that do not turn with the body: the Vokter's front plate and the
-## Spinneren's two orbiting plates, plus the boss's remaining-health pips.
-func _armor() -> void:
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-	var alpha := modulate.a
-	match kind:
-		Kind.SHIELD:
-			_plate(radius + 5.0, shield_ang, SHIELD_HALF, 8.0)
-		Kind.BOSS:
-			for k in 2:
-				_plate(radius + 11.0, orbit + PI * k, BOSS_ARC_HALF, 7.0)
-			if phase == Phase.HANGING:
-				var hp_max: int = HP[kind]
-				for i in hp_max:
-					var x := (i - (hp_max - 1) * 0.5) * 10.0
-					var c := Color(Pal.INK, 0.85 * alpha) if i < hp else Color(Pal.INK_FAINT, 0.6 * alpha)
-					draw_circle(pos + Vector2(x, radius + 26.0), 2.6, c, true, -1.0, true)
-
-
-func _plate(r: float, center: float, half: float, w: float) -> void:
-	var a0 := center - half
-	var a1 := center + half
-	draw_arc(pos + Pal.SHADOW_OFFSET, r, a0, a1, 20, Pal.SHADOW, w, true)
-	draw_arc(pos + Vector2(1.2, 1.2), r, a0, a1, 20, Pal.METAL_DARK, w, true)
-	draw_arc(pos, r, a0, a1, 20, Pal.METAL_LIGHT, w - 1.5, true)
-	draw_arc(pos - Vector2(0.8, 0.8), r + w * 0.3, a0 + 0.05, a1 - 0.05, 20, Color(Pal.INK, 0.25), 1.0, true)
-
-
-## Draws the silhouette in body space, offset in world space. `grow` thins
-## strokes (negative) for the top layer so the two-tone rims show.
-func _shape(offset: Vector2, col: Color, grow: float) -> void:
-	draw_set_transform_matrix(body_xform(offset))
-	match kind:
-		Kind.RING:
-			_soft_ring(radius - 5.0, col, 9.0 + grow)
-		Kind.HEAVY:
-			var outer_col := col if hp > 1 else Color(col, col.a * 0.0)
-			if hp > 1:
-				Pal.ring(self, Vector2.ZERO, radius - 3.0, outer_col, 5.0 + grow)
-			else:
-				# Cracked outer ring after the first hit.
-				for i in 6:
-					var a := i * TAU / 6.0 + 0.2
-					draw_arc(Vector2.ZERO, radius - 3.0, a, a + 0.62, 6, Color(col, col.a * 0.55), 4.0 + grow, true)
-			Pal.ring(self, Vector2.ZERO, radius - 13.0, col, 6.0 + grow)
-		Kind.SPLIT:
-			var hex := PackedVector2Array()
-			for i in 7:
-				var a := i * TAU / 6.0 + PI / 6.0
-				hex.append(_sp(Vector2.from_angle(a) * (radius - 4.0)))
-			# Jelly hexagon: the edges bow with the surface, not just the corners.
-			var edge := PackedVector2Array()
-			for i in 6:
-				for k in 4:
-					var a0 := i * TAU / 6.0 + PI / 6.0
-					var q := Vector2.from_angle(a0).lerp(Vector2.from_angle(a0 + TAU / 6.0), k / 4.0) * (radius - 4.0)
-					edge.append(_sp(q))
-			edge.append(edge[0])
-			draw_polyline(edge, col, 8.0 + grow, true)
-			draw_line(Vector2(0, -radius + 8.0), Vector2(0, -radius * 0.55), col, 2.0 + grow * 0.5, true)
-			draw_line(Vector2(0, radius - 8.0), Vector2(0, radius * 0.55), col, 2.0 + grow * 0.5, true)
-		Kind.ROD:
-			var r := radius + grow * 0.5
-			var h := ROD_HALF
-			draw_rect(Rect2(-h, -r, h * 2.0, r * 2.0), col)
-			Pal.disc(self, Vector2(-h, 0), r, col)
-			Pal.disc(self, Vector2(h, 0), r, col)
-		Kind.SHIELD:
-			Pal.ring(self, Vector2.ZERO, radius - 5.0, col, 8.0 + grow)
-		Kind.REEL:
-			Pal.ring(self, Vector2.ZERO, radius - 4.0, col, 7.0 + grow)
-			for i in 4:
-				var d := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0)
-				draw_line(d * 11.0, d * (radius - 7.0), col, 3.0 + grow * 0.5, true)
-		Kind.SHADE:
-			var cres := _crescent(radius + grow * 0.5)
-			for i in cres.size():
-				cres[i] = _sp(cres[i])
-			draw_colored_polygon(cres, col)
-		Kind.BOSS:
-			var hexf := PackedVector2Array()
-			for i in 6:
-				hexf.append(Vector2.from_angle(i * TAU / 6.0 + PI / 6.0) * (radius + grow * 0.5))
-			draw_colored_polygon(hexf, col)
-		Kind.DROP:
-			var r := radius + grow * 0.5
-			var pts := PackedVector2Array()
-			pts.append(Vector2(0, -r * 1.75))
-			for i in 17:
-				var a := -PI * 0.5 + 0.62 + (TAU - 1.24) * i / 16.0
-				pts.append(_sp(Vector2.from_angle(a) * r))
-			pts[0] = _sp(pts[0])
-			draw_colored_polygon(pts, col)
-			pts.append(pts[0])
-			draw_polyline(pts, col, 1.0, true)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-
-
-## A jelly ring: a closed, round stroke whose radius follows the surface.
-func _soft_ring(r: float, col: Color, w: float) -> void:
-	var pts := PackedVector2Array()
-	for i in 37:
-		var a := i * TAU / 36.0
-		pts.append(Vector2.from_angle(a) * (r + _soft_at(a)))
-	draw_polyline(pts, col, w, true)
+			Pal.disc(f, Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
+			Pal.disc(f, Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
 
 
 ## The mouth carries the mood: a small smile at rest, a worried line when
 ## you aim at it, an "o" when startled, a smirk when smug, a tongue when it
 ## taunts, a frown in rage and a grimace when struck. Drawn in eye space.
 func _mouth(er: float) -> void:
+	var f := _face
 	var y := er * 1.25
 	var w := er * 0.85
 	var ink := Color(Pal.EYE, 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
@@ -1332,57 +1589,59 @@ func _mouth(er: float) -> void:
 		# Grimace: a tight zigzag.
 		for i in 7:
 			pts.append(Vector2(lerpf(-w * 0.6, w * 0.6, i / 6.0), y + (1.2 if i % 2 == 0 else -1.2)))
-		draw_polyline(pts, ink, 1.6, true)
+		f.draw_polyline(pts, ink, 1.6, true)
 	elif startle_t > 0.0:
-		Pal.disc(self, Vector2(0, y + 1.0), er * 0.26, dark)
-		draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
+		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
+		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
 	elif _taunt >= 0.0:
 		# Open grin with the tongue out.
 		var grin := PackedVector2Array()
 		for i in 9:
 			var a := PI * i / 8.0
 			grin.append(Vector2(cos(a) * w * 0.55, y - 1.0 + sin(a) * w * 0.45))
-		draw_colored_polygon(grin, dark)
-		Pal.disc(self, Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
-		draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 1.5, true)
+		f.draw_colored_polygon(grin, dark)
+		Pal.disc(f, Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
+		f.draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 1.5, true)
 	elif enraged:
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.5, y + 2.0 - (1.0 - t * t) * 3.0))
-		draw_polyline(pts, ink, 1.8, true)
+		f.draw_polyline(pts, ink, 1.8, true)
 	elif squint or aimed or tele_t > 0.0:
 		# Worried: a flat, wobbling line with the corners pulled down.
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.45, y + sin(t * 5.0 + _clock * 14.0) * 0.6 + absf(t) * absf(t) * 1.8))
-		draw_polyline(pts, ink, 1.5, true)
+		f.draw_polyline(pts, ink, 1.5, true)
 	elif smug > 0.35:
 		# Smirk: flat on one side, curled up on the other.
 		for i in 7:
 			var t := i / 6.0
 			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * smug))
-		draw_polyline(pts, ink, 1.7, true)
+		f.draw_polyline(pts, ink, 1.7, true)
 	else:
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.4, y + (1.0 - t * t) * 2.0))
-		draw_polyline(pts, ink, 1.5, true)
-
-
-## Crescent: outer half-circle and an inner half-ellipse sharing the tips,
-## thick on the left, tapering to points top and bottom. Never self-crosses.
-func _crescent(r: float) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in 17:
-		var a := -PI * 0.5 + PI * i / 16.0
-		pts.append(Vector2(-cos(a) * r, sin(a) * r))
-	for i in 17:
-		var a := PI * 0.5 - PI * i / 16.0
-		pts.append(Vector2(-cos(a) * r * 0.22, sin(a) * r * 0.96))
-	return pts
+		f.draw_polyline(pts, ink, 1.5, true)
 
 
 func _eye() -> void:
+	var f := _face
+	_eye_parts()
+	if kind != Kind.ROD:
+		var er := 7.0 if kind == Kind.DROP else (15.0 if kind == Kind.BOSS else 9.5)
+		var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
+		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
+		f.draw_set_transform_matrix(Transform2D(0.0, eo))
+		_mouth(er)
+	f.draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Eye (socket, white, pupil, glint, lids and brows) and, after it, the
+## mouth, in the eye's own space. Discs first so they batch.
+func _eye_parts() -> void:
+	var f := _face
 	# The Skygge's eye sits in the thick part of the crescent.
 	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
 	var er := 9.5
@@ -1394,33 +1653,31 @@ func _eye() -> void:
 	if mouthed:
 		# Eye sits a little high so there is room for a mouth below.
 		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
-	var bx := body_xform() * Transform2D(0.0, eo)
-	draw_set_transform_matrix(bx)
-	if mouthed:
-		_mouth(er)
+	var bx := Transform2D(0.0, eo)
+	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
 	var pr := er * 0.48 / wide
 	er *= lerpf(1.0, wide, 0.5)
 	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
 		# Filled bodies: a dark socket keeps the eye readable.
-		Pal.disc(self, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
+		Pal.disc(f, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
 	if _closed_t > 0.0 or phase == Phase.FALLING:
-		draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.4, true)
+		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.4, true)
 		return
 	var open := clampf(_open, 0.0, 1.0)
 	if open < 0.12:
-		draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.2, true)
+		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.2, true)
 		return
-	draw_set_transform_matrix(bx * Transform2D(0.0, Vector2(1.0, open), 0.0, Vector2.ZERO))
-	Pal.disc(self, Vector2.ZERO, er, Pal.EYE)
+	f.draw_set_transform_matrix(bx * Transform2D(0.0, Vector2(1.0, open), 0.0, Vector2.ZERO))
+	Pal.disc(f, Vector2.ZERO, er, Pal.EYE)
 	var pupil := _pupil * (er - pr - 1.2)
-	Pal.disc(self, pupil, pr, Pal.PUPIL)
-	Pal.disc(self, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
-	draw_set_transform_matrix(bx)
+	Pal.disc(f, pupil, pr, Pal.PUPIL)
+	Pal.disc(f, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
+	f.draw_set_transform_matrix(bx)
 	if enraged:
 		# Brows pulled in: rage reads at a glance.
 		for sx: float in [-1.0, 1.0]:
-			draw_line(Vector2(sx * er * 1.15, -er * 1.25), Vector2(sx * er * 0.25, -er * 0.8), Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 2.2, true)
+			f.draw_line(Vector2(sx * er * 1.15, -er * 1.25), Vector2(sx * er * 0.25, -er * 0.8), Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 2.2, true)
 	if smug > 0.05 and open >= 0.9 and not enraged:
 		# Smug: a heavy upper lid slides down and one brow goes up.
 		var yc := lerpf(-er, -er * 0.05, smug)
@@ -1432,12 +1689,12 @@ func _eye() -> void:
 			lid.append(Vector2.from_angle(lerpf(a0, a1, i / 10.0)) * (er + 0.6))
 		var lid_col := color().darkened(0.25)
 		if lid.size() >= 3 and a1 > a0:
-			draw_colored_polygon(lid, lid_col)
-		draw_line(Vector2(-hw, yc + 1.5 * smug), Vector2(hw, yc - 1.5 * smug), Pal.PUPIL, 1.8, true)
+			f.draw_colored_polygon(lid, lid_col)
+		f.draw_line(Vector2(-hw, yc + 1.5 * smug), Vector2(hw, yc - 1.5 * smug), Pal.PUPIL, 1.8, true)
 		var bc := Color(Pal.EYE, smug)
-		draw_line(Vector2(-er * 0.95, -er * 1.3), Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), bc, 2.6, true)
-		draw_line(Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), Vector2(er * 1.0, -er * 1.35), bc, 2.6, true)
+		f.draw_line(Vector2(-er * 0.95, -er * 1.3), Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), bc, 2.6, true)
+		f.draw_line(Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), Vector2(er * 1.0, -er * 1.35), bc, 2.6, true)
 	if open < 0.9:
 		# Lid lines make the squint read as intent, not just a squash.
 		var y := er * open
-		draw_line(Vector2(-er, -y), Vector2(er, -y * 0.7), Pal.PUPIL, 1.6, true)
+		f.draw_line(Vector2(-er, -y), Vector2(er, -y * 0.7), Pal.PUPIL, 1.6, true)

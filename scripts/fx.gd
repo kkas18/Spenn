@@ -130,7 +130,9 @@ func sparks(at: Vector2, col: Color, count := 8) -> void:
 	p.direction = dir
 	p.spread = spread
 	p.color = col
-	p.amount = Device.count(clampi(count, 6, 10))
+	var n := Device.count(clampi(count, 6, 10))
+	if p.amount != n:
+		p.amount = n
 	p.restart()
 
 

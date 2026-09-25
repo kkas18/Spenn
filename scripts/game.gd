@@ -282,8 +282,9 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 			used.append(o.anchor.x)
 	var x := _best_slot(used, 12)
 	var frac := len_frac if len_frac >= 0.0 else _rng.randf_range(0.05, 0.3)
-	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
+	# Aggression first: the temperament is rolled from it at spawn.
 	t.aggression = director.aggression()
+	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
 	_maybe_intro(t)
 	return t
 
@@ -297,8 +298,8 @@ func _spawn_formation(kind: Target.Kind, n: int) -> void:
 			return
 		var x := 60.0 + (i + 0.5) * usable / n
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
-		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
 		t.aggression = director.aggression()
+		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
 		_maybe_intro(t)
 
 
@@ -306,8 +307,8 @@ func _spawn_boss() -> void:
 	var t := _free_target()
 	if t == null:
 		return
-	t.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.22, 0.3)
 	t.aggression = director.aggression()
+	t.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.22, 0.3)
 	_maybe_intro(t)
 
 
@@ -379,6 +380,8 @@ func _process(delta: float) -> void:
 	_state_t += delta
 	_update_ammo(delta)
 	_update_eyes()
+	# Menu: new players (and anyone idle for a while) see how to shoot.
+	slingshot.demo = state == State.MAIN_MENU and _touch == -1 and (Prefs.runs < 3 or _state_t > 6.0) and not hud.modal_open()
 	if state == State.PLAYING or state == State.STARTING:
 		_run_intros()
 		_pace(delta)
@@ -727,8 +730,8 @@ func _spawn_minions() -> void:
 		if d == null:
 			continue
 		var ax := clampf(t.anchor.x + _rng.randf_range(-1.0, 1.0) * 150.0, 48.0, layout.size.x - 48.0)
-		d.spawn(Target.Kind.DROP, Vector2(ax, layout.rail_y + 3.0), 12.0, t.length * 0.75, 0.0)
 		d.aggression = t.aggression
+		d.spawn(Target.Kind.DROP, Vector2(ax, layout.rail_y + 3.0), 12.0, t.length * 0.75, 0.0)
 		_maybe_intro(d)
 		Sfx.play("whoosh", 1.2, -8.0)
 
@@ -948,10 +951,10 @@ func _split(t: Target) -> void:
 		var p := t.pos + Vector2(side * 16.0, 0)
 		var anchor := Vector2(ax, layout.rail_y + 3.0)
 		var len := anchor.distance_to(p)
+		d.aggression = t.aggression
 		d.spawn(Target.Kind.DROP, anchor, len, len, 0.0)
 		d.pos = p
 		d.vel = Vector2(side * 160.0, -60.0)
-		d.aggression = t.aggression
 		_maybe_intro(d)
 
 
@@ -1053,8 +1056,8 @@ func _mult() -> int:
 	return 1 + mini(streak / 3, 3)
 
 
-## Points fly to the counter as gold grains; every 3000 points returns a
-## lost knot.
+## Points fly to the counter as gold grains; every EXTRA_LIFE_EVERY points
+## returns a lost knot.
 func _add_score(n: int, from := Vector2.INF) -> void:
 	score += n
 	hud.bar.score = score

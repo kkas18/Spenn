@@ -868,3 +868,101 @@ fiender.
 ## Balansering
 Landingsdyttet ga i første versjon merkbart tøffere sikting (snitt 106 s). Det er dempet,
 og snittet er nå 133 s, på nivå med før.
+
+---
+
+# v6.0 – Grundig gjennomgang: lyssatt rendering, ytelse, feilrettinger og onboarding
+
+**Oppdrag:** gjøre spillet bedre med en grundigere gjennomgang enn før. Arbeidet startet
+med måling og kodegjennomgang, ikke med nye funksjoner.
+
+## Funn
+- **Profilering av en travel sen fase (18–24 fiender):**
+  - **Tegnekall:** 1651 per frame. Et mobilspill bør ligge godt under 500.
+  - **Tegning:** ~96 000 trekanter.
+  - **Spillogikk** (fysikk, AI, kollisjoner): bare 1,6 ms. Det var tegningen som
+    kostet.
+  - **Fordeling:** hver fiende brukte ~65 tegnekall (skygge, fire kantlag, hud,
+    bobler, nagler, øye, munn, glans). Skinne og kroker brukte 213, spretterten 83 og
+    bakgrunnen 70.
+- **Verifisert i Godot 4.3 GL Compatibility før ombyggingen:**
+  - Triangle-arrays med én farge fungerer.
+  - `MODEL_MATRIX` inkluderer transformasjonen per kommando.
+  - Teksturerte rektangler samles i én batch, også på tvers av transformasjoner.
+
+## Lyssatt rendering (`shaders/lit.gdshader`)
+- **Én felles lyskilde** (opp til venstre, litt forfra) for alle fiender og
+  spretterten.
+- **Normaler i UV:** hver vertex har en overflatenormal i UV. Shaderen regner lys per
+  piksel: diffust lys med myk overgang, spekulært høylys, og for geléen lys som slipper
+  gjennom kanten på skyggesiden.
+- **Kantutjevning:** silhuetten jevnes ut der normalens lengde når 1.
+- **Materialer:** UV.x velger materiale i bånd:
+
+  | Bånd | Materiale |
+  |---|---|
+  | 0 | Gelé |
+  | 1 | Kontaktskygge |
+  | 2 | Snor |
+  | 3 | Wire |
+  | 4 | Malt skall |
+  | 5 | Innfelt membran |
+  | 6 | Polert metall |
+
+- **Hver fiende er to lerretslag som følger kroppens transformasjon:**
+  - `_body` (lysmateriale): tau, kontaktskygge og kropp som triangle-mesher, ett
+    tegnekall hver.
+  - `_face`: øye, munn, bobler og nagler som sirkelsprites, samlet i én batch.
+- **Meshene:**
+  - bygges én gang per type og helse, og skallene bygger dem aldri om;
+  - geleen flytter bare overflatepunktene sine langs fjærfeltet hver frame, via
+    forhåndsberegnet spoke-indeks;
+  - rør for ringene, kupler for fylte kropper, kapsel med ryggrad for Pendelen,
+    halvmåne fra sitt tykke sentrum;
+  - Vokteren og Spinnerens plater er polert metall i verdensrommet, med egen skygge.
+- **Tauet:** Verlet-punktene glattes med Catmull-Rom og tegnes som en lyssatt sylinder,
+  snor for gelé og wire for skall.
+- **Spretterten:** gaffelen er polert metall (rør og kuplede ender) over en myk skygge,
+  2 tegnekall.
+
+## Batching av resten
+- **Sirkler:** `Pal.disc` er nå et teksturert rektangel fra én sirkeltekstur med
+  mipmaps, så dusinvis av øyne, nagler og perler blir ett kall. Prosjektets standard
+  teksturfilter er lineær med mipmaps.
+- **Kroker:** `Pal.hoop` (ringtekstur) brukes til krokøyene. Krokene tegnes i to samlede
+  omganger.
+- **Skinnen:** vanlige rektangler i ro, polylinjer bare mens den bøyes.
+- **Bakgrunnens fjerne tråder:** én multiline, og perlene i én batch.
+
+## Resultat (samme scene)
+
+| Måling | Før | Etter |
+|---|---|---|
+| Tegnekall | 1651 | 266 |
+| Trekanter | 96 000 | 11 600 |
+| Tegne-/skripttid (utover testmiljøets ~40 ms grunnlast) | ~47 ms | ~2 ms |
+
+## Feilrettinger
+- **Skjelving:** under skjelvingen før et stup fikk hvert tegnelag sin egen tilfeldige
+  forskyvning (`randf` i `body_xform`), så skygge, kanter, kropp og øye gled fra
+  hverandre. Skjelvingen beregnes nå én gang per frame (`_jit`).
+- **Temperament:** ble trukket med forrige livs aggresjon, fordi fiendene gjenbrukes.
+  Aggresjonen settes nå før `spawn`.
+- **Bildefrekvens:** `Engine.max_fps` lik skjermfrekvensen kjempet mot v-sync og kunne
+  droppe frames. Nå går takten bare på v-sync.
+- **Gnistsendere:** ble reallokert ved hvert treff (`amount` satt hver gang). Nå settes
+  den bare når antallet endres.
+- **Opprydding:** fjernet ubrukte variabler (`_feint`, `_feint_dir`) og rettet en utdatert
+  kommentar.
+
+## Onboarding
+- **Spøkelsesfinger i menyen:** for de tre første rundene, eller etter 6 s uten
+  berøring, trykker en halvgjennomsiktig finger, drar pungen ned (siktepunktene vises),
+  holder og slipper. Pungen fjærer tilbake, og en spøkelseskule flyr opp langs linjen.
+  Løkken går til spilleren tar på skjermen, og starter aldri en runde.
+
+## QA
+- Oppstart er ren.
+- Hele spillforløpet er kjørt og fotografert.
+- Balanse med menneskelignende bot, snitt av 4 runder: 137 s (før: 133 s), altså
+  uendret.

@@ -20,6 +20,7 @@ var _bg: ColorRect
 var _layer: Node2D
 var _rng := RandomNumberGenerator.new()
 var _wire := PackedVector2Array()
+var _far_lines := PackedVector2Array()
 const MIST := preload("res://assets/particles/smoke_b.png")
 
 
@@ -102,14 +103,19 @@ func _draw_layer() -> void:
 ## could be mistaken for targets.
 func _draw_far() -> void:
 	var col := Color(Pal.INK, FAR_ALPHA)
-	for f in _far:
+	# All strings in one multiline, then all beads (batched discs).
+	_far_lines.resize(_far.size() * 2)
+	for i in _far.size():
+		var f: Dictionary = _far[i]
 		var sway := sin(_clock * f.rate + f.phase) * 6.0
 		var top := Vector2(f.x, l.rail_y + 10.0)
-		var bottom := top + Vector2(sway, l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE)
-		_layer.draw_line(top, bottom, col, 1.0, true)
+		_far_lines[i * 2] = top
+		_far_lines[i * 2 + 1] = top + Vector2(sway, l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE)
+	_layer.draw_multiline(_far_lines, col, 1.0, true)
+	for i in _far.size():
+		var f: Dictionary = _far[i]
 		for b in f.beads:
-			var t := 1.0 - float(b) * 0.09
-			_layer.draw_circle(top.lerp(bottom, t), 2.2, col, true, -1.0, true)
+			Pal.disc(_layer, _far_lines[i * 2].lerp(_far_lines[i * 2 + 1], 1.0 - float(b) * 0.09), 2.2, col)
 
 
 ## The danger line is a real wire, strung taut from wall to wall between
