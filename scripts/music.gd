@@ -20,6 +20,7 @@ const SILENT_DB := -80.0
 
 var mode := Mode.SILENT
 var intensity := 0.0           # 0..1, set by the game while playing
+var overload := false          # overload: the mix goes warm and close
 
 var _bus := 0
 var _lp: AudioEffectLowPassFilter
@@ -94,6 +95,11 @@ func _process(delta: float) -> void:
 				cut_t = 6500.0
 			Mode.PLAY:
 				play_t = lerpf(-3.0, 0.0, intensity)
+				if overload:
+					# Slowed time: the band goes muffled, as if heard through
+					# the rush of it, so the bright note ladder rides on top.
+					play_t += 1.0
+					cut_t = 1400.0
 			Mode.PAUSE:
 				play_t = -5.0
 				cut_t = 700.0

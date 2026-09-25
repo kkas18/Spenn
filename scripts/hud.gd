@@ -234,8 +234,8 @@ func countdown(cb: Callable) -> void:
 		cb.call())
 
 
-func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int) -> void:
-	_over.play(score, prev_best, is_record, secs, acc)
+func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0) -> void:
+	_over.play(score, prev_best, is_record, secs, acc, skills, overloads)
 
 
 func hide_game_over() -> void:
@@ -465,6 +465,8 @@ class TopBar extends Control:
 	var badge_pop := 0.0
 	var knot_shake := 0.0
 	var show_fps := false
+	var hot := false               # overload: the multiplier pill blazes
+	var _clock := 0.0
 	var a_score := 1.0             # staggered reveal alphas
 	var a_right := 1.0
 	var _taps: Array[int] = []
@@ -511,6 +513,7 @@ class TopBar extends Control:
 		pulse = maxf(0.0, pulse - rd / 0.18)
 		badge_pop = maxf(0.0, badge_pop - rd / 0.3)
 		knot_shake = maxf(0.0, knot_shake - rd / 0.6)
+		_clock += rd
 		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, rd))
 		queue_redraw()
 
@@ -543,8 +546,12 @@ class TopBar extends Control:
 			var bc := Vector2(sx + mw * 0.5, base - 12.0 + ry)
 			draw_set_transform(bc, 0.0, Vector2(bs, bs))
 			var rr := Rect2(-mw * 0.5, -12.0, mw, 24.0)
+			if hot:
+				var glow := 0.5 + 0.5 * sin(_clock * 14.0)
+				for g in 3:
+					draw_rect(rr.grow(3.0 + g * 3.0), Color(Tok.PRIMARY, (0.14 - g * 0.04) * (0.6 + 0.4 * glow) * ar))
 			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Color(Tok.SHADOW, Tok.SHADOW.a * ar))
-			draw_rect(rr, Color(Tok.PRIMARY, ar))
+			draw_rect(rr, Color(Tok.PRIMARY_HI if hot else Tok.PRIMARY, ar))
 			draw_string(caps, Vector2(-mw * 0.5 + 8.0, 6.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Tok.ON_PRIMARY)
 			draw_set_transform(Vector2.ZERO)
 			sx += mw + 8.0
@@ -685,6 +692,8 @@ class GameOver extends Control:
 	var _record := false
 	var _secs := 0
 	var _acc := 0
+	var _skills: Array = []
+	var _overloads := 0
 	var _ticked := 0.0
 	var _record_done := false
 	var _box: VBoxContainer
@@ -718,13 +727,15 @@ class GameOver extends Control:
 		_retry.text = Loc.t("gameOver.restart")
 		_menu.text = Loc.t("gameOver.mainMenu")
 
-	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int) -> void:
+	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array, overloads: int) -> void:
 		refresh_text()
 		_score = score
 		_prev = prev_best
 		_record = is_record
 		_secs = secs
 		_acc = acc
+		_skills = skills
+		_overloads = overloads
 		_t = 0.0
 		_ticked = 0.0
 		_record_done = false
@@ -737,6 +748,18 @@ class GameOver extends Control:
 		_box.position.y = base_y + 10.0
 		Motion.to(_box, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
 		Motion.to(_box, "position:y", base_y, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
+
+	## The run's best moments in one line: overloads and the skill shots
+	## made most often (`_skills` holds [string key, count] pairs).
+	func _feats() -> String:
+		var order := _skills.filter(func(p: Array) -> bool: return int(p[1]) > 0)
+		order.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1])
+		var parts: PackedStringArray = []
+		if _overloads > 0:
+			parts.append("%s ×%d" % [Loc.t("gameOver.overloads"), _overloads])
+		for p: Array in order.slice(0, 3 - parts.size()):
+			parts.append("%s ×%d" % [Loc.t(p[0]), p[1]])
+		return "   ·   ".join(parts)
 
 	func close() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -775,14 +798,34 @@ class GameOver extends Control:
 		if sa > 0.0:
 			draw_string(num, Vector2(3, cy + 3.0), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(0, 0, 0, 0.35 * sa))
 			draw_string(num, Vector2(0, cy), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(Tok.TEXT_PRIMARY, sa))
+		# The hook: how far short of the record, in gold, once the count
+		# has landed. Within a tenth of it, it says so.
+		var ky := cy + 52.0
+		var gap := _prev - _score
+		if not _record and _prev > 0 and gap > 0:
+			var kg := Motion.ease_value(Motion.Ease.EMPHASIZED, (_t - COUNT_FROM - Motion.dur(COUNT_D)) / Motion.NORMAL)
+			if kg > 0.0:
+				var line := Loc.t("gameOver.gap") % Hud._group(gap)
+				if gap <= _prev / 10:
+					line = Loc.t("gameOver.close") + "  ·  " + line
+				var gs := lerpf(1.12, 1.0, kg)
+				draw_set_transform(Vector2(w * 0.5, ky), 0.0, Vector2(gs, gs))
+				draw_string(caps, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(0, 0, 0, 0.35 * minf(kg, 1.0)))
+				draw_string(caps, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, minf(kg, 1.0)))
+				draw_set_transform(Vector2.ZERO)
+			ky += 30.0
 		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
 		if kb > 0.0:
 			var best_line := "%s  %s" % [Loc.t("gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
-			draw_string(caps, Vector2(0, cy + 52.0 + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
+			draw_string(caps, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
 		var ks := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.4) / Motion.NORMAL)
 		if ks > 0.0:
 			var stats := "%s %d:%02d   ·   %s %d %%" % [Loc.t("gameOver.time"), _secs / 60, _secs % 60, Loc.t("gameOver.accuracy"), _acc]
-			draw_string(caps, Vector2(0, cy + 84.0 + (1.0 - ks) * 6.0), stats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.TEXT_FAINT, ks))
+			draw_string(caps, Vector2(0, ky + 32.0 + (1.0 - ks) * 6.0), stats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.TEXT_FAINT, ks))
+		var kk := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.5) / Motion.NORMAL)
+		var feats := _feats()
+		if kk > 0.0 and feats != "":
+			draw_string(caps, Vector2(0, ky + 56.0 + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.PRIMARY_LO.lightened(0.25), kk))
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)

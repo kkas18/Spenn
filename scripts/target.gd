@@ -100,6 +100,7 @@ var ang_off := 0.0             # body angle relative to the string (rad)
 var ang_vel := 0.0
 var wind := 0.0                # horizontal breeze acceleration (px/s²)
 var startle_t := 0.0           # wide eye + flinch after a near miss
+var scared := false            # overload: panics, stops sinking, climbs its string
 
 # Brain: every behaviour is telegraphed before it acts, so it can be read.
 var aggression := 0.0          # 0..1 from the director
@@ -226,6 +227,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	ang_off = 0.0
 	ang_vel = 0.0
 	startle_t = 0.0
+	scared = false
 	_pluck_cd = 0.0
 	aimed = false
 	enraged = false
@@ -344,7 +346,7 @@ func _guard_step(dt: float) -> void:
 ## smug ones break into a little dance now and then.
 func _tease(dt: float) -> void:
 	var start := 0.25 if temper == Temper.BOLD else 0.4
-	var want := 0.0 if temper == Temper.TIMID else smoothstep(start, start + 0.25, danger)
+	var want := 0.0 if (temper == Temper.TIMID or scared) else smoothstep(start, start + 0.25, danger)
 	smug = move_toward(smug, want, dt * 1.5)
 	if _taunt_delay >= 0.0:
 		_taunt_delay -= dt
@@ -363,7 +365,7 @@ func _tease(dt: float) -> void:
 
 ## A wiggle-and-bob, a wink and (rarely, quietly) a "na-na".
 func taunt() -> void:
-	if _taunt >= 0.0 or phase != Phase.HANGING or temper == Temper.TIMID or _closed_t > 0.0:
+	if _taunt >= 0.0 or phase != Phase.HANGING or temper == Temper.TIMID or _closed_t > 0.0 or scared:
 		return
 	_taunt = 0.0
 	_blink_t = 0.12
@@ -589,9 +591,18 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if _dropping:
 					_dropping = false
 					_land()
-				length += descent * SPEED_MUL[kind] * _speed_bonus * dt
+				if scared:
+					# Overload: it scrambles back up its string, away from you.
+					length = maxf(60.0 * (_screen_h / 1280.0), length - 35.0 * dt)
+				else:
+					length += descent * SPEED_MUL[kind] * _speed_bonus * dt
 				goal_length = length
-			_brain(dt)
+			if scared:
+				tele_t = 0.0
+				_lunge_left = 0.0
+				_dodge_cd = maxf(_dodge_cd, 0.5)
+			else:
+				_brain(dt)
 			_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
@@ -989,6 +1000,8 @@ func _tremble() -> Vector2:
 		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
 		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
+	if scared and phase == Phase.HANGING:
+		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * 1.1
 	return j
 
 
@@ -1030,7 +1043,7 @@ func _update_eye(delta: float) -> void:
 	_blink_t = maxf(0.0, _blink_t - delta)
 	startle_t = maxf(0.0, startle_t - delta)
 	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
-	if startle_t > 0.0:
+	if startle_t > 0.0 or (scared and phase == Phase.HANGING):
 		goal_open = 1.3
 	elif _blink_t > 0.0:
 		goal_open = 0.0
@@ -1045,9 +1058,12 @@ func _update_eye(delta: float) -> void:
 
 func color() -> Color:
 	var base := _base_color()
-	if danger > 0.0 and phase == Phase.HANGING:
+	if danger > 0.0 and phase == Phase.HANGING and not scared:
 		var pulse := 0.8 + 0.2 * sin(_clock * TAU * 0.8)
 		base = base.lerp(Pal.CORAL, danger * pulse)
+	if scared:
+		# Blanched with fright.
+		base = base.lerp(Pal.INK, 0.3)
 	if flash_t > 0.0:
 		# One-frame-ish matte flash on impact (lighter, never glowing).
 		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
@@ -1590,7 +1606,7 @@ func _mouth(er: float) -> void:
 		for i in 7:
 			pts.append(Vector2(lerpf(-w * 0.6, w * 0.6, i / 6.0), y + (1.2 if i % 2 == 0 else -1.2)))
 		f.draw_polyline(pts, ink, 1.6, true)
-	elif startle_t > 0.0:
+	elif startle_t > 0.0 or scared:
 		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
 		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
 	elif _taunt >= 0.0:

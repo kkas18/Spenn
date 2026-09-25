@@ -7,7 +7,7 @@ extends Node
 ## never sound mechanical. A light high-shelf roll-off, a compressor and a
 ## small dark room on the Sfx bus glue everything together.
 
-const POOL := 10
+const POOL := 14
 const MIN_GAP := 0.05           # same sound can't retrigger faster than this
 const LEVEL_DB := [-80.0, -19.0, -13.0, -8.0]   # off, low, medium, high
 const DIR := "res://assets/sfx/"
@@ -60,9 +60,18 @@ const MIX := {
 	"splat": [-10.0, 0.05, 3],
 	"wood": [-12.0, 0.05, 5],
 	"metal": [-12.0, 0.05, 5],
+	# overload: a chord swelling in, and falling away (made by the import tool)
+	"rise": [-10.0, 0.0, 1],
+	"fall": [-13.0, 0.0, 1],
 }
 
+# Tuned tines, one per step of the ladder the kills climb (C D Eb G over
+# the octaves, the play track's key). Played at their own pitch, no drift.
+const NOTE_COUNT := 9
+const NOTE_DB := -14.0
+
 var _takes := {}
+var _notes: Array[AudioStream] = []
 var _last := {}
 var _last_take := {}
 var _players: Array[AudioStreamPlayer] = []
@@ -119,6 +128,8 @@ func _ready() -> void:
 			push_warning("Sfx: no takes for %s" % name)
 		else:
 			_takes[name] = list
+	for i in NOTE_COUNT:
+		_notes.append(load("%snote_%d.ogg" % [DIR, i]))
 	apply_volume()
 	Prefs.changed.connect(apply_volume)
 
@@ -128,6 +139,7 @@ func _exit_tree() -> void:
 		p.stop()
 		p.stream = null
 	_takes.clear()
+	_notes.clear()
 
 
 func apply_volume() -> void:
@@ -155,6 +167,32 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 	p.volume_db = float(mix[0]) + minf(volume_db, 0.0)
 	p.play()
 	_started[_players.find(p)] = now
+
+
+## Step `i` of the note ladder (clamped; steps past the top wrap to its
+## last octave so long runs keep climbing within reach).
+func note(i: int, volume_db := 0.0) -> void:
+	if _headless or Prefs.sfx_volume == 0 or _notes.is_empty():
+		return
+	if i >= NOTE_COUNT:
+		i = NOTE_COUNT - 4 + (i - NOTE_COUNT) % 4
+	var p := _players[_voice()]
+	p.stream = _notes[maxi(i, 0)]
+	p.pitch_scale = 1.0
+	p.volume_db = NOTE_DB + minf(volume_db, 0.0)
+	p.play()
+	_started[_players.find(p)] = Time.get_ticks_msec() / 1000.0
+
+
+## A short run of ladder steps, `gap` seconds apart (real time): the
+## signature of a skill shot.
+func phrase(steps: Array, gap := 0.07, volume_db := 0.0) -> void:
+	for k in steps.size():
+		var i: int = steps[k]
+		if k == 0:
+			note(i, volume_db)
+		else:
+			Motion.after(gap * k, func() -> void: note(i, volume_db - 1.5 * k))
 
 
 ## A free voice, or the one that has played the longest.

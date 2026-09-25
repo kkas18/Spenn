@@ -181,6 +181,75 @@ def build_whoosh():
         sf.write(os.path.join(OUT, "sfx", "whoosh_%d.ogg" % v), m, sr, format="OGG", subtype="VORBIS")
 
 
+# The play track sits in C minor, so the combo notes climb C D Eb G, the
+# notes of its chord plus the ninth: any of them sounds right over any bar.
+NOTES = [60, 62, 63, 67, 72, 74, 75, 79, 84]
+
+
+def _tine(f0, sr, dur):
+    """A kalimba-like tine: a sine with a quickly fading bell partial and a
+    soft mallet tick, so rising runs read as a melody, not as beeps."""
+    n = int(dur * sr)
+    t = np.arange(n) / sr
+    y = np.sin(2 * np.pi * f0 * t) * np.exp(-t / 0.42)
+    y += 0.22 * np.sin(2 * np.pi * f0 * 2.0 * t) * np.exp(-t / 0.16)
+    y += 0.10 * np.sin(2 * np.pi * f0 * 4.07 * t) * np.exp(-t / 0.05)
+    rng = np.random.default_rng(int(f0))
+    tick = rng.uniform(-1.0, 1.0, int(0.004 * sr))
+    y[:len(tick)] += tick * np.linspace(0.3, 0.0, len(tick))
+    atk = int(0.003 * sr)
+    y[:atk] *= np.linspace(0.0, 1.0, atk)
+    fo = int(0.08 * sr)
+    y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
+    return y
+
+
+def _level(m, sr):
+    g = 10 ** ((TARGET_RMS_DB - db(active_rms(m, sr))) / 20.0)
+    return (m * min(g, 10 ** (PEAK_DB / 20.0) / np.abs(m).max())).astype(np.float32)
+
+
+def build_notes():
+    sr = 44100
+    for i, midi in enumerate(NOTES):
+        f0 = 440.0 * 2 ** ((midi - 69) / 12.0)
+        m = _level(_tine(f0, sr, 0.9), sr)
+        sf.write(os.path.join(OUT, "sfx", "note_%d.ogg" % i), m, sr, format="OGG", subtype="VORBIS")
+
+
+def build_surge():
+    """Overload: a C minor chord swelling out of a rising band of air, then
+    ringing off; and its release, the same chord falling away."""
+    sr = 44100
+    for v, rising in enumerate([True, False]):
+        dur = 1.4 if rising else 0.9
+        n = int(dur * sr)
+        t = np.arange(n) / sr
+        k = t / dur
+        env = (np.sin(np.pi * np.minimum(k / 0.45, 1.0) / 2) ** 2 * np.exp(-np.maximum(t - 0.6, 0) / 0.35)
+               if rising else np.exp(-t / 0.3))
+        y = np.zeros(n)
+        for j, midi in enumerate([48, 55, 60, 63, 67, 72]):
+            f = 440.0 * 2 ** ((midi - 69) / 12.0) * (1.0 + (0.0 if rising else -0.06 * k))
+            for det in (-0.003, 0.003):
+                y += np.sin(2 * np.pi * np.cumsum(np.full(n, f * (1 + det))) / sr) / (1 + j * 0.4)
+        y *= env
+        rng = np.random.default_rng(11 + v)
+        x = rng.uniform(-1.0, 1.0, n)
+        cut = 300.0 + 3500.0 * (k if rising else 1.0 - k) ** 1.5
+        a = 1.0 - np.exp(-2 * np.pi * cut / sr)
+        lo = np.zeros(n)
+        z = 0.0
+        for i in range(n):
+            z += (x[i] - z) * a[i]
+            lo[i] = z
+        air = lo * (np.sin(np.pi * np.minimum(k / 0.5, 1.0)) if rising else np.exp(-t / 0.2))
+        y = y / np.abs(y).max() + 0.6 * air / np.abs(air).max()
+        fo = int(0.06 * sr)
+        y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
+        sf.write(os.path.join(OUT, "sfx", ("rise_0.ogg", "fall_0.ogg")[v]), _level(y, sr), sr, format="OGG", subtype="VORBIS")
+
+
 def build_music():
     os.makedirs(os.path.join(OUT, "music"), exist_ok=True)
     for name, (src, loop_len, xfade) in MUSIC.items():
@@ -238,5 +307,7 @@ def build_particles():
 if __name__ == "__main__":
     build_sfx()
     build_whoosh()
+    build_notes()
+    build_surge()
     build_music()
     build_particles()

@@ -1,7 +1,9 @@
 class_name Rail
 extends Node2D
 ## The top beam: 6 px, two tones, shadow down/right, with a hook at every
-## hanging string. Hooks tip as their string swings.
+## hanging string. Hooks tip as their string swings. A gold inlay along its
+## face is the overload meter: it fills out from the middle as the tension
+## builds, throbs when nearly full and blazes while overload lasts.
 
 var l: Layout
 var targets: Array[Target] = []
@@ -9,6 +11,11 @@ var _flex_x := 0.0
 var _flex_amp := 0.0
 var _flex_t := 10.0
 var _line := PackedVector2Array()
+var _inlay := PackedVector2Array()
+var charge := 0.0              # 0..1, set by the game
+var hot := false               # overload running
+var _shown := 0.0
+var _clock := 0.0
 
 
 func setup(layout: Layout, list: Array[Target]) -> void:
@@ -24,7 +31,10 @@ func flex(x: float, amp: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_flex_t += delta
+	_clock += rd
+	_shown = lerpf(_shown, charge, Pal.damp(0.12, rd)) if absf(charge - _shown) > 0.001 else charge
 	queue_redraw()
 
 
@@ -69,6 +79,7 @@ func _draw() -> void:
 		draw_rect(Rect2(0, y, w, 8.0), Pal.METAL)
 		draw_rect(Rect2(0, y, w, 1.6), Pal.METAL_LIGHT)
 		draw_rect(Rect2(0, y + 8.6, w, 1.2), Color(0, 0, 0, 0.35))
+	_draw_inlay(y + 3.4)
 	# Hooks in two passes (plates and stems, then eyelets) so each pass is a
 	# single batch however many strings hang from the beam.
 	for t in targets:
@@ -86,6 +97,29 @@ func _draw() -> void:
 		if _shows(t):
 			_hook_eye(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
 	draw_set_transform(Vector2.ZERO)
+
+
+func _draw_inlay(y: float) -> void:
+	if _shown < 0.003:
+		return
+	var w := l.size.x
+	var half := w * 0.5 * _shown
+	var pulse := 0.0
+	if hot:
+		pulse = 0.6 + 0.4 * sin(_clock * 14.0)
+	elif _shown > 0.85:
+		pulse = 0.5 + 0.5 * sin(_clock * 9.0)
+	_inlay.clear()
+	for i in 17:
+		var x := w * 0.5 + lerpf(-half, half, i / 16.0)
+		_inlay.append(Vector2(x, y + offset_at(x)))
+	if pulse > 0.0:
+		draw_polyline(_inlay, Color(Pal.GOLD, 0.16 * pulse), 12.0)
+	draw_polyline(_inlay, Pal.GOLD_DARK, 3.4)
+	draw_polyline(_inlay, Color(Pal.GOLD_LIGHT, 0.55 + 0.45 * pulse), 1.4)
+	for sx: float in [-1.0, 1.0]:
+		var e := _inlay[0] if sx < 0.0 else _inlay[16]
+		Pal.disc(self, e, 2.4 + 1.2 * pulse, Pal.GOLD_LIGHT)
 
 
 func _shows(t: Target) -> bool:

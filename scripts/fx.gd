@@ -6,7 +6,7 @@ extends Node2D
 ## textures from the Kenney Particle Pack (CC0), tinted and kept matte.
 
 const SPARK_POOL := 8
-const POPUP_POOL := 8
+const POPUP_POOL := 12
 const POPUP_LIFE := 0.9
 const POPUP_RISE := 38.0
 const SHAKE_MAX := 3.0
@@ -47,6 +47,7 @@ var _next_token := 0
 const TOKEN_POOL := 40
 const TOKEN_TIME := 0.5
 var _slow_left := 0.0
+var _base_scale := 1.0           # sustained slow time (overload), under everything else
 var _punch := 0.0
 var _rings: Array[Dictionary] = []
 var _next_ring := 0
@@ -104,7 +105,7 @@ func _ready() -> void:
 	for i in TOKEN_POOL:
 		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
-		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20})
+		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20, "accent": false})
 	for i in PUFF_POOL:
 		_puffs.append({"t": -1.0, "life": 0.8, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
 			"spin": 0.0, "s0": 10.0, "s1": 30.0, "col": Pal.INK, "a": 0.3, "tex": 0})
@@ -352,22 +353,28 @@ func _step_waves(rd: float) -> void:
 	(shock_rect.material as ShaderMaterial).set_shader_parameter("waves", list)
 
 
-func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
+## A score or label that rises and fades. `accent` (skill shots) pops in
+## larger and underlines itself with a gold rule drawn out from the centre.
+func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false) -> void:
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
 	p.t = 0.0
 	p.text = text
 	p.col = col
 	p.size = size
+	p.accent = accent
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x if font else 80.0
 	var half := w * 0.5
 	var x := clampf(at.x, l.margin + half, l.size.x - l.margin - half)
-	var y := clampf(at.y, l.top_bar_h + l.margin + POPUP_RISE + size, l.size.y - l.margin)
-	# Stack above young popups nearby instead of overprinting them.
+	var top := l.top_bar_h + l.margin + POPUP_RISE + size
+	var y := clampf(at.y, top, l.size.y - l.margin)
+	# Stack above young popups nearby instead of overprinting them; under
+	# them when there is no room above (targets hanging near the rail).
 	for q in _popups:
-		if q != p and q.t >= 0.0 and q.t < 0.5 and absf(q.pos.x - x) < 140.0 and absf(q.pos.y - y) < size + 6.0:
+		if q != p and q.t >= 0.0 and q.t < 0.5 and absf(q.pos.x - x) < 160.0 and absf(q.pos.y - y) < maxf(size, q.size) + 6.0:
 			y = q.pos.y - (size + 8.0)
-	y = maxf(y, l.top_bar_h + l.margin + POPUP_RISE + size)
+			if y < top:
+				y = q.pos.y + (q.size + 8.0)
 	p.pos = Vector2(x, y)
 
 
@@ -402,6 +409,12 @@ func punch(amount: float) -> void:
 	_punch = maxf(_punch, amount)
 
 
+## Sustained slow time (overload): the floor the other effects work under.
+func set_base_time(scale: float) -> void:
+	_base_scale = scale
+	_apply_time()
+
+
 ## Direct control of game time (death sequence); overrides slow motion.
 func hold_time(scale: float) -> void:
 	_held = scale
@@ -417,6 +430,7 @@ func reset_time() -> void:
 	_held = -1.0
 	_slow_left = 0.0
 	_slow_scale = 1.0
+	_base_scale = 1.0
 	_hitstop_live = false
 	_punch = 0.0
 	Engine.time_scale = 1.0
@@ -428,7 +442,7 @@ func _apply_time() -> void:
 	if _held >= 0.0:
 		Engine.time_scale = _held
 		return
-	Engine.time_scale = 0.02 if _hitstop_live else (_slow_scale if _slow_left > 0.0 else 1.0)
+	Engine.time_scale = 0.02 if _hitstop_live else minf(_base_scale, _slow_scale if _slow_left > 0.0 else 1.0)
 
 
 func clear() -> void:
@@ -668,10 +682,14 @@ func _draw() -> void:
 		var k: float = p.t / POPUP_LIFE
 		var rise := ease(k, 0.35) * POPUP_RISE
 		var alpha := 1.0 if k < 0.55 else 1.0 - (k - 0.55) / 0.45
-		var s := 1.0 + 0.12 * maxf(0.0, 1.0 - k * 8.0)
+		var s := 1.0 + (0.3 if p.accent else 0.12) * maxf(0.0, 1.0 - k * 8.0)
 		var pos: Vector2 = p.pos - Vector2(0, rise)
 		var w := font.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size).x
 		draw_set_transform(pos, 0.0, Vector2(s, s))
 		draw_string(font, Vector2(-w * 0.5, 0) + Vector2(2, 2), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, Color(0, 0, 0, 0.35 * alpha))
 		draw_string(font, Vector2(-w * 0.5, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, Color(p.col, alpha))
+		if p.accent:
+			var half := (w * 0.5 + 6.0) * ease(minf(1.0, k * 5.0), 0.4)
+			draw_line(Vector2(-half, 7.0) + Vector2(1.5, 1.5), Vector2(half, 7.0) + Vector2(1.5, 1.5), Color(0, 0, 0, 0.3 * alpha), 2.0)
+			draw_line(Vector2(-half, 7.0), Vector2(half, 7.0), Color(Pal.GOLD, alpha), 2.0)
 	draw_set_transform(Vector2.ZERO)

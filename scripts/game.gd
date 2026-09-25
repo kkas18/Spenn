@@ -27,6 +27,23 @@ const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const MAX_MINIONS := 3
 const TRIPLE_SPREAD := 0.1
 const Ammo := Slingshot.Ammo
+# Overload: kills and skill shots build tension (the gold inlay along the
+# rail); misses and breaches bleed it. Full, it discharges for
+# OVERLOAD_TIME real seconds: time slows, every ball pierces, reloads are
+# near instant, the targets panic and climb their strings, points double.
+const OVERLOAD_TIME := 5.0
+const OVERLOAD_SCALE := 0.7
+const OVERLOAD_RELOAD := 0.3   # reload time factor while it lasts
+const CHARGE_KILL := 0.03
+const CHARGE_MISS := 0.05
+const CHARGE_BREACH := 0.35
+# Skill shots: named, paid and voiced (a short phrase up the note ladder).
+enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN }
+const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain"]
+const SKILL_POINTS := [40, 40, 60, 50, 50, 60]
+const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14]
+const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8]]
+const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 
 var layout: Layout
 var director := Director.new()
@@ -36,6 +53,10 @@ var lives := LIVES
 var streak := 0
 var best_streak := 0
 var cuts := 0
+var charge := 0.0               # 0..1 tension toward overload
+var overload_t := 0.0           # real seconds of overload left
+var overloads := 0
+var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0]
 var ammo: Array[int] = []       # index 0 is loaded
 var reload_t := 0.0
 
@@ -72,6 +93,7 @@ var _last_tap := -10.0
 var _last_tap_pos := Vector2.ZERO
 var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
+var _heat := 0.0                # overload's warm vignette, eased
 
 
 func _ready() -> void:
@@ -123,6 +145,7 @@ func _ready() -> void:
 	mat.shader = preload("res://shaders/vignette.gdshader")
 	vignette.material = mat
 	_vignette = mat
+	mat.set_shader_parameter("tint", Pal.GOLD)
 	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
@@ -174,7 +197,12 @@ func _clear_field() -> void:
 	slingshot.cancel()
 	_touch = -1
 	_tension = 0.0
+	_end_overload(true)
+	charge = 0.0
+	rail.charge = 0.0
+	_heat = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
+	_vignette.set_shader_parameter("glow", 0.0)
 
 
 ## One place where the state changes; everything that differs per state
@@ -223,6 +251,10 @@ func _start_run() -> void:
 	streak = 0
 	best_streak = 0
 	cuts = 0
+	charge = 0.0
+	rail.charge = 0.0
+	overloads = 0
+	skill_counts = [0, 0, 0, 0, 0, 0]
 	_chain = 0
 	_chain_t = 0.0
 	_next_life_at = EXTRA_LIFE_EVERY
@@ -384,6 +416,7 @@ func _process(delta: float) -> void:
 	slingshot.demo = state == State.MAIN_MENU and _touch == -1 and (Prefs.runs < 3 or _state_t > 6.0) and not hud.modal_open()
 	if state == State.PLAYING or state == State.STARTING:
 		_run_intros()
+		_overload_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
@@ -436,7 +469,10 @@ func _pace(delta: float) -> void:
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
+	_vignette.set_shader_parameter("glow", _heat * (0.3 + 0.06 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
 		_beat_t -= delta
 		if _beat_t <= 0.0:
@@ -842,12 +878,14 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var kind := t.kind
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
+	var hit_at := t.pos
 	var killed := t.hit(impulse, contact)
-	var gained := t.points() * b.hits * _mult()
+	var gained := t.points() * b.hits * _mult() * _surge()
 	if killed and kind == Target.Kind.BOSS:
 		gained *= 5
 	if killed:
-		gained += _kill_bonus(t, was_close, gained)
+		b.kills += 1
+		gained += _kill_bonus(t, gained)
 	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
 	fx.hitstop()
@@ -857,7 +895,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.sparks(cp, col, 10 if killed else 6)
 	fx.ring(contact, col.lightened(0.15), t.radius)
 	var label := "+%d" % gained
-	if b.special:
+	if b.special and overload_t <= 0.0:
 		label += " " + Loc.t("popup.pierce")
 	elif killed and kind == Target.Kind.SPLIT:
 		label += " " + Loc.t("popup.split")
@@ -905,6 +943,123 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
 	if b.hits == 2:
 		_grant(Ammo.PIERCE)
+	if killed:
+		_charge(CHARGE_KILL * (2.0 if kind == Target.Kind.BOSS else 1.0))
+		_read_skills(b, hit_at, was_close)
+
+
+## Which skill shots this kill was: off a wall, after a long flight, the
+## second (third...) kill of one ball, just above the line.
+func _read_skills(b: Ball, at: Vector2, was_close: bool) -> void:
+	if b.banks > 0 and not (b.skilled & (1 << Skill.BANK)):
+		b.skilled |= 1 << Skill.BANK
+		_skill(Skill.BANK, at)
+	elif b.age >= LONG_FLIGHT and not (b.skilled & (1 << Skill.LONG)):
+		b.skilled |= 1 << Skill.LONG
+		_skill(Skill.LONG, at)
+	if b.kills >= 2:
+		_skill(Skill.DOUBLE, at, b.kills - 1)
+	if was_close:
+		_skill(Skill.CLUTCH, at)
+
+
+## A named skill shot: points, a gold underlined call-out, its phrase on
+## the note ladder, and a good push toward overload. `n` scales the pay
+## (a triple kill is a double paid twice).
+func _skill(s: Skill, at: Vector2, n := 1) -> void:
+	skill_counts[s] += 1
+	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
+	_add_score(pts, at)
+	var text := Loc.t(SKILL_KEY[s])
+	if s == Skill.DOUBLE and n >= 2:
+		text = Loc.t("skill.triple") if n == 2 else Loc.t("skill.multi") % (n + 1)
+	fx.popup("%s +%d" % [text, pts], at + Vector2(0, -64.0), Pal.GOLD_LIGHT, 24, true)
+	fx.ring(at, Pal.GOLD, 48.0)
+	var steps: Array = SKILL_NOTES[s].duplicate()
+	if overload_t > 0.0:
+		for i in steps.size():
+			steps[i] += 4
+	Sfx.phrase(steps, 0.075, -2.0)
+	Sfx.haptic(14, 0.45)
+	if s == Skill.CLUTCH:
+		fx.slowmo(0.45, 0.28)
+		fx.punch(0.02)
+	_charge(SKILL_CHARGE[s])
+
+
+# ---------------------------------------------------------------- overload
+
+## Points double while overload lasts.
+func _surge() -> int:
+	return 2 if overload_t > 0.0 else 1
+
+
+func _charge(v: float) -> void:
+	if overload_t > 0.0 or (state != State.PLAYING and state != State.STARTING):
+		return
+	var was := charge
+	charge = clampf(charge + v, 0.0, 1.0)
+	rail.charge = charge
+	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
+		# New players: say once what the gold in the rail is building to.
+		fx.popup(Loc.t("overload.hint"), Vector2(layout.center_x, layout.rail_y + 44.0), Pal.GOLD_LIGHT, 15)
+	if charge >= 1.0:
+		_begin_overload()
+
+
+func _begin_overload() -> void:
+	overload_t = OVERLOAD_TIME
+	overloads += 1
+	rail.hot = true
+	fx.set_base_time(OVERLOAD_SCALE)
+	while ammo.size() < AMMO_CAP:
+		ammo.append(Ammo.NORMAL)
+	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45)
+	fx.shock(mid, 14.0, 560.0, 0.7)
+	fx.punch(0.035)
+	fx.shake(2.0)
+	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
+	hud.bar.hot = true
+	_show_mult()
+	Music.overload = true
+	Sfx.play("rise")
+	Sfx.haptic_pattern("record")
+
+
+## Real time, so its own slow motion doesn't stretch it.
+func _overload_tick(delta: float) -> void:
+	var on := overload_t > 0.0
+	for t in targets:
+		t.scared = on and t.phase == Target.Phase.HANGING
+	if not on:
+		return
+	overload_t -= delta / maxf(Engine.time_scale, 0.001)
+	charge = maxf(0.0, overload_t / OVERLOAD_TIME)
+	rail.charge = charge
+	if overload_t <= 0.0:
+		_end_overload(false)
+
+
+func _end_overload(quiet: bool) -> void:
+	var was := overload_t > 0.0 or rail.hot
+	overload_t = 0.0
+	charge = 0.0
+	rail.charge = 0.0
+	rail.hot = false
+	hud.bar.hot = false
+	Music.overload = false
+	fx.set_base_time(1.0)
+	for t in targets:
+		t.scared = false
+	_show_mult()
+	if was and not quiet:
+		Sfx.play("fall")
+
+
+## Note ladder: each kill of a run of kills sounds one step higher (an
+## octave up in overload), so a streak of kills plays a rising melody.
+func _kill_note() -> void:
+	Sfx.note(_chain - 1 + (4 if overload_t > 0.0 else 0), -3.0)
 
 
 ## Rigid shells each sound like what they are made of.
@@ -931,15 +1086,19 @@ func _on_cut(b: Ball, t: Target) -> void:
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
 	t.cut()
-	var gained := t.points() * 2 * _mult()
-	gained += _kill_bonus(t, was_close, gained)
+	var gained := t.points() * 2 * _mult() * _surge()
+	gained += _kill_bonus(t, gained)
 	_add_score(gained, t.pos)
 	fx.hitstop()
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
-	fx.popup("+%d %s" % [gained, Loc.t("popup.cut")], b.pos + Vector2(0, -22), Pal.INK)
+	fx.popup("+%d" % gained, b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
 	Sfx.play("cut", randf_range(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
+	_charge(CHARGE_KILL)
+	_skill(Skill.CUT, b.pos)
+	if was_close:
+		_skill(Skill.CLUTCH, t.pos)
 
 
 func _split(t: Target) -> void:
@@ -958,21 +1117,17 @@ func _split(t: Target) -> void:
 		_maybe_intro(d)
 
 
-## Chains (kills in quick succession) and close calls (a kill just above
-## the line) pay extra and say so.
-func _kill_bonus(t: Target, was_close: bool, gained: int) -> int:
+## Chains (kills in quick succession) pay extra, say so, and climb the
+## note ladder.
+func _kill_bonus(t: Target, gained: int) -> int:
 	var bonus := 0
 	_chain += 1
 	_chain_t = CHAIN_WINDOW
+	_kill_note()
 	if _chain >= 3:
 		bonus += int(gained * 0.2 * mini(_chain - 2, 6))
 		fx.popup(Loc.t("popup.chain") % _chain, t.pos + Vector2(0, t.radius + 26.0), Pal.GOLD, 16)
-		Sfx.play("streak", minf(1.25, 0.9 + 0.05 * _chain))
-	if was_close:
-		bonus += 50 * _mult()
-		fx.popup(Loc.t("popup.close") + " +%d" % (50 * _mult()), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 18)
-		fx.slowmo(0.45, 0.28)
-		fx.punch(0.02)
+		Sfx.play("streak", minf(1.25, 0.9 + 0.05 * _chain), -4.0)
 	return bonus
 
 
@@ -1000,7 +1155,10 @@ func _breach(t: Target) -> void:
 	streak = 0
 	_chain = 0
 	hud.bar.streak = 0
-	hud.bar.set_mult(1)
+	_show_mult()
+	if overload_t <= 0.0:
+		charge = maxf(0.0, charge - CHARGE_BREACH)
+		rail.charge = charge
 	for o in targets:
 		if o.is_hittable():
 			o.length = maxf(40.0, o.length - 50.0 * layout.scale)
@@ -1013,6 +1171,9 @@ func _breach(t: Target) -> void:
 ## 1.0 → 0.35 → 0.15 → near-still over ~0.6 s while the HUD fades and the
 ## scene darkens; the results come in at ~0.9 s.
 func _begin_death(at: Vector2) -> void:
+	_end_overload(true)
+	_heat = 0.0
+	_vignette.set_shader_parameter("glow", 0.0)
 	_set_state(State.DEATH)
 	hud.locked = true
 	slingshot.cancel()
@@ -1044,7 +1205,10 @@ func _show_results() -> void:
 	var is_record := Prefs.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
 	_set_state(State.GAME_OVER)
-	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc)
+	var feats: Array = []
+	for i in skill_counts.size():
+		feats.append([SKILL_KEY[i], skill_counts[i]])
+	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads)
 	if not is_record:
 		Sfx.play("lose")
 	Motion.after(0.6, func() -> void: hud.locked = false)
@@ -1054,6 +1218,12 @@ func _show_results() -> void:
 
 func _mult() -> int:
 	return 1 + mini(streak / 3, 3)
+
+
+## The pill shows what a hit is worth: the streak multiplier, doubled in
+## overload.
+func _show_mult() -> void:
+	hud.bar.set_mult(_mult() * _surge())
 
 
 ## Points fly to the counter as gold grains; every EXTRA_LIFE_EVERY points
@@ -1104,8 +1274,11 @@ func _finish_ball(b: Ball) -> void:
 			Sfx.haptic(16, 0.4)
 	else:
 		streak = 0
+		if overload_t <= 0.0:
+			charge = maxf(0.0, charge - CHARGE_MISS)
+			rail.charge = charge
 	hud.bar.streak = streak
-	hud.bar.set_mult(_mult())
+	_show_mult()
 
 
 func _grant(kind: int) -> void:
@@ -1119,7 +1292,7 @@ func _grant(kind: int) -> void:
 
 func _update_ammo(delta: float) -> void:
 	if ammo.size() < AMMO_CAP and state != State.DEATH and state != State.GAME_OVER:
-		reload_t += delta
+		reload_t += delta / (OVERLOAD_RELOAD if overload_t > 0.0 else 1.0)
 		if reload_t >= director.reload_time():
 			reload_t = 0.0
 			ammo.append(Ammo.NORMAL)
@@ -1140,7 +1313,7 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 	for a in dirs:
 		for b in balls:
 			if not b.active:
-				b.fire(pos, vel.rotated(a), kind == Ammo.PIERCE, _shot_seq)
+				b.fire(pos, vel.rotated(a), kind == Ammo.PIERCE or overload_t > 0.0, _shot_seq)
 				fired += 1
 				break
 	_shots[_shot_seq] = {"balls": fired, "hit": false}

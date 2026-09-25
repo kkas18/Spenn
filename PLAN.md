@@ -966,3 +966,64 @@ med måling og kodegjennomgang, ikke med nye funksjoner.
 - Hele spillforløpet er kjørt og fotografert.
 - Balanse med menneskelignende bot, snitt av 4 runder: 137 s (før: 133 s), altså
   uendret.
+
+# v7.0 – Fase 1: overbelastning, ferdighetsskudd, musikalske treff, Game Over-krok
+
+Første av seks faser i premium-oppgraderingen. Målet er et tydelig belønningsløp:
+spill godt, bygg spenning, utløs den, jakt rekorden.
+
+## Overbelastning
+- **Måler:** en gullinnlegging i bjelken fyller seg fra midten og utover. Den pulserer
+  når den er nesten full.
+- **Fylling:** hvert drap gir +0,03 (boss +0,06), og ferdighetsskudd gir 0,09–0,14.
+- **Tap:** en bom trekker 0,05, og et brudd trekker 0,35.
+- **Utløst:** gir 5 s i sanntid med følgende effekter:
+  - tiden går i 0,7;
+  - alle kuler går gjennom;
+  - omlading tar 30 % av normal tid, og magasinet fylles;
+  - poengene dobles, og pillen viser ×2 og gløder;
+  - fiendene får panikk: de blekner, sperrer opp øynene og skjelver, slutter å synke,
+    klatrer opp strengen, og verken unnviker eller erter.
+- **Presentasjon:**
+  - kort «OVERBELASTNING / ALT GÅR GJENNOM · DOBBEL POENG»;
+  - sjokkbølge, kamerastøt og haptikk;
+  - varm gullkant i vignetten;
+  - musikken dempes bak et lavpass, mens en syntetisert c-moll-akkord svulmer opp
+    (`rise`) og faller bort (`fall`).
+- **Førstegangshint:** i de tre første rundene vises «FULL SPENNING GIR
+  OVERBELASTNING» når måleren passerer halvveis.
+
+## Ferdighetsskudd
+Hvert skudd har eget navn, egen poengsum og egen tonefrase. De vises i gull med en
+understrek som tegnes ut fra midten.
+
+| Skudd | Vilkår | Poeng |
+|---|---|---|
+| Veggskudd | drap etter sprett i sideveggen | 40 |
+| Langskudd | drap etter ≥ 0,85 s i lufta | 40 |
+| Dobbelttreff | andre drap med samme kule (trippel og flere skalerer) | 60 |
+| Snorkutt | kappet streng | 50 |
+| Siste sekund | drap like over linjen (erstatter «nære på») | 50 |
+| Kjedereaksjon | kobles på i fase 2 | 60 |
+
+Alle poengsummer ganges med multiplikatoren og med ×2 under overbelastning.
+
+## Musikalske treff
+- **Toner:** `tools/import_assets.py` syntetiserer ni kalimba-toner stemt i
+  spillmusikkens toneart (c-moll, målt med kromagram): C D Ess G over tre oktaver.
+- **Stigning:** hvert drap i en kjede spiller ett trinn høyere, en oktav opp under
+  overbelastning.
+- **Ferdighetsskudd:** hvert skudd har sin egen korte frase.
+
+## Game Over
+- **Avstand til rekorden:** i gull, for eksempel «550 POENG FRA REKORDEN». Når
+  avstanden er under 10 %, står det i tillegg «SÅ NÆRE».
+- **Høydepunkter:** én linje med antall overbelastninger og de hyppigste
+  ferdighetsskuddene.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt (21 bilder).
+- Balanse med bot, 4 frø:
+  - første forsøk ga overbelastning hvert ~18. sekund og 164 s snitt, altså for lett;
+  - etter justering blir det ca. én overbelastning per 40–50 s, med 135 s snitt
+    (grunnlinje 137 s).

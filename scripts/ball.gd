@@ -18,6 +18,9 @@ var pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var age := 0.0
 var hits := 0                  # targets hit during this shot
+var kills := 0                 # ... and killed
+var banks := 0                 # side-wall bounces so far (bank shots)
+var skilled := 0               # bit per skill shot already paid for this ball
 var spin := 0.0                # visual rotation (rad)
 var _touched := {}             # target instance id -> cooldown (s)
 var _trail := PackedVector2Array()
@@ -44,6 +47,9 @@ func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	vel = v
 	age = 0.0
 	hits = 0
+	kills = 0
+	banks = 0
+	skilled = 0
 	spin = 0.0
 	_touched.clear()
 	_trail.resize(TRAIL + 1)
@@ -89,9 +95,13 @@ func step(dt: float, l: Layout) -> bool:
 			_touched.erase(id)
 	if pos.x < RADIUS:
 		pos.x = RADIUS
+		if vel.x < -60.0:
+			banks += 1
 		vel.x = absf(vel.x) * WALL_BOUNCE
 	elif pos.x > l.size.x - RADIUS:
 		pos.x = l.size.x - RADIUS
+		if vel.x > 60.0:
+			banks += 1
 		vel.x = -absf(vel.x) * WALL_BOUNCE
 	if pos.y < l.rail_y + RADIUS + 3.0 and vel.y < 0.0:
 		pos.y = l.rail_y + RADIUS + 3.0
