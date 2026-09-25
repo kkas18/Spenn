@@ -107,7 +107,7 @@ var _mission_slots: Array = []  # slots already paid this run
 var _mission_t := 0.0
 # Tilt parallax: the phone's lean (relative to how it is usually held)
 # shifts the world a few px against the wall behind it.
-const TILT_PX := 14.0
+const TILT_PX := 18.0
 var _tilt := Vector2.ZERO
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
@@ -475,20 +475,30 @@ func _process(delta: float) -> void:
 		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
 
 
-## Reads the accelerometer. The reference follows the phone's resting
-## angle over a few seconds, so only a fresh lean moves the view; while
-## aiming the view holds still. Off with reduced motion or no sensor.
+## Where gravity points in the phone's frame (m/s²): the smoothed gravity
+## sensor where there is one, else the raw accelerometer. Zero without.
+static func sensor_gravity() -> Vector3:
+	var g := Input.get_gravity()
+	if g.length() < 2.0:
+		g = Input.get_accelerometer()
+	return g if g.length() >= 2.0 else Vector3.ZERO
+
+
+## Reads the gravity sensor. The reference follows the phone's resting
+## angle over several seconds, so only a fresh lean moves the view; while
+## aiming the view holds still. Off in settings, with reduced motion, or
+## without a sensor.
 func _update_tilt(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
-	var acc := Input.get_accelerometer()
+	var sg := sensor_gravity()
 	var want := Vector2.ZERO
-	if acc.length() > 2.0 and not Prefs.reduced_motion:
-		var g := Vector2(acc.x, acc.y) / 9.81
+	if sg != Vector3.ZERO and Prefs.tilt and not Prefs.reduced_motion:
+		var g := Vector2(sg.x, sg.y) / 9.81
 		if not _tilt_seen:
 			_tilt_seen = true
 			_tilt_ref = g
-		_tilt_ref = _tilt_ref.lerp(g, 1.0 - exp(-rd / 3.0))
-		want = ((g - _tilt_ref) * 3.5).limit_length(1.0)
+		_tilt_ref = _tilt_ref.lerp(g, 1.0 - exp(-rd / 6.0))
+		want = ((g - _tilt_ref) * 5.0).limit_length(1.0)
 	if slingshot.is_aiming():
 		want = _tilt
 	_tilt = _tilt.lerp(want, Pal.damp(0.12, rd))

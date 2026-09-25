@@ -45,6 +45,7 @@ var _s_sfx: UIButton
 var _s_haptics: UIButton
 var _s_motion: UIButton
 var _s_guide: UIButton
+var _s_tilt: UIButton
 var _s_lang: UIButton
 var _s_credits: Label
 var _s_back: UIButton
@@ -111,7 +112,7 @@ func setup(layout: Layout) -> void:
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
 	var min_h := maxf(60.0, Tok.TOUCH_MIN_DP * l.dp)
-	for b: UIButton in [_b_resume, _b_restart, _b_settings, _b_menu, _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _s_back]:
+	for b: UIButton in [_b_resume, _b_restart, _b_settings, _b_menu, _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_tilt, _s_lang, _s_back]:
 		b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
 	for b: UIButton in [_m_settings, _m_lang, _m_stats, _m_skins]:
 		b.custom_minimum_size = Vector2(maxf(64.0, 48.0 * l.dp), maxf(64.0, 48.0 * l.dp))
@@ -121,6 +122,13 @@ func setup(layout: Layout) -> void:
 	_m_daily.size = _m_daily.custom_minimum_size
 	_m_daily.position = Vector2(l.size.x * 0.5 - _m_daily.size.x * 0.5, menu_record_y() - 118.0)
 	_over.setup()
+
+
+func _game_sensor() -> Vector3:
+	var g := Input.get_gravity()
+	if g.length() < 2.0:
+		g = Input.get_accelerometer()
+	return g if g.length() >= 2.0 else Vector3.ZERO
 
 
 func caps_font() -> Font:
@@ -326,6 +334,12 @@ func _refresh_text() -> void:
 	_s_haptics.text = Loc.setting("settings.haptics", Loc.on_off(Prefs.haptics))
 	_s_motion.text = Loc.setting("settings.reducedMotion", Loc.on_off(Prefs.reduced_motion))
 	_s_guide.text = Loc.setting("settings.aimGuide", Loc.on_off(Prefs.aim_guide))
+	# Says whether the phone actually reports a sensor, so a missing effect
+	# can be told apart from a switched-off one.
+	var tilt_txt := Loc.setting("settings.tilt", Loc.on_off(Prefs.tilt))
+	if Prefs.tilt and _game_sensor() == Vector3.ZERO:
+		tilt_txt += " · " + Loc.t("settings.noSensor")
+	_s_tilt.text = tilt_txt
 	_s_lang.text = Loc.setting("settings.language", "settings.languageName")
 	_s_back.text = Loc.t("settings.back")
 	_s_credits.text = Loc.t("settings.credits")
@@ -461,13 +475,14 @@ func _build_settings() -> void:
 	_s_haptics = button(func() -> void: Prefs.toggle_haptics(); Sfx.haptic_pattern("soft"))
 	_s_motion = button(func() -> void: Prefs.toggle_reduced_motion())
 	_s_guide = button(func() -> void: Prefs.toggle_aim_guide())
+	_s_tilt = button(func() -> void: Prefs.toggle_tilt())
 	_s_lang = button(func() -> void: Loc.next_language())
 	_s_back = button(_close_settings)
 	# Attribution for the music (CC BY 4.0) and the CC0 packs.
 	_s_credits = label(Tok.TYPE_CAPTION, Tok.TEXT_FAINT, _font_caps)
 	_s_credits.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_s_credits.custom_minimum_size = Vector2(440, 0)
-	for c: Control in [_s_title, _spacer(Tok.SPACE_SM), _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _spacer(Tok.SPACE_SM), _s_back, _spacer(Tok.SPACE_SM), _s_credits]:
+	for c: Control in [_s_title, _spacer(Tok.SPACE_SM), _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_tilt, _s_lang, _spacer(Tok.SPACE_SM), _s_back, _spacer(Tok.SPACE_SM), _s_credits]:
 		_settings_box.add_child(c)
 
 
@@ -765,7 +780,8 @@ class TopBar extends Control:
 		draw_rect(track, Color(Tok.TEXT_FAINT, 0.45 * ar))
 		draw_rect(Rect2(track.position, Vector2(bw * clampf(shown_progress, 0.0, 1.0), 3.0)), Color(Tok.TEXT_SECONDARY, ar))
 		if show_fps:
-			var fps := "%d FPS" % Engine.get_frames_per_second()
+			var sg := hud._game_sensor()
+			var fps := "%d FPS  ·  G %.1f %.1f %.1f" % [Engine.get_frames_per_second(), sg.x, sg.y, sg.z]
 			draw_string(caps, Vector2(0, ly), fps, HORIZONTAL_ALIGNMENT_RIGHT, w - l.margin, 11, Tok.TEXT_FAINT)
 
 

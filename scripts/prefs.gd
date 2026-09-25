@@ -16,6 +16,7 @@ var sfx_volume := 2
 var haptics := true
 var reduced_motion := false
 var aim_guide := true
+var tilt := true               # tilt parallax and gloss follow the phone
 var record := 0
 var intro_seen := false
 var seen := {}                 # enemy kinds already introduced
@@ -41,6 +42,7 @@ func _ready() -> void:
 		haptics = bool(_cfg.get_value("settings", "haptics", true))
 		reduced_motion = bool(_cfg.get_value("settings", "reduced_motion", false))
 		aim_guide = bool(_cfg.get_value("settings", "aim_guide", true))
+		tilt = bool(_cfg.get_value("settings", "tilt", true))
 		record = int(_cfg.get_value("stats", "record", 0))
 		intro_seen = bool(_cfg.get_value("stats", "intro_seen", false))
 		seen = _cfg.get_value("stats", "seen", {})
@@ -74,6 +76,11 @@ func toggle_haptics() -> void:
 
 func toggle_reduced_motion() -> void:
 	reduced_motion = not reduced_motion
+	_commit()
+
+
+func toggle_tilt() -> void:
+	tilt = not tilt
 	_commit()
 
 
@@ -172,6 +179,7 @@ func save() -> void:
 	_cfg.set_value("settings", "haptics", haptics)
 	_cfg.set_value("settings", "reduced_motion", reduced_motion)
 	_cfg.set_value("settings", "aim_guide", aim_guide)
+	_cfg.set_value("settings", "tilt", tilt)
 	_cfg.set_value("stats", "record", record)
 	_cfg.set_value("stats", "intro_seen", intro_seen)
 	_cfg.set_value("stats", "seen", seen)

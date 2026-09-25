@@ -1324,3 +1324,17 @@ i én samlet transform rundt fokuspunktet.
   (`input_devices/sensors`), og forskyvningen er økt fra 9 til 14 px.
 - **Bølgetekst:** «BØLGE n» vises høyere (28 % av feltet), så den ikke havner bak
   hendelseskort som «FORMASJON».
+
+# v7.9 – Vippeeffekt: mer robust, egen innstilling, diagnose
+
+## Brukeren merket ingen vipping på telefonen
+- **Sensor:** effekten leser nå først tyngdekraftsensoren (`Input.get_gravity`, glattet
+  av Android). Finnes den ikke, brukes akselerometeret.
+- **Sterkere:** forsterkningen er økt fra 3,5 til 5 og forskyvningen fra 14 til 18 px.
+  Referansen følger hvilevinkelen over 6 s i stedet for 3 s, så en vipping holder seg
+  synlig lenger.
+- **Innstilling:** «VIPPEEFFEKT: PÅ/AV» er nå en egen innstilling. Knappen viser
+  «· INGEN SENSOR» når telefonen ikke gir sensordata, så man kan skille en avslått
+  effekt fra en som mangler data.
+- **Diagnose:** FPS-visningen (trippeltrykk på knutene) viser også sensorverdiene
+  (G x y z).
