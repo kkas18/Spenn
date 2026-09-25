@@ -1389,3 +1389,33 @@ Sidesvingen er ekte fysikk, så treffsonene følger fiendene dit de faktisk er.
   mørkere (bort fra kameraet).
 - Første forsøk svingte for kraftig og er dempet (300 → 220, spark 55 → 40,
   dybde 2,2 → 1,4).
+
+# v7.13 – Rykk nedover: fiendene skvetter og klatrer
+
+## Registrering
+- Lineær akselerasjon er akselerometeret minus tyngdekraften.
+- Et rykk er over 3,2 m/s² nedover langs skjermens loddrette akse.
+- Det kan komme ett rykk per 1,5 s. En bevegelse oppover ignoreres, også tilbakeslaget
+  fra samme bevegelse.
+- Rykk registreres ikke mens du sikter.
+
+## Hvem som klatrer
+- Tunge og pansrede fiender holder seg fast og bare svaier: Tungvekt, Vokter,
+  Spinneren og Speilet.
+- Modige fiender ler det bort med en erting.
+- Engstelige fiender klatrer alltid.
+- Rolige og uberegnelige fiender klatrer med sannsynlighet 45–55 %, pluss mer jo
+  nærmere linjen de henger.
+- En formasjon følger lederens valg.
+- Hver fiende har 5 s nedkjøling.
+
+## Reaksjon
+- Fiendene som klatrer, skvetter med store øyne og klatrer 60 px opp strengen
+  (Snella 95 px, og mer nær linjen).
+- Deretter slipper de seg sakte ned igjen, med samme mekanikk som etter en unnamanøver,
+  så fordelen er kortvarig.
+- Bjelken gynger litt, og det kommer en vinsjlyd og en kort vibrasjon.
+
+## QA
+En testrigg simulerer et rykk med `Input.set_accelerometer`. Engstelige og noen rolige
+fiender klatret ca. 43 px, mens modige, Tungvekt og noen rolige ble hengende.

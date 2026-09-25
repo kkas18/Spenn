@@ -120,6 +120,12 @@ const PUSH_X := 220.0           # px/s² per unit of lean
 const PUSH_KICK := 40.0         # ... per unit/s of change
 var _push := Vector2.ZERO
 var _tilt_prev := Vector2.ZERO
+# A quick downward move of the phone (linear acceleration along the
+# screen's vertical, gravity removed) jolts the rail: some targets take
+# fright and climb. Whichever direction peaks first decides the move.
+const JOLT_ACC := 3.2           # m/s²
+var _jolt_t := 0.0              # window after a peak, and cooldown
+var _jolt_cd := 0.0
 
 
 func _ready() -> void:
@@ -528,12 +534,58 @@ func _update_tilt(delta: float) -> void:
 	_push = (_tilt * PUSH_X + rate * PUSH_KICK).limit_length(650.0) * layout.scale
 	Target.push_z = _push.y / PUSH_X
 	title.push = _push.x
+	_read_jolt(rd, on)
 	var v := Vector2(-_tilt.x, _tilt.y) * TILT_PX * layout.scale
 	fx.view = v
 	backdrop.view = v
 	var lean := Vector2(-_tilt.x, _tilt.y)
 	Target.set_view(lean)
 	slingshot.set_view(lean)
+
+
+## Linear acceleration = accelerometer − gravity. A drop of the phone
+## starts with the screen's "up" axis accelerating downward (negative y in
+## the phone's frame). One jolt per 1.5 s at most.
+func _read_jolt(rd: float, on: bool) -> void:
+	_jolt_cd = maxf(0.0, _jolt_cd - rd)
+	if not on or _jolt_cd > 0.0 or slingshot.is_aiming():
+		return
+	var grav := Input.get_gravity()
+	if grav.length() < 2.0:
+		return
+	var lin := Input.get_accelerometer() - grav
+	if lin.y < -JOLT_ACC:
+		_jolt_cd = 1.5
+		_jolt()
+	elif lin.y > JOLT_ACC:
+		# The phone went up (or stopped a drop): no jolt, and ignore the
+		# rebound of this same motion.
+		_jolt_cd = 0.4
+
+
+func _jolt() -> void:
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	rail.flex(layout.center_x, 3.0)
+	var climbed := 0
+	var choice := {}
+	for t in targets:
+		if not t.is_hittable():
+			continue
+		var decide := t
+		if t.leader != null and is_instance_valid(t.leader):
+			decide = t.leader
+		var id := decide.get_instance_id()
+		if not choice.has(id):
+			choice[id] = decide.wants_climb(_rng.randf())
+		if choice[id]:
+			t.jolt(layout.scale)
+			climbed += 1
+		elif t.temper == Target.Temper.BOLD:
+			t.taunt()
+	if climbed > 0:
+		Sfx.play("reel", 1.15, -4.0)
+		Sfx.haptic(12, 0.3)
 
 
 ## The endless pacing: regular spawns under a rising cap, events with a

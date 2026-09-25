@@ -134,6 +134,7 @@ var depth := 0.0
 # a damped pendulum in depth whose rate follows the string length. Visual,
 # like depth; it adds to it wherever depth shows.
 static var push_z := 0.0
+var _jolt_cd := 0.0
 var z_swing := 0.0
 var _z_vel := 0.0
 var stage_changed := false     # for the game to announce
@@ -279,6 +280,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	stage_changed = false
 	z_swing = 0.0
 	_z_vel = 0.0
+	_jolt_cd = 0.0
 	# Armoured kinds keep to the middle plane: their plates are world-sized.
 	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
 	_pluck_cd = 0.0
@@ -429,6 +431,32 @@ func taunt() -> void:
 	if now - _last_tease_ms > 1600:
 		_last_tease_ms = now
 		Sfx.play("tease", randf_range(1.12, 1.3))
+
+
+## The phone was jerked downward: does this one take fright and climb?
+## Heavy and armoured bodies hold on (they only sway); bold ones laugh it
+## off with a taunt; timid ones always flee up; the rest are likelier to
+## the closer they hang to the line. A row follows its leader's choice.
+func wants_climb(rng_value: float) -> bool:
+	if kind in [Kind.HEAVY, Kind.SHIELD, Kind.BOSS, Kind.MIRROR] or panicked() or _jolt_cd > 0.0:
+		return false
+	match temper:
+		Temper.BOLD:
+			return false
+		Temper.TIMID:
+			return true
+	var p := (0.45 if temper == Temper.CALM else 0.55) + danger * 0.6
+	return rng_value < p
+
+
+## Startled up the string: a quick climb (the Snelle winches further), paid
+## back out once things are calm again, as after a dodge.
+func jolt(scale: float) -> void:
+	_jolt_cd = 5.0
+	startle_t = 0.4
+	var up := (95.0 if kind == Kind.REEL else 60.0) * scale * lerpf(1.0, 1.4, danger)
+	_hop_left += up
+	_dodge_cd = maxf(_dodge_cd, 1.2)
 
 
 ## A strike on a soft body: the spokes near the contact are driven inward
@@ -651,6 +679,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	struck_t = maxf(0.0, struck_t - dt)
 	stun_t = maxf(0.0, stun_t - dt)
+	_jolt_cd = maxf(0.0, _jolt_cd - dt)
 	flash_t = maxf(0.0, flash_t - dt)
 	fray_t = maxf(0.0, fray_t - dt)
 	match phase:
