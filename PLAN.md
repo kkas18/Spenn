@@ -1208,3 +1208,50 @@ Topplinjen har INNSTILLINGER, STATISTIKK, KULER og språk.
 - En egen testrigg viser menyen (vanlig og dagens), statistikk, kuler,
   oppdragsmeldingen, jadekula i spill og Game Over med oppdrag.
 - Balanse er uendret: 155 s og 122 s på frø 1 og 2.
+
+# v7.5 – Premium-finish: glød, linseeffekt, levende rom, ikon, oppstartsskjerm, overganger
+
+## Glød
+Glød er additivt lys som legges oppå bildet i stedet for å dekke det.
+- **Treff:** hvert treffblink får en myk lysblomst i målets farge som vokser og falmer
+  over 0,22 s.
+- **Gjennomslagskule:** gløder svakt.
+- **Overbelastning:** alle kuler brenner med en stor glorie i kulefargen, og sporet
+  gløder også.
+
+## Linseeffekt
+Ved de største øyeblikkene skilles rødt og blått et øyeblikk mot kantene. Effekten
+ligger i sjokkbølge-shaderen, så den koster ingenting når den er av.
+
+| Øyeblikk | Styrke |
+|---|---|
+| Overbelastning | 7 px |
+| Boss | 6 px |
+| Brudd | 5 px |
+| Sjeldne ferdighetsskudd | 4 px |
+| Renset bølge | 3 px |
+
+Den slås av med reduserte animasjoner og på svake enheter.
+
+## Levende rom
+- Lampen puster sakte, uten flimring.
+- Seks store, uskarpe støvfnugg driver gjennom rommet og lyser mer der lampekjeglen
+  faller.
+- Under overbelastning brenner lampen gull, og støvet blir gyllent.
+- Vignettens gullkant er dempet (0,22).
+
+## Ikon og oppstartsskjerm
+`tools/make_icons.py` tegner ikonet uten tekst, så det fungerer på begge språk: en
+blå geléring med øye henger fra bjelken og ser på gullkula som stiger mot den.
+- Adaptive Android-lag (forgrunn innenfor sikker sone og bakgrunn, 432 px).
+- 192 px ikon for eldre telefoner og prosjektikon på 512 px.
+- Oppstartsskjerm med merket alene på spillets bakgrunnsfarge.
+
+## Overganger
+- Paneler (pause, innstillinger, statistikk, kuler) bygger seg opp rad for rad, med
+  30 ms mellom hver.
+- Popup-tekster stables nå pålitelig, også helt oppe ved bjelken.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- Ytelse: 205 tegnekall, 8 900 trekanter.

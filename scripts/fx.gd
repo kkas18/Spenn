@@ -64,6 +64,11 @@ var _rng := RandomNumberGenerator.new()
 var shock_rect: ColorRect          # screen-space refraction layer (set by the game)
 var _waves: Array[Dictionary] = []
 var _flashes: Array[Dictionary] = []
+var _chroma := 0.0
+# Light that adds instead of covering: impact blooms and hot halos. A child
+# layer with additive blending, drawn over the rest of the effects.
+var _glow: Node2D
+const TEX_SOFT := preload("res://assets/particles/soft.png")
 var _links: Array[Dictionary] = []
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _puffs: Array[Dictionary] = []
@@ -72,6 +77,13 @@ var _next_puff := 0
 
 func _ready() -> void:
 	_rng.randomize()
+	_glow = Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_glow.material = add
+	_glow.z_index = 1
+	add_child(_glow)
+	_glow.draw.connect(_draw_glow)
 	var tex := TEX_STREAK
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1, 1, 1, 1))
@@ -164,11 +176,19 @@ func shock(at: Vector2, strength: float, max_r: float, dur := 0.45) -> void:
 	_waves.append({"at": at, "t": 0.0, "d": dur, "r": max_r, "s": strength})
 
 
-## A white flash at the point of impact: a disc that collapses in 70 ms.
-func flash(at: Vector2, r: float) -> void:
+## A white flash at the point of impact: a disc that collapses in 70 ms,
+## with a soft bloom of light around it that lingers a little longer.
+func flash(at: Vector2, r: float, col := Color.WHITE) -> void:
 	if _flashes.size() >= 6:
 		_flashes.pop_front()
-	_flashes.append({"at": at, "r": r, "t": 0.0})
+	_flashes.append({"at": at, "r": r, "t": 0.0, "col": col})
+
+
+## Red and blue split apart toward the edges for a moment (big impacts).
+func aberrate(px: float) -> void:
+	if shock_rect == null or Prefs.reduced_motion or Device.tier == Device.Tier.LOW:
+		return
+	_chroma = maxf(_chroma, px)
 
 
 ## A brief dashed tether between two targets working together (0.5 s).
@@ -356,8 +376,11 @@ func _step_waves(rd: float) -> void:
 			list.append(Vector4(w.at.x, w.at.y, lerpf(8.0, w.r, e), w.s * (1.0 - k) * (1.0 - k)))
 		else:
 			list.append(Vector4.ZERO)
-	shock_rect.visible = not _waves.is_empty()
-	(shock_rect.material as ShaderMaterial).set_shader_parameter("waves", list)
+	_chroma = maxf(0.0, _chroma - rd * 22.0)
+	shock_rect.visible = not _waves.is_empty() or _chroma > 0.0
+	var sm := shock_rect.material as ShaderMaterial
+	sm.set_shader_parameter("waves", list)
+	sm.set_shader_parameter("chroma", _chroma)
 
 
 ## A score or label that rises and fades. `accent` (skill shots) pops in
@@ -377,11 +400,22 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 	var y := clampf(at.y, top, l.size.y - l.margin)
 	# Stack above young popups nearby instead of overprinting them; under
 	# them when there is no room above (targets hanging near the rail).
-	for q in _popups:
-		if q != p and q.t >= 0.0 and q.t < 0.5 and absf(q.pos.x - x) < 160.0 and absf(q.pos.y - y) < maxf(size, q.size) + 6.0:
-			y = q.pos.y - (size + 8.0)
+	var going_up := true
+	for pass_i in 6:
+		var hit: Dictionary = {}
+		for q in _popups:
+			if q != p and q.t >= 0.0 and q.t < 0.6 and absf(q.pos.x - x) < 170.0 and absf(q.pos.y - y) < maxf(size, q.size) + 6.0:
+				hit = q
+				break
+		if hit.is_empty():
+			break
+		if going_up:
+			y = hit.pos.y - (size + 8.0)
 			if y < top:
-				y = q.pos.y + (q.size + 8.0)
+				going_up = false
+				y = hit.pos.y + (hit.size + 8.0)
+		else:
+			y = hit.pos.y + (hit.size + 8.0)
 	p.pos = Vector2(x, y)
 
 
@@ -544,7 +578,7 @@ func _process(delta: float) -> void:
 	_step_waves(rd)
 	for f in _flashes.duplicate():
 		f.t += delta
-		if f.t > 0.07:
+		if f.t > 0.22:
 			_flashes.erase(f)
 		else:
 			any = true
@@ -618,8 +652,18 @@ func _process(delta: float) -> void:
 				any = true
 	if any or _drawn_last:
 		queue_redraw()
+		_glow.queue_redraw()
 	_drawn_last = any
 
+
+
+## Additive layer: a bloom where each flash went off, growing and fading
+## over 0.22 s.
+func _draw_glow() -> void:
+	for f in _flashes:
+		var k: float = f.t / 0.22
+		var r: float = f.r * lerpf(1.6, 3.2, 1.0 - pow(1.0 - k, 2.0))
+		_glow.draw_texture_rect(TEX_SOFT, Rect2(f.at - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.35 * (1.0 - k) * (1.0 - k)))
 
 
 func _draw() -> void:
@@ -635,8 +679,9 @@ func _draw() -> void:
 		draw_texture_rect(TEX_SMOKE[d.tex], Rect2(-sz, -sz, sz * 2.0, sz * 2.0), false, Color(d.col, alpha))
 	draw_set_transform(Vector2.ZERO)
 	for f in _flashes:
-		var k: float = f.t / 0.07
-		draw_circle(f.at, f.r * (1.0 - k * 0.6), Color(1, 1, 1, 0.55 * (1.0 - k)), true, -1.0, true)
+		if f.t < 0.07:
+			var k: float = f.t / 0.07
+			draw_circle(f.at, f.r * (1.0 - k * 0.6), Color(1, 1, 1, 0.55 * (1.0 - k)), true, -1.0, true)
 	for k in _links:
 		var a := 1.0 - float(k.t) / 0.5
 		draw_dashed_line(k.a, k.b, Color(k.col, 0.5 * a), 2.0, 7.0, true)

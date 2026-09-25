@@ -18,6 +18,8 @@ uniform float danger_y = 920.0;
 uniform float danger = 0.0;
 uniform float time = 0.0;
 uniform float grain = 0.010;
+uniform float heat = 0.0;      // overload: the lamp burns gold
+uniform vec4 gold : source_color = vec4(0.83, 0.66, 0.31, 1.0);
 
 float hash(vec2 p) {
 	p = fract(p * vec2(443.897, 441.423));
@@ -55,7 +57,10 @@ void fragment() {
 	float cone = (1.0 - smoothstep(0.28, 0.78, ang)) * exp(-dist / (size.y * 0.62)) * below;
 	// Faint shafts drifting through the cone.
 	float shafts = 0.75 + 0.25 * vnoise(vec2(ang * 9.0 + time * 0.05, dist * 0.004 - time * 0.03));
-	col += lamp.rgb * cone * 0.16 * shafts;
+	// The lamp breathes: a slow, barely-there swell, never a flicker.
+	float breath = 0.94 + 0.06 * sin(time * 0.55) * sin(time * 0.23 + 1.3);
+	vec3 lc = mix(lamp.rgb, gold.rgb * 0.9, heat * 0.6);
+	col += lc * cone * (0.16 + 0.08 * heat) * shafts * breath;
 	// Ground below the danger line, with a soft horizon.
 	float g = smoothstep(danger_y - 6.0, danger_y + 90.0, px.y);
 	col = mix(col, ground.rgb, g * 0.85);

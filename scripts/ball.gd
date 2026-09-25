@@ -29,10 +29,23 @@ var _impact_t := 1.0
 var _impact_n := Vector2.UP
 
 const TRAIL := 6
+const TEX_SOFT := preload("res://assets/particles/soft.png")
+
+## Overload: every ball in flight burns with a halo (set by the game).
+static var hot := false
+var _halo: Node2D
 
 
 func _ready() -> void:
 	visible = false
+	# The halo adds light (additive blend) and sits behind the ball.
+	_halo = Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_halo.material = add
+	_halo.show_behind_parent = true
+	add_child(_halo)
+	_halo.draw.connect(_draw_halo)
 
 
 func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
@@ -121,6 +134,7 @@ func _process(delta: float) -> void:
 	if active:
 		_impact_t += delta
 		queue_redraw()
+		_halo.queue_redraw()
 
 
 func _draw() -> void:
@@ -148,6 +162,21 @@ func _draw() -> void:
 	draw_set_transform_matrix(Transform2D(0.0, pos) * deform)
 	draw_ball(self, Vector2.ZERO, RADIUS, special, spin, vel.normalized(), false)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## A pierce ball glows faintly; in overload every ball burns, trail too.
+func _draw_halo() -> void:
+	if not active or not (special or hot):
+		return
+	var c: Color = Meta.skin_colors(Prefs.skin)[2]
+	var a := (0.5 if hot else 0.28) * modulate.a
+	var r := RADIUS * (3.4 if hot else 2.6)
+	if hot:
+		for i in range(1, TRAIL, 2):
+			var k := 1.0 - float(i) / TRAIL
+			var tr := r * 0.6 * k
+			_halo.draw_texture_rect(TEX_SOFT, Rect2(_trail[i] - Vector2(tr, tr), Vector2(tr, tr) * 2.0), false, Color(c, a * 0.5 * k))
+	_halo.draw_texture_rect(TEX_SOFT, Rect2(pos - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(c, a))
 
 
 ## Matte ball (gold, or the chosen skin) lit from the upper left. `rot`

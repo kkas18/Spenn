@@ -524,7 +524,7 @@ func _pace(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
-	_vignette.set_shader_parameter("glow", _heat * (0.3 + 0.06 * sin(_time * 9.0)))
+	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
 		_beat_t -= delta
 		if _beat_t <= 0.0:
@@ -593,6 +593,7 @@ func _clear_wave() -> void:
 	fx.shock(mid, 8.0, 380.0, 0.6)
 	# Final-kill camera: lean in on the last one and let time drag.
 	fx.focus(_last_kill, 0.06, 1.1)
+	fx.aberrate(3.0)
 	fx.slowmo(0.3, 0.5)
 	Music.duck(5.0, 0.6)
 	Sfx.play("clear")
@@ -1177,7 +1178,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
 	fx.hitstop()
-	fx.flash(contact, t.radius * (0.9 if killed else 0.55))
+	fx.flash(contact, t.radius * (0.9 if killed else 0.55), col.lightened(0.4))
 	if killed:
 		fx.shock(t.pos, 9.0 if kind != Target.Kind.BOSS else 18.0, 170.0 if kind != Target.Kind.BOSS else 320.0)
 	fx.sparks(cp, col, 10 if killed else 6)
@@ -1242,6 +1243,7 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		# The rare ones get the camera and a breath of slow motion.
 		fx.slowmo(0.4, 0.3)
 		fx.focus(at, 0.045, 0.8)
+		fx.aberrate(4.0)
 		Music.duck(3.0, 0.3)
 	_charge(SKILL_CHARGE[s])
 
@@ -1270,6 +1272,9 @@ func _begin_overload() -> void:
 	overload_t = OVERLOAD_TIME
 	overloads += 1
 	rail.hot = true
+	Ball.hot = true
+	backdrop.heat = 1.0
+	fx.aberrate(7.0)
 	fx.set_base_time(OVERLOAD_SCALE)
 	while ammo.size() < AMMO_CAP:
 		ammo.append(Ammo.NORMAL)
@@ -1306,6 +1311,8 @@ func _end_overload(quiet: bool) -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	rail.hot = false
+	Ball.hot = false
+	backdrop.heat = 0.0
 	hud.bar.hot = false
 	Music.overload = false
 	fx.set_base_time(1.0)
@@ -1356,6 +1363,7 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	if kind == Target.Kind.BOSS:
 		fx.shake(3.0)
 		fx.focus(t.pos, 0.09, 1.3)
+		fx.aberrate(6.0)
 		fx.slowmo(0.3, 0.6)
 		Music.duck(6.0, 0.7)
 		Sfx.haptic(80, 0.9)
@@ -1455,6 +1463,7 @@ func _breach(t: Target) -> void:
 	fx.ring(at, Pal.CORAL, 40.0)
 	fx.puff(at, Pal.CORAL, 3, 46.0, 0.3)
 	fx.shock(at, 12.0, 240.0, 0.5)
+	fx.aberrate(5.0)
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)

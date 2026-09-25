@@ -2,7 +2,8 @@ class_name Backdrop
 extends Node2D
 ## Static layer behind the play field: the lit, grained backdrop shader, a
 ## distant parallax layer of bare strings (40% scale, 8% opacity, slower than
-## the foreground), the danger line and slow dust. Nothing here shakes.
+## the foreground), the danger line, slow dust and a few large out-of-focus
+## motes drifting through the lamp light. Nothing here shakes.
 
 const FAR_SCALE := 0.4
 const FAR_ALPHA := 0.08
@@ -11,6 +12,10 @@ const FAR_COUNT := 9
 var l: Layout
 var danger := 0.0              # max target danger, 0..1
 var descent := 0.0             # foreground descent speed (px/s)
+var heat := 0.0                # overload (0/1): the room warms to gold
+var _heat := 0.0
+var _bokeh: Array[Dictionary] = []
+const SOFT := preload("res://assets/particles/soft.png")
 
 var _far: Array[Dictionary] = []
 var _far_drop := 0.0
@@ -43,6 +48,9 @@ func _ready() -> void:
 			"rate": _rng.randf_range(0.18, 0.32),
 			"beads": 1 + _rng.randi() % 3,
 		})
+	for i in 6:
+		_bokeh.append({"x": _rng.randf(), "y": _rng.randf(), "r": _rng.randf_range(40.0, 90.0),
+			"vx": _rng.randf_range(-4.0, 4.0), "vy": _rng.randf_range(-6.0, -2.0), "ph": _rng.randf() * TAU})
 	_dust = CPUParticles2D.new()
 	_dust.amount = Device.count(16)
 	Device.tier_changed.connect(func() -> void: _dust.amount = Device.count(16))
@@ -88,6 +96,14 @@ func _process(delta: float) -> void:
 	var mat := _bg.material as ShaderMaterial
 	mat.set_shader_parameter("time", _clock)
 	mat.set_shader_parameter("danger", clampf(danger, 0.0, 1.0))
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	_heat = move_toward(_heat, heat, rd / 0.6)
+	mat.set_shader_parameter("heat", _heat)
+	_dust.color = Color(Pal.INK.lerp(Pal.GOLD_LIGHT, _heat), 0.07 + 0.08 * _heat)
+	if l:
+		for b in _bokeh:
+			b.x = fposmod(b.x + b.vx * delta / l.size.x, 1.0)
+			b.y = fposmod(b.y + b.vy * delta / l.size.y, 1.0)
 	_far_drop = fmod(_far_drop + descent * FAR_SCALE * delta, l.play_h * 0.3) if l else 0.0
 	_layer.queue_redraw()
 
@@ -95,8 +111,21 @@ func _process(delta: float) -> void:
 func _draw_layer() -> void:
 	if l == null:
 		return
+	_draw_bokeh()
 	_draw_far()
 	_draw_danger()
+
+
+## Large soft motes, out of focus, brighter where the lamp's cone falls.
+func _draw_bokeh() -> void:
+	var lamp := Vector2(l.size.x * 0.32, l.rail_y)
+	for b in _bokeh:
+		var p := Vector2(b.x * l.size.x, l.rail_y + b.y * l.play_h)
+		var lit := clampf(1.0 - p.distance_to(lamp) / (l.size.y * 0.7), 0.0, 1.0)
+		var a := (0.012 + 0.03 * lit) * (0.7 + 0.3 * sin(_clock * 0.4 + b.ph))
+		var r: float = b.r
+		var c := Pal.INK.lerp(Pal.GOLD_LIGHT, _heat)
+		_layer.draw_texture_rect(SOFT, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(c, a))
 
 
 ## Bare distant strings with a few beads: depth without silhouettes that

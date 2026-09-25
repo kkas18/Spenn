@@ -238,6 +238,15 @@ func _open_panel(p: Control, box: Control, delay: float) -> void:
 	box.scale = Vector2(0.97, 0.97)
 	Motion.to(p, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, delay)
 	Motion.to(box, "scale", Vector2.ONE, Motion.NORMAL, Motion.Ease.ENTER, delay)
+	# The rows arrive one after another, each fading up from a little
+	# below: the panel reads top to bottom instead of popping in whole.
+	if not Prefs.reduced_motion:
+		var i := 0
+		for c in box.get_children():
+			if c is Control and c.visible:
+				c.modulate.a = 0.0
+				Motion.to(c, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, delay + 0.03 * i)
+				i += 1
 
 
 func _close_panel(p: Control) -> void:
