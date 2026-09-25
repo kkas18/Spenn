@@ -53,6 +53,9 @@ var _next_ring := 0
 var _shards: Array[Dictionary] = []
 var _next_shard := 0
 var _rng := RandomNumberGenerator.new()
+var shock_rect: ColorRect          # screen-space refraction layer (set by the game)
+var _waves: Array[Dictionary] = []
+var _flashes: Array[Dictionary] = []
 var _links: Array[Dictionary] = []
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _puffs: Array[Dictionary] = []
@@ -139,6 +142,23 @@ func ring(at: Vector2, col: Color, size := 30.0) -> void:
 	r.pos = at
 	r.col = col
 	r.r = size
+
+
+## A shock ring that bends the picture as it expands (kills, breaches,
+## the end of a run). Off with reduced motion and on the lowest tier.
+func shock(at: Vector2, strength: float, max_r: float, dur := 0.45) -> void:
+	if shock_rect == null or Prefs.reduced_motion or Device.tier == Device.Tier.LOW:
+		return
+	if _waves.size() >= 4:
+		_waves.pop_front()
+	_waves.append({"at": at, "t": 0.0, "d": dur, "r": max_r, "s": strength})
+
+
+## A white flash at the point of impact: a disc that collapses in 70 ms.
+func flash(at: Vector2, r: float) -> void:
+	if _flashes.size() >= 6:
+		_flashes.pop_front()
+	_flashes.append({"at": at, "r": r, "t": 0.0})
 
 
 ## A brief dashed tether between two targets working together (0.5 s).
@@ -310,6 +330,26 @@ func tokens(from: Vector2, to: Vector2, count: int) -> void:
 		k.ctrl = from.lerp(to, 0.35) + Vector2(side * 140.0, 60.0)
 
 
+func _step_waves(rd: float) -> void:
+	if shock_rect == null:
+		return
+	var list: Array[Vector4] = []
+	for w in _waves.duplicate():
+		w.t += rd
+		if w.t >= w.d:
+			_waves.erase(w)
+	for i in 4:
+		if i < _waves.size():
+			var w: Dictionary = _waves[i]
+			var k: float = w.t / w.d
+			var e := 1.0 - pow(1.0 - k, 3.0)
+			list.append(Vector4(w.at.x, w.at.y, lerpf(8.0, w.r, e), w.s * (1.0 - k) * (1.0 - k)))
+		else:
+			list.append(Vector4.ZERO)
+	shock_rect.visible = not _waves.is_empty()
+	(shock_rect.material as ShaderMaterial).set_shader_parameter("waves", list)
+
+
 func popup(text: String, at: Vector2, col := Pal.INK, size := 20) -> void:
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
@@ -403,6 +443,9 @@ func clear() -> void:
 	_queued.clear()
 	_later.clear()
 	_links.clear()
+	_flashes.clear()
+	_waves.clear()
+	_step_waves(0.0)
 	for d in _puffs:
 		d.t = -1.0
 	for s in _sparks:
@@ -447,6 +490,13 @@ func _process(delta: float) -> void:
 		if k.t >= TOKEN_TIME:
 			k.t = -1.0
 			Sfx.play("token", _rng.randf_range(0.95, 1.2))
+		else:
+			any = true
+	_step_waves(rd)
+	for f in _flashes.duplicate():
+		f.t += delta
+		if f.t > 0.07:
+			_flashes.erase(f)
 		else:
 			any = true
 	for k in _links.duplicate():
@@ -535,6 +585,9 @@ func _draw() -> void:
 		draw_set_transform(d.pos, d.rot)
 		draw_texture_rect(TEX_SMOKE[d.tex], Rect2(-sz, -sz, sz * 2.0, sz * 2.0), false, Color(d.col, alpha))
 	draw_set_transform(Vector2.ZERO)
+	for f in _flashes:
+		var k: float = f.t / 0.07
+		draw_circle(f.at, f.r * (1.0 - k * 0.6), Color(1, 1, 1, 0.55 * (1.0 - k)), true, -1.0, true)
 	for k in _links:
 		var a := 1.0 - float(k.t) / 0.5
 		draw_dashed_line(k.a, k.b, Color(k.col, 0.5 * a), 2.0, 7.0, true)

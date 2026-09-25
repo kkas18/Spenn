@@ -45,7 +45,7 @@ const SOFT_N := 18
 const SOFT_K := 340.0          # radial spring (1/s²)
 const SOFT_C := 7.5            # damping (1/s)
 const SOFT_COUPLE := 900.0     # neighbour coupling: dents spread as ripples
-const SOFT_INERTIA := 0.0022   # how far the jelly sloshes per px/s² of swing
+const SOFT_INERTIA := 0.0011   # how far the jelly sloshes per px/s² of swing
 const POP_TIME := 0.08
 
 # Temperament, rolled per target so no two behave quite alike.
@@ -65,6 +65,7 @@ var _feint := 0.0              # erratic: a false start the other way first
 var _feint_dir := 0.0
 var _wander_t := 3.0           # idle drift along the rail
 var _hue_shift := 0.0          # each one a slightly different shade of its kind
+var _dropping := false        # still paying out its string on the way in
 var _gone := false             # burst jelly: the body is gone, the string recoils
 var pop_t := 0.0               # soft: squashed for a moment before it bursts
 # Teasing: close to the line they turn smug, dance and mock near misses.
@@ -178,6 +179,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_queued_x = NAN
 	pop_t = 0.0
 	_gone = false
+	_dropping = false
 	_hue_shift = randf_range(-0.035, 0.035)
 	covered = false
 	_guard_wait = -1.0
@@ -274,6 +276,17 @@ static func is_soft_kind(k: int) -> bool:
 
 
 const TAUNT_TIME := 0.9
+
+
+## Arrival: the string snaps taut and the body bounces on it; jelly dents
+## from below, a shell rings.
+func _land() -> void:
+	vel.y += 50.0
+	dent(pos + Vector2(0, radius), 320.0)
+	if not soft:
+		_ring_t = 0.0
+		_ring_dir = Vector2.DOWN
+	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
 const GUARD_KINDS := [Kind.HEAVY, Kind.SHIELD]
 
 
@@ -357,7 +370,7 @@ func _soft_step(dt: float) -> void:
 	_last_vel = vel
 	acc = acc.limit_length(9000.0)
 	var mean := 0.0
-	var lim := radius * 0.4
+	var lim := radius * 0.28
 	for i in SOFT_N:
 		var dir := Vector2.from_angle(i * TAU / SOFT_N + body_rot)
 		var lap := _sd[(i + SOFT_N - 1) % SOFT_N] + _sd[(i + 1) % SOFT_N] - 2.0 * _sd[i]
@@ -563,7 +576,11 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				return
 			if length < goal_length:
 				length = minf(goal_length, length + 900.0 * dt)
+				_dropping = true
 			else:
+				if _dropping:
+					_dropping = false
+					_land()
 				length += descent * SPEED_MUL[kind] * _speed_bonus * dt
 				goal_length = length
 			_brain(dt)
@@ -935,6 +952,11 @@ func body_xform(offset := Vector2.ZERO) -> Transform2D:
 	var amt := 0.35 if soft else 0.0
 	sx = 1.0 + (sx - 1.0) * amt
 	sy = 1.0 + (sy - 1.0) * amt
+	# Idle breathing: jelly swells and settles, shells barely move.
+	if phase == Phase.HANGING:
+		var br := sin(_clock * 2.1 + _hue_shift * 90.0) * (0.03 if soft else 0.01)
+		sx *= 1.0 + br
+		sy *= 1.0 - br * 0.6
 	var a := squash_dir.angle() + PI * 0.5
 	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
 	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
@@ -1081,12 +1103,112 @@ func _draw() -> void:
 	var half := Vector2(ROD_HALF + radius, radius) if kind == Kind.ROD else Vector2(radius, radius)
 	Pal.soft_shadow(self, Vector2.ZERO, half)
 	_shape(Pal.SHADOW_OFFSET, Color(Pal.SHADOW, Pal.SHADOW.a * (1.0 - hidden_amt)), 0.0)
+	_skin(col)
 	_shape(Vector2(1.2, 1.2), dark, 0.0)
 	_shape(Vector2(-1.0, -1.0), light, 0.0)
 	_shape(Vector2.ZERO, col, -2.0)
+	_details(col)
+	_gloss()
 	_armor()
 	draw_set_transform_matrix(body_xform())
 	_eye()
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Radius of the open centre of ring-shaped bodies (where the face sits).
+func _hole() -> float:
+	match kind:
+		Kind.RING: return radius - 9.5
+		Kind.HEAVY: return radius - 16.0
+		Kind.SHIELD: return radius - 9.0
+		Kind.REEL: return radius - 7.5
+		Kind.SPLIT: return radius - 9.0
+	return 0.0
+
+
+## The inside of the body: a coloured membrane filling the ring's centre so
+## the face sits on the creature, not on the wall behind it. Jelly is a
+## little translucent and has slow bubbles rising through it.
+func _skin(col: Color) -> void:
+	var h := _hole()
+	if h <= 0.0:
+		return
+	draw_set_transform_matrix(body_xform())
+	var fill := col.darkened(0.62)
+	fill.a = col.a * (0.82 if soft else 0.95)
+	if kind == Kind.SPLIT:
+		var hex := PackedVector2Array()
+		for i in 6:
+			hex.append(_sp(Vector2.from_angle(i * TAU / 6.0 + PI / 6.0) * (h + 2.0)))
+		draw_colored_polygon(hex, fill)
+	else:
+		var pts := PackedVector2Array()
+		for i in 24:
+			var a := i * TAU / 24.0
+			pts.append(Vector2.from_angle(a) * (h + 1.5 + (_soft_at(a) if soft else 0.0)))
+		draw_colored_polygon(pts, fill)
+	# Soft inner shading: darker toward the lower right.
+	Pal.disc(self, Vector2(h * 0.25, h * 0.3), h * 0.7, Color(0, 0, 0, 0.18 * col.a))
+	if soft:
+		for i in 3:
+			var ph := _clock * (7.0 + i * 2.5) + i * 17.0 + _hue_shift * 300.0
+			var y := h * 0.7 - fposmod(ph, h * 1.4)
+			var x := sin(_clock * 0.9 + i * 2.1) * h * 0.45
+			var fade := 1.0 - absf(y) / (h * 0.75)
+			if fade > 0.0:
+				Pal.disc(self, Vector2(x, y), 1.4 + i * 0.5, Color(col.lightened(0.35), 0.28 * fade * col.a))
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Material details on the shell: rivets on the heavy's rings, bolts on the
+## sentry, a hub on the reel.
+func _details(col: Color) -> void:
+	if soft:
+		return
+	draw_set_transform_matrix(body_xform())
+	var rv := Color(col.lightened(0.45), col.a)
+	var sh := Color(0, 0, 0, 0.4 * col.a)
+	match kind:
+		Kind.HEAVY:
+			if hp > 1:
+				for i in 8:
+					var p := Vector2.from_angle(i * TAU / 8.0 + 0.2) * (radius - 3.0)
+					Pal.disc(self, p + Vector2(0.7, 0.7), 1.5, sh)
+					Pal.disc(self, p, 1.3, rv)
+		Kind.SHIELD:
+			for i in 4:
+				var p := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0) * (radius - 5.0)
+				Pal.disc(self, p + Vector2(0.7, 0.7), 2.0, sh)
+				Pal.disc(self, p, 1.8, rv)
+		Kind.REEL:
+			Pal.ring(self, Vector2.ZERO, 10.5, Color(col.darkened(0.3), col.a), 2.0)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Specular: a short highlight on the upper left of the surface (the one
+## light), glossier on jelly than on painted shells. Stays put in world
+## space while the body turns.
+func _gloss() -> void:
+	var k := (0.42 if soft else 0.26) * (1.0 - hidden_amt) * modulate.a
+	if k <= 0.0:
+		return
+	var c := Color(1, 1, 1, k)
+	draw_set_transform(pos + (Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * sin(PI * _taunt / TAUNT_TIME)) if _taunt >= 0.0 else Vector2.ZERO))
+	match kind:
+		Kind.RING, Kind.SHIELD, Kind.REEL:
+			var r := radius - (5.0 if kind != Kind.REEL else 4.0)
+			draw_arc(Vector2.ZERO, r + (_soft_at(-2.2 - body_rot) if soft else 0.0), -2.65, -1.75, 10, c, 2.4, true)
+		Kind.HEAVY:
+			draw_arc(Vector2.ZERO, radius - 3.0, -2.6, -1.8, 10, c, 1.8, true)
+			draw_arc(Vector2.ZERO, radius - 13.0, -2.6, -1.9, 8, c, 1.8, true)
+		Kind.SPLIT:
+			draw_arc(Vector2.ZERO, radius - 5.0, -2.5, -1.9, 6, c, 2.2, true)
+		Kind.ROD:
+			draw_set_transform(pos, body_rot)
+			draw_line(Vector2(-ROD_HALF, -radius * 0.55), Vector2(ROD_HALF * 0.6, -radius * 0.55), c, 2.4, true)
+		_:
+			draw_set_transform(pos + Vector2(-radius * 0.38, -radius * 0.42), -0.6, Vector2(1.6, 1.0))
+			draw_circle(Vector2.ZERO, radius * 0.16, c, true, -1.0, true)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -1197,6 +1319,56 @@ func _soft_ring(r: float, col: Color, w: float) -> void:
 	draw_polyline(pts, col, w, true)
 
 
+## The mouth carries the mood: a small smile at rest, a worried line when
+## you aim at it, an "o" when startled, a smirk when smug, a tongue when it
+## taunts, a frown in rage and a grimace when struck. Drawn in eye space.
+func _mouth(er: float) -> void:
+	var y := er * 1.25
+	var w := er * 0.85
+	var ink := Color(Pal.EYE, 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
+	var dark := Color(Pal.PUPIL, 0.95 * modulate.a)
+	var pts := PackedVector2Array()
+	if _closed_t > 0.0 or phase == Phase.FALLING:
+		# Grimace: a tight zigzag.
+		for i in 7:
+			pts.append(Vector2(lerpf(-w * 0.6, w * 0.6, i / 6.0), y + (1.2 if i % 2 == 0 else -1.2)))
+		draw_polyline(pts, ink, 1.6, true)
+	elif startle_t > 0.0:
+		Pal.disc(self, Vector2(0, y + 1.0), er * 0.26, dark)
+		draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
+	elif _taunt >= 0.0:
+		# Open grin with the tongue out.
+		var grin := PackedVector2Array()
+		for i in 9:
+			var a := PI * i / 8.0
+			grin.append(Vector2(cos(a) * w * 0.55, y - 1.0 + sin(a) * w * 0.45))
+		draw_colored_polygon(grin, dark)
+		Pal.disc(self, Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
+		draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 1.5, true)
+	elif enraged:
+		for i in 7:
+			var t := lerpf(-1.0, 1.0, i / 6.0)
+			pts.append(Vector2(t * w * 0.5, y + 2.0 - (1.0 - t * t) * 3.0))
+		draw_polyline(pts, ink, 1.8, true)
+	elif squint or aimed or tele_t > 0.0:
+		# Worried: a flat, wobbling line with the corners pulled down.
+		for i in 7:
+			var t := lerpf(-1.0, 1.0, i / 6.0)
+			pts.append(Vector2(t * w * 0.45, y + sin(t * 5.0 + _clock * 14.0) * 0.6 + absf(t) * absf(t) * 1.8))
+		draw_polyline(pts, ink, 1.5, true)
+	elif smug > 0.35:
+		# Smirk: flat on one side, curled up on the other.
+		for i in 7:
+			var t := i / 6.0
+			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * smug))
+		draw_polyline(pts, ink, 1.7, true)
+	else:
+		for i in 7:
+			var t := lerpf(-1.0, 1.0, i / 6.0)
+			pts.append(Vector2(t * w * 0.4, y + (1.0 - t * t) * 2.0))
+		draw_polyline(pts, ink, 1.5, true)
+
+
 ## Crescent: outer half-circle and an inner half-ellipse sharing the tips,
 ## thick on the left, tapering to points top and bottom. Never self-crosses.
 func _crescent(r: float) -> PackedVector2Array:
@@ -1213,13 +1385,19 @@ func _crescent(r: float) -> PackedVector2Array:
 func _eye() -> void:
 	# The Skygge's eye sits in the thick part of the crescent.
 	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
-	var bx := body_xform() * Transform2D(0.0, eo)
-	draw_set_transform_matrix(bx)
 	var er := 9.5
 	if kind == Kind.DROP:
 		er = 7.0
 	elif kind == Kind.BOSS:
 		er = 15.0
+	var mouthed := kind != Kind.ROD
+	if mouthed:
+		# Eye sits a little high so there is room for a mouth below.
+		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
+	var bx := body_xform() * Transform2D(0.0, eo)
+	draw_set_transform_matrix(bx)
+	if mouthed:
+		_mouth(er)
 	var wide := maxf(1.0, _open)
 	var pr := er * 0.48 / wide
 	er *= lerpf(1.0, wide, 0.5)

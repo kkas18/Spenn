@@ -19,7 +19,8 @@ var _dust: CPUParticles2D
 var _bg: ColorRect
 var _layer: Node2D
 var _rng := RandomNumberGenerator.new()
-var _dashes := PackedVector2Array()
+var _wire := PackedVector2Array()
+const MIST := preload("res://assets/particles/smoke_b.png")
 
 
 func _ready() -> void:
@@ -71,6 +72,10 @@ func setup(layout: Layout) -> void:
 	l = layout
 	_bg.position = Vector2.ZERO
 	_bg.size = l.size
+	var mat := _bg.material as ShaderMaterial
+	mat.set_shader_parameter("size", l.size)
+	mat.set_shader_parameter("rail_y", l.rail_y)
+	mat.set_shader_parameter("danger_y", l.danger_y)
 	for i in FAR_COUNT:
 		_far[i].x = (i + 0.5) / FAR_COUNT * l.size.x + _rng.randf_range(-20.0, 20.0)
 	_dust.position = Vector2(l.center_x, l.size.y * 0.55)
@@ -79,6 +84,9 @@ func setup(layout: Layout) -> void:
 
 func _process(delta: float) -> void:
 	_clock += delta
+	var mat := _bg.material as ShaderMaterial
+	mat.set_shader_parameter("time", _clock)
+	mat.set_shader_parameter("danger", clampf(danger, 0.0, 1.0))
 	_far_drop = fmod(_far_drop + descent * FAR_SCALE * delta, l.play_h * 0.3) if l else 0.0
 	_layer.queue_redraw()
 
@@ -104,24 +112,44 @@ func _draw_far() -> void:
 			_layer.draw_circle(top.lerp(bottom, t), 2.2, col, true, -1.0, true)
 
 
-## Nearly invisible at rest; coral and more tightly stippled as a target nears.
+## The danger line is a real wire, strung taut from wall to wall between
+## two bolted plates. At rest it is a quiet steel thread; as a target nears
+## it tightens, hums (a standing wave) and warms to coral. A slow mist of
+## smoke drifts along it, giving the space between field and ground depth.
 func _draw_danger() -> void:
 	var k := clampf(danger, 0.0, 1.0)
-	var pulse := 0.85 + 0.15 * sin(_clock * TAU * 0.8)
-	var col := Pal.INK_FAINT.lerp(Pal.CORAL, k)
-	col.a = lerpf(0.10, 0.75 * pulse, k)
-	if k > 0.2:
-		# A faint coral haze rising from the line: local, never over the field.
-		for i in 6:
-			var h := 14.0
-			var a := (k - 0.2) * 0.1 * (1.0 - i / 6.0) * pulse
-			_layer.draw_rect(Rect2(0, l.danger_y - (i + 1) * h, l.size.x, h), Color(Pal.CORAL, a))
-	var gap := lerpf(18.0, 7.0, k)
-	var dash := 3.0
-	var x := fmod(_clock * 6.0, gap)
-	_dashes.clear()
-	while x < l.size.x:
-		_dashes.append(Vector2(x, l.danger_y))
-		_dashes.append(Vector2(x + dash, l.danger_y))
-		x += gap
-	_layer.draw_multiline(_dashes, col, 2.0)
+	var y := l.danger_y
+	var w := l.size.x
+	# Mist along the line (Kenney smoke, CC0), drifting slowly sideways.
+	for i in 4:
+		var x := fposmod(_clock * (9.0 + i * 3.0) + i * w * 0.31, w + 260.0) - 130.0
+		var s := 150.0 + i * 30.0
+		_layer.draw_texture_rect(MIST, Rect2(x - s, y - s * 0.32, s * 2.0, s * 0.64), false, Color(Pal.INK, 0.035 + 0.02 * k))
+	# The wire: a standing wave whose size and pitch grow with the danger.
+	_wire.clear()
+	var amp := k * k * 3.2
+	var hz := lerpf(9.0, 26.0, k)
+	for i in 41:
+		var x := w * i / 40.0
+		var env := sin(PI * i / 40.0)
+		_wire.append(Vector2(x, y + sin(_clock * hz + i * 0.9) * amp * env))
+	var col := Pal.METAL.lerp(Pal.CORAL, k)
+	if k > 0.05:
+		# Warm halo around the wire when it is under strain.
+		_layer.draw_polyline(_wire, Color(Pal.CORAL, 0.12 * k), 9.0, true)
+	_layer.draw_set_transform(Vector2(0, 2))
+	_layer.draw_polyline(_wire, Color(Pal.SHADOW, 0.6), 2.0, true)
+	_layer.draw_set_transform(Vector2.ZERO)
+	_layer.draw_polyline(_wire, Color(col, lerpf(0.45, 0.95, k)), 1.6 + k * 0.8, true)
+	_layer.draw_set_transform(Vector2(0, -0.7))
+	_layer.draw_polyline(_wire, Color(Pal.INK, 0.12 + 0.2 * k), 0.6, true)
+	_layer.draw_set_transform(Vector2.ZERO)
+	# Wall plates the wire is bolted to.
+	for side in [0.0, 1.0]:
+		var px: float = side * w
+		var r := Rect2(px - 7.0, y - 11.0, 14.0, 22.0)
+		_layer.draw_rect(Rect2(r.position + Vector2(2, 2), r.size), Pal.SHADOW)
+		_layer.draw_rect(r, Pal.METAL_DARK)
+		_layer.draw_rect(Rect2(r.position, Vector2(14.0, 2.0)), Color(Pal.METAL_LIGHT, 0.5))
+		Pal.disc(_layer, Vector2(px + (4.0 if side == 0.0 else -4.0), y - 6.0), 1.6, Pal.METAL_LIGHT)
+		Pal.disc(_layer, Vector2(px + (4.0 if side == 0.0 else -4.0), y + 6.0), 1.6, Pal.METAL_LIGHT)

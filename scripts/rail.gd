@@ -39,27 +39,33 @@ func offset_at(x: float) -> float:
 func _draw() -> void:
 	if l == null:
 		return
-	var y := l.rail_y - 3.0
-	var flexing := _flex_amp > 0.0 and _flex_t < 1.2
-	if not flexing:
-		draw_rect(Rect2(Pal.SHADOW_OFFSET + Vector2(0, y), Vector2(l.size.x, 6.0)), Pal.SHADOW)
-		draw_rect(Rect2(0, y, l.size.x, 3.0), Pal.METAL_LIGHT)
-		draw_rect(Rect2(0, y + 3.0, l.size.x, 3.0), Pal.METAL)
-		draw_line(Vector2(0, y + 6.0), Vector2(l.size.x, y + 6.0), Pal.METAL_DARK, 1.0)
-	else:
-		_line.clear()
-		for i in 33:
-			var x := l.size.x * i / 32.0
-			_line.append(Vector2(x, y + offset_at(x)))
-		draw_set_transform(Pal.SHADOW_OFFSET + Vector2(0, 3))
-		draw_polyline(_line, Pal.SHADOW, 6.0)
-		draw_set_transform(Vector2(0, 1.5))
-		draw_polyline(_line, Pal.METAL_LIGHT, 3.0)
-		draw_set_transform(Vector2(0, 4.5))
-		draw_polyline(_line, Pal.METAL, 3.0)
-		draw_set_transform(Vector2(0, 6.5))
-		draw_polyline(_line, Pal.METAL_DARK, 1.0)
-		draw_set_transform(Vector2.ZERO)
+	# A steel beam: soft cast shadow below, dark lower lip, body, lit top
+	# edge (light from the upper left) and a row of rivets. It follows the
+	# flex when a breach yanks it.
+	var y := l.rail_y - 6.0
+	_line.clear()
+	for i in 33:
+		var x := l.size.x * i / 32.0
+		_line.append(Vector2(x, y + offset_at(x)))
+	for k in 4:
+		draw_set_transform(Vector2(0, 12.0 + k * 4.0))
+		draw_polyline(_line, Color(0, 0, 0, 0.16 - k * 0.035), 5.0)
+	draw_set_transform(Vector2(0, 5.0))
+	draw_polyline(_line, Pal.METAL_DARK, 11.0)
+	draw_set_transform(Vector2(0, 4.0))
+	draw_polyline(_line, Pal.METAL, 8.0)
+	draw_set_transform(Vector2(0, 0.8))
+	draw_polyline(_line, Pal.METAL_LIGHT, 1.6)
+	draw_set_transform(Vector2(0, 9.2))
+	draw_polyline(_line, Color(0, 0, 0, 0.35), 1.2)
+	draw_set_transform(Vector2.ZERO)
+	var x := 32.0
+	while x < l.size.x:
+		var p := Vector2(x, y + 4.5 + offset_at(x))
+		Pal.disc(self, p + Vector2(0.8, 0.8), 2.0, Color(0, 0, 0, 0.45))
+		Pal.disc(self, p, 1.8, Pal.METAL_LIGHT)
+		Pal.disc(self, p - Vector2(0.5, 0.5), 0.8, Color(Pal.INK, 0.5))
+		x += 64.0
 	for t in targets:
 		if t.phase == Target.Phase.OFF or t.rope_alpha <= 0.0 or t.delay > 0.0:
 			continue

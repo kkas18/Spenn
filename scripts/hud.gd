@@ -643,6 +643,18 @@ class Overlay extends Control:
 			elif card_t > Motion.NORMAL + 1.0:
 				k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (card_t - Motion.NORMAL - 1.0) / Motion.SLOW)
 			var cy := l.rail_y + l.play_h * 0.46 + (1.0 - k) * 12.0
+			# A soft dark band behind the card so it reads over the field,
+			# framed by two fine hairlines that draw outward from the centre.
+			var mid := cy - 12.0
+			for i in 12:
+				var f := float(i) / 11.0
+				var a := 0.62 * k * (1.0 - f * f)
+				var hh := 8.0
+				draw_rect(Rect2(0, mid - (i + 1) * hh, w, hh), Color(Tok.BACKGROUND, a * 0.5))
+				draw_rect(Rect2(0, mid + i * hh, w, hh), Color(Tok.BACKGROUND, a * 0.5))
+			var span := w * 0.32 * Motion.ease_value(Motion.Ease.ENTER, minf(1.0, card_t / Motion.SLOW))
+			for yy in [mid - 66.0, mid + 62.0]:
+				draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.55 * k), 1.0, true)
 			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(Tok.TEXT_PRIMARY, k))
 			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, k))

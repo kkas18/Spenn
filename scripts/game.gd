@@ -100,6 +100,19 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
+	# Shock rings refract the world (not the HUD); hidden while none are live.
+	var shock_layer := CanvasLayer.new()
+	shock_layer.layer = 4
+	add_child(shock_layer)
+	var shock := ColorRect.new()
+	shock.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var smat := ShaderMaterial.new()
+	smat.shader = preload("res://shaders/shockwave.gdshader")
+	shock.material = smat
+	shock.visible = false
+	shock_layer.add_child(shock)
+	fx.shock_rect = shock
 	var vignette_layer := CanvasLayer.new()
 	vignette_layer.layer = 5
 	add_child(vignette_layer)
@@ -127,6 +140,7 @@ func _apply_layout() -> void:
 	rail.setup(layout, targets)
 	backdrop.setup(layout)
 	fx.l = layout
+	(fx.shock_rect.material as ShaderMaterial).set_shader_parameter("size", layout.size)
 	slingshot.setup(layout)
 	hud.setup(layout)
 
@@ -834,6 +848,9 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
 	fx.hitstop()
+	fx.flash(contact, t.radius * (0.9 if killed else 0.55))
+	if killed:
+		fx.shock(t.pos, 9.0 if kind != Target.Kind.BOSS else 18.0, 170.0 if kind != Target.Kind.BOSS else 320.0)
 	fx.sparks(cp, col, 10 if killed else 6)
 	fx.ring(contact, col.lightened(0.15), t.radius)
 	var label := "+%d" % gained
@@ -969,6 +986,7 @@ func _breach(t: Target) -> void:
 	fx.sparks(at, Pal.CORAL, 10)
 	fx.ring(at, Pal.CORAL, 40.0)
 	fx.puff(at, Pal.CORAL, 3, 46.0, 0.3)
+	fx.shock(at, 12.0, 240.0, 0.5)
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
@@ -999,6 +1017,7 @@ func _begin_death(at: Vector2) -> void:
 	fx.ring(at, Pal.CORAL, 70.0)
 	fx.sparks(at, Pal.CORAL, 10)
 	fx.puff(at, Pal.CORAL, 6, 90.0, 0.36)
+	fx.shock(at, 20.0, 460.0, 0.8)
 	fx.shake(3.0)
 	fx.punch(0.03)
 	Sfx.play("death")

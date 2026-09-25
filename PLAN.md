@@ -789,3 +789,82 @@ Menneskelignende bot, snitt av 4 runder:
 | v5.5 | 126 s |
 
 Litt lavere, fordi livvaktene tar skudd.
+
+---
+
+# v5.6 – Visuell overhaling
+
+**Tilbakemelding (med skjermbilder):** forbedre det visuelle – effekter, animasjoner og
+fiender.
+
+**Utgangspunkt i skjermbildene:**
+- Fiendene var flate ringer uten volum eller uttrykk.
+- Rommet var svart og tomt.
+- Farelinjen syntes nesten ikke, og skinnen var en tynn strek.
+- Treff manglet slagkraft.
+- Eventkortet druknet i fiendene.
+
+## Miljø
+- **Rommet (`backdrop.gdshader`):**
+  - En lampe over bjelken til venstre kaster en myk kjegle ned gjennom feltet, med
+    svake, sakte lyssøyler.
+  - Veggen har stor og liten materialmarmorering.
+  - Under farelinjen tar gulvet over, med en mykere horisont og et lysbasseng rundt
+    spretterten.
+  - Når en fiende nærmer seg, stiger en korallvarme fra linjen (i shaderen, ikke
+    rektangler).
+  - Kornet og ditheringen er beholdt, så det ikke blir bånding.
+- **Farelinjen:** en ekte vaier boltet til veggplater på begge sider. I ro er den en
+  stille ståltråd. Når fare stiger, strammes den, summer (stående bølge, både utslag og
+  frekvens øker), varmes til korall og får en varm glorie. En sakte røyktåke driver
+  langs den.
+- **Skinnen:** en stålbjelke med myk slagskygge, mørk underkant, lys toppkant og
+  nagler hver 64. px. Den følger fortsatt bøyningen ved brudd.
+
+## Fiendene
+- **Hud:** ringformede kropper har en farget membran i midten, så ansiktet sitter på
+  skapningen og ikke på veggen bak. Geleen er litt gjennomskinnelig med bobler som
+  stiger sakte, og innsiden skygges mot nedre høyre.
+- **Materialdetaljer:** nagler på Tungvektens ring (borte når den er knust), bolter på
+  Vokteren og et nav på Snellen.
+- **Glans:** et høylys øverst til venstre som står stille i verden mens kroppen svinger.
+  Geleen er blankere enn de malte skallene.
+- **Ansikt med munn:** øyet flyttes litt opp for å gi plass. Uttrykket følger
+  tilstanden:
+
+  | Tilstand | Munn |
+  |---|---|
+  | Hvile | Lite smil |
+  | Siktet på eller fare | Bekymret, dirrende strek |
+  | Skvett | «o» |
+  | Selvgod | Flir |
+  | Erting | Glis med tunge ute |
+  | Raseri | Surmule |
+  | Truffet | Grimase |
+
+- **Pust:** geleen sveller og legger seg (±3 %), skallene knapt (±1 %).
+- **Landing:** tauet strammes idet fienden kommer ned. Geleen bulker nedenfra, skallet
+  dirrer, og det kommer et lavt dunk.
+
+## Effekter
+- **Lysglimt:** en hvit skive som kollapser på 70 ms der ballen treffer.
+- **Trykkbølge (`shockwave.gdshader`):** en ring i skjermrommet som bøyer bildet utover
+  i et tynt, voksende bånd, som brytning og ikke glød. Opptil 4 samtidig. Laget er
+  skjult når ingen bølger lever, så det koster ingenting ellers. Styrke og rekkevidde:
+
+  | Hendelse | Styrke | Radius |
+  |---|---|---|
+  | Drap | 9 | 170 px |
+  | Boss | 18 | 320 px |
+  | Brudd | 12 | 240 px |
+  | Død | 20 | 460 px |
+
+  Av med reduserte animasjoner og på laveste nivå.
+
+## UI
+- **Eventkort:** et mykt mørkt bånd bak teksten, rammet inn av to tynne gullstreker som
+  tegnes utover fra midten.
+
+## Balansering
+Landingsdyttet ga i første versjon merkbart tøffere sikting (snitt 106 s). Det er dempet,
+og snittet er nå 133 s, på nivå med før.
