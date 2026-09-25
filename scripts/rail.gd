@@ -55,6 +55,9 @@ func _draw() -> void:
 	# while a breach flexes it does it follow the dip as polylines.
 	var y := l.rail_y - 6.0
 	var w := l.size.x
+	# Drawn past both edges so tilt parallax never shows the beam's ends.
+	var x0 := -32.0
+	var ww := w + 64.0
 	if _flex_amp > 0.0 and _flex_t < 1.2:
 		_line.clear()
 		for i in 33:
@@ -74,11 +77,11 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO)
 	else:
 		for k in 4:
-			draw_rect(Rect2(0, y + 9.5 + k * 4.0, w, 5.0), Color(0, 0, 0, 0.16 - k * 0.035))
-		draw_rect(Rect2(0, y - 0.5, w, 11.0), Pal.METAL_DARK)
-		draw_rect(Rect2(0, y, w, 8.0), Pal.METAL)
-		draw_rect(Rect2(0, y, w, 1.6), Pal.METAL_LIGHT)
-		draw_rect(Rect2(0, y + 8.6, w, 1.2), Color(0, 0, 0, 0.35))
+			draw_rect(Rect2(x0, y + 9.5 + k * 4.0, ww, 5.0), Color(0, 0, 0, 0.16 - k * 0.035))
+		draw_rect(Rect2(x0, y - 0.5, ww, 11.0), Pal.METAL_DARK)
+		draw_rect(Rect2(x0, y, ww, 8.0), Pal.METAL)
+		draw_rect(Rect2(x0, y, ww, 1.6), Pal.METAL_LIGHT)
+		draw_rect(Rect2(x0, y + 8.6, ww, 1.2), Color(0, 0, 0, 0.35))
 	_draw_inlay(y + 3.4)
 	# Hooks in two passes (plates and stems, then eyelets) so each pass is a
 	# single batch however many strings hang from the beam.

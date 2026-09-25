@@ -1255,3 +1255,34 @@ blå geléring med øye henger fra bjelken og ser på gullkula som stiger mot de
 ## QA
 - Oppstart er ren, og hele spillforløpet er kjørt.
 - Ytelse: 205 tegnekall, 8 900 trekanter.
+
+# v7.6 – 2.5D: vippeparallakse, skygger på veggen, dybde
+
+Spillet er fortsatt helt i 2D. Dybden er rent visuell, og treffsoner, fysikk og
+balanse er uendret.
+
+## Vippeparallakse
+- Akselerometeret leses hver frame. Referansen følger telefonens hvilevinkel over
+  ca. 3 s, så bare en ny vipping flytter bildet.
+- Verden (fiender, bjelke, sprettert) forskyves opptil 9 px. Veggen bak (fjerne
+  strenger, støv, skygger) forskyves 40 % av det.
+- Mens du sikter står bildet stille.
+- Parallaksen er av med reduserte animasjoner og uten sensor.
+- Bjelken tegnes nå forbi begge kanter, så endene aldri synes.
+
+## Skygger på veggen
+- Hver fiende kaster en myk skygge på veggen, bort fra lampen, med en svak strengskygge
+  fra kroken.
+- Jo lenger fra veggen fienden henger, desto lenger unna, mykere og svakere blir
+  skyggen.
+- Pendelen gir en avlang skygge, og Skyggen (Shade) falmer også i skygge.
+
+## Dybde
+- Hver fiende får en tilfeldig dybde fra −0,85 (bak) til 0,85 (foran). Vokteren og
+  Spinneren står i midten fordi platene deres har verdensstørrelse.
+- Fiender foran tegnes opptil 10 % større og litt lysere. Fiender bak tegnes mindre og
+  mørkere.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- Før/etter-bilder viser skyggene og dybdeforskjellen.

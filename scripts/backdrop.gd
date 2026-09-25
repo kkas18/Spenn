@@ -13,6 +13,8 @@ var l: Layout
 var danger := 0.0              # max target danger, 0..1
 var descent := 0.0             # foreground descent speed (px/s)
 var heat := 0.0                # overload (0/1): the room warms to gold
+var targets: Array[Target] = []  # their shadows fall on the wall
+var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
 var _heat := 0.0
 var _bokeh: Array[Dictionary] = []
 const SOFT := preload("res://assets/particles/soft.png")
@@ -111,9 +113,37 @@ func _process(delta: float) -> void:
 func _draw_layer() -> void:
 	if l == null:
 		return
+	_layer.position = view * 0.4
+	_draw_wall_shadows()
 	_draw_bokeh()
 	_draw_far()
 	_draw_danger()
+
+
+## Every hanging target throws a soft shadow onto the wall behind it, away
+## from the lamp. The further from the wall (the higher its depth), the
+## further the shadow falls and the softer and fainter it is; the string's
+## shadow runs from the hook (on the wall) to the body's.
+func _draw_wall_shadows() -> void:
+	var lamp := Vector2(l.size.x * 0.32, l.rail_y - 60.0)
+	var sc := Color(0.0, 0.0, 0.0)
+	for t in targets:
+		var a := t.shadow_alpha()
+		if a <= 0.0:
+			continue
+		var far := (t.depth + 1.0) * 0.5
+		var dir := (t.pos - lamp).normalized()
+		var p := t.pos + dir * lerpf(14.0, 34.0, far) + Vector2(0, lerpf(6.0, 14.0, far))
+		var r := t.radius * t.depth_scale() * lerpf(1.45, 2.0, far)
+		var al := a * lerpf(0.6, 0.38, far)
+		if t.phase == Target.Phase.HANGING and t.rope_alpha > 0.0:
+			_layer.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.14 * a), 2.0, true)
+		var stretch := 1.0
+		if t.kind == Target.Kind.ROD:
+			stretch = (Target.ROD_HALF + t.radius) / t.radius
+		_layer.draw_set_transform(p, t.body_rot, Vector2(stretch, 1.0))
+		_layer.draw_texture_rect(SOFT, Rect2(-r, -r, r * 2.0, r * 2.0), false, Color(sc, al))
+	_layer.draw_set_transform(Vector2.ZERO)
 
 
 ## Large soft motes, out of focus, brighter where the lamp's cone falls.

@@ -125,6 +125,11 @@ var wants_heal := false        # Legen asks the game for someone to mend
 var _heal_t := 3.0
 var boss_stage := 0            # Spinneren: 0, 1, 2
 var field_w := 720.0           # play field width (set by the game)
+# Depth in the room, -1 (back, near the wall) .. 1 (front). Purely visual:
+# front ones draw a touch larger and brighter, back ones smaller and dimmer,
+# and their shadows on the wall sit closer and sharper. The hit area never
+# changes.
+var depth := 0.0
 var stage_changed := false     # for the game to announce
 
 # Brain: every behaviour is telegraphed before it acts, so it can be read.
@@ -266,6 +271,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_heal_t = randf_range(2.0, 3.0)
 	boss_stage = 0
 	stage_changed = false
+	# Armoured kinds keep to the middle plane: their plates are world-sized.
+	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
 	_pluck_cd = 0.0
 	aimed = false
 	enraged = false
@@ -1065,7 +1072,19 @@ func body_xform() -> Transform2D:
 		wig = sin(_taunt * TAU * 3.2) * 0.28 * env
 		bob = Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * env)
 	var body := Transform2D(body_rot + wig, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
-	return Transform2D(0.0, pos + _jit + bob) * squash * body
+	var ds := depth_scale()
+	return Transform2D(0.0, pos + _jit + bob) * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
+
+
+func depth_scale() -> float:
+	return 1.0 + 0.1 * depth
+
+
+## Solid enough to cast a shadow on the wall (and how much).
+func shadow_alpha() -> float:
+	if phase == Phase.OFF or delay > 0.0 or _gone:
+		return 0.0
+	return modulate.a * (1.0 - 0.85 * hidden_amt)
 
 
 ## This frame's tremble: the lunge telegraph, a struck shell ringing and a
@@ -1142,6 +1161,9 @@ func color() -> Color:
 	if scared:
 		# Blanched with fright.
 		base = base.lerp(Pal.INK, 0.3)
+	# Depth: back ones recede into the room's darkness, front ones catch
+	# a little more of the lamp.
+	base = base.darkened(0.28 * maxf(0.0, -depth)).lightened(0.06 * maxf(0.0, depth))
 	if flash_t > 0.0:
 		# One-frame-ish matte flash on impact (lighter, never glowing).
 		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)

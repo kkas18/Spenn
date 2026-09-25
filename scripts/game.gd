@@ -105,6 +105,12 @@ var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
 var _mission_slots: Array = []  # slots already paid this run
 var _mission_t := 0.0
+# Tilt parallax: the phone's lean (relative to how it is usually held)
+# shifts the world a few px against the wall behind it.
+const TILT_PX := 9.0
+var _tilt := Vector2.ZERO
+var _tilt_ref := Vector2.ZERO
+var _tilt_seen := false
 
 
 func _ready() -> void:
@@ -173,6 +179,7 @@ func _ready() -> void:
 func _apply_layout() -> void:
 	rail.setup(layout, targets)
 	backdrop.setup(layout)
+	backdrop.targets = targets
 	fx.l = layout
 	(fx.shock_rect.material as ShaderMaterial).set_shader_parameter("size", layout.size)
 	slingshot.setup(layout)
@@ -453,6 +460,7 @@ func _process(delta: float) -> void:
 		_acc -= SUBSTEP
 		_step(SUBSTEP)
 	_state_t += delta
+	_update_tilt(delta)
 	_update_ammo(delta)
 	_update_eyes()
 	# Menu: new players (and anyone idle for a while) see how to shoot.
@@ -465,6 +473,28 @@ func _process(delta: float) -> void:
 		_medic_work()
 		_boss_stages()
 		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
+
+
+## Reads the accelerometer. The reference follows the phone's resting
+## angle over a few seconds, so only a fresh lean moves the view; while
+## aiming the view holds still. Off with reduced motion or no sensor.
+func _update_tilt(delta: float) -> void:
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var acc := Input.get_accelerometer()
+	var want := Vector2.ZERO
+	if acc.length() > 2.0 and not Prefs.reduced_motion:
+		var g := Vector2(acc.x, acc.y) / 9.81
+		if not _tilt_seen:
+			_tilt_seen = true
+			_tilt_ref = g
+		_tilt_ref = _tilt_ref.lerp(g, 1.0 - exp(-rd / 3.0))
+		want = ((g - _tilt_ref) * 3.5).limit_length(1.0)
+	if slingshot.is_aiming():
+		want = _tilt
+	_tilt = _tilt.lerp(want, Pal.damp(0.12, rd))
+	var v := Vector2(-_tilt.x, _tilt.y) * TILT_PX * layout.scale
+	fx.view = v
+	backdrop.view = v
 
 
 ## The endless pacing: regular spawns under a rising cap, events with a

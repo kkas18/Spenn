@@ -65,6 +65,7 @@ var shock_rect: ColorRect          # screen-space refraction layer (set by the g
 var _waves: Array[Dictionary] = []
 var _flashes: Array[Dictionary] = []
 var _chroma := 0.0
+var view := Vector2.ZERO          # tilt parallax offset of the world (px)
 # Light that adds instead of covering: impact blooms and hot halos. A child
 # layer with additive blending, drawn over the rest of the effects.
 var _glow: Node2D
@@ -560,7 +561,7 @@ func _process(delta: float) -> void:
 		var sc := 1.0 + _punch + _focus_amt * _focus_w
 		var c := Vector2(l.center_x, l.rail_y + l.play_h * 0.5).lerp(_focus_pt, _focus_w * 0.85)
 		shake_target.scale = Vector2(sc, sc)
-		shake_target.position = c * (1.0 - sc) + off
+		shake_target.position = c * (1.0 - sc) + off + view
 	var any := false
 	for k in _tokens:
 		if k.t < 0.0:
