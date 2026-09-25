@@ -487,13 +487,13 @@ static func sensor_gravity() -> Vector3:
 
 ## Reads the gravity sensor. The reference follows the phone's resting
 ## angle over several seconds, so only a fresh lean moves the view; while
-## aiming the view holds still. Off in settings, with reduced motion, or
-## without a sensor.
+## aiming the view holds still. Off in settings or without a sensor.
 func _update_tilt(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	var sg := sensor_gravity()
 	var want := Vector2.ZERO
-	var on := Prefs.tilt and not Prefs.reduced_motion
+	# Its own switch in settings (reduced motion no longer turns it off).
+	var on := Prefs.tilt
 	if sg != Vector3.ZERO and on:
 		var g := Vector2(sg.x, sg.y) / 9.81
 		if not _tilt_seen:

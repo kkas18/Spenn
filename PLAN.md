@@ -1349,3 +1349,14 @@ i én samlet transform rundt fokuspunktet.
 - «INGEN SENSOR» vises bare når verken tyngdekraft, akselerometer eller gyroskop gir
   data.
 - FPS-visningen viser også gyroskopverdiene.
+
+# v7.11 – Vippeeffekten styres bare av sin egen innstilling
+
+På brukerens telefon sto «REDUSERTE ANIMASJONER: PÅ», og det slo av vippeeffekten.
+Sensoren fungerte, siden knappen ikke viste «INGEN SENSOR». Nå styres vippeeffekten
+bare av «VIPPEEFFEKT».
+
+Reduserte animasjoner slår fortsatt av:
+- skjelving og kameraets innlening og rulling;
+- rød/blå-splitten og uskarphet;
+- inngangsanimasjonene i panelene.
