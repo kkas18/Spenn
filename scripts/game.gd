@@ -112,6 +112,14 @@ var _tilt := Vector2.ZERO
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
 var _gyro := Vector2.ZERO       # integrated rotation (rad), easing back to 0
+# The lean also pushes the hanging bodies: sideways it swings them left or
+# right like gravity tipping, forward/back it swings them toward or away
+# from the camera. From the lean itself (which fades as the phone settles)
+# and a kick from how fast it changes, so a quick flick sets them rocking.
+const PUSH_X := 220.0           # px/s² per unit of lean
+const PUSH_KICK := 40.0         # ... per unit/s of change
+var _push := Vector2.ZERO
+var _tilt_prev := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -515,6 +523,11 @@ func _update_tilt(delta: float) -> void:
 	if slingshot.is_aiming():
 		want = _tilt
 	_tilt = _tilt.lerp(want, Pal.damp(0.12, rd))
+	var rate := (_tilt - _tilt_prev) / maxf(rd, 0.001)
+	_tilt_prev = _tilt
+	_push = (_tilt * PUSH_X + rate * PUSH_KICK).limit_length(650.0) * layout.scale
+	Target.push_z = _push.y / PUSH_X
+	title.push = _push.x
 	var v := Vector2(-_tilt.x, _tilt.y) * TILT_PX * layout.scale
 	fx.view = v
 	backdrop.view = v
@@ -855,7 +868,7 @@ func _step(dt: float) -> void:
 	_knock_sfx_cd = maxf(0.0, _knock_sfx_cd - dt)
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
-			t.wind = _breeze(t.pos.x)
+			t.wind = _breeze(t.pos.x) + _push.x
 			t.step(dt, descent, layout.danger_y, band, layout.size.y)
 			if t.phase == Target.Phase.HANGING:
 				worst = maxf(worst, t.danger)

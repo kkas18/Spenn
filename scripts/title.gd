@@ -7,6 +7,7 @@ extends Node2D
 const K := 90.0
 const GRAVITY := 900.0
 
+var push := 0.0               # sideways push from the phone's lean (px/s²)
 var l: Layout
 var font: Font
 var active := false
@@ -90,6 +91,7 @@ func _process(delta: float) -> void:
 			Sfx.play("snap", _rng.randf_range(0.9, 1.15), -10.0)
 		d.vel.y += GRAVITY * dt
 		if d.attached:
+			d.vel.x += push * dt
 			var off: Vector2 = d.pos - d.anchor
 			var dist := off.length()
 			if dist > d.len:

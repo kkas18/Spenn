@@ -131,7 +131,7 @@ func _draw_wall_shadows() -> void:
 		var a := t.shadow_alpha()
 		if a <= 0.0:
 			continue
-		var far := (t.depth + 1.0) * 0.5
+		var far := (t.seen_depth() + 1.0) * 0.5
 		var dir := (t.pos - lamp).normalized()
 		var p := t.pos + dir * lerpf(14.0, 34.0, far) + Vector2(0, lerpf(6.0, 14.0, far))
 		var r := t.radius * t.depth_scale() * lerpf(1.45, 2.0, far)

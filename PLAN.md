@@ -1360,3 +1360,32 @@ Reduserte animasjoner slår fortsatt av:
 - skjelving og kameraets innlening og rulling;
 - rød/blå-splitten og uskarphet;
 - inngangsanimasjonene i panelene.
+
+# v7.12 – Fiendene svinger når du vipper telefonen
+
+## Til siden
+- Helningen gir en sidekraft på fiendene, lagt til i vindleddet (220 px/s² per enhet
+  helning).
+- Et spark etter hvor fort helningen endres (40 px/s² per enhet/s) gjør at et raskt vipp
+  setter dem i gang med å gynge.
+- Strengene og fysikken tar seg av resten: pendelsving, tyngre fiender svinger mindre,
+  og de kolliderer med hverandre som før.
+- Kraften kommer fra den adaptive helningen og ebber ut når telefonen holdes i ro, så
+  vedvarende skjev holding ikke flytter målene permanent.
+- Tittelbokstavene i menyen svinger også.
+
+## Mot og bort fra kameraet
+- Hver fiende har en egen dempet pendel i dybden (`z_swing`). Frekvensen følger
+  strenglengden (g/L), og tyngre fiender påvirkes mindre.
+- Svingen legges til fiendens dybde, så den synes i størrelse (±12 %), lysstyrke og
+  skygge på veggen. Den er rent visuell.
+
+## Treff
+Sidesvingen er ekte fysikk, så treffsonene følger fiendene dit de faktisk er.
+
+## QA
+- En testrigg simulerer tyngdekraftsensoren (`Input.set_gravity`).
+- Venstrevipp gir tydelig pendelsving mot venstre, og forovervipp gjør fiendene mindre og
+  mørkere (bort fra kameraet).
+- Første forsøk svingte for kraftig og er dempet (300 → 220, spark 55 → 40,
+  dybde 2,2 → 1,4).

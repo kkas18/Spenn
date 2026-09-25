@@ -130,6 +130,12 @@ var field_w := 720.0           # play field width (set by the game)
 # and their shadows on the wall sit closer and sharper. The hit area never
 # changes.
 var depth := 0.0
+# Swing toward (+) / away from (−) the camera, driven by the phone's lean:
+# a damped pendulum in depth whose rate follows the string length. Visual,
+# like depth; it adds to it wherever depth shows.
+static var push_z := 0.0
+var z_swing := 0.0
+var _z_vel := 0.0
 var stage_changed := false     # for the game to announce
 
 # Brain: every behaviour is telegraphed before it acts, so it can be read.
@@ -271,6 +277,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_heal_t = randf_range(2.0, 3.0)
 	boss_stage = 0
 	stage_changed = false
+	z_swing = 0.0
+	_z_vel = 0.0
 	# Armoured kinds keep to the middle plane: their plates are world-sized.
 	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
 	_pluck_cd = 0.0
@@ -677,6 +685,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				goal_length = length
 				_lunge_left -= step_len
 			_body_step(dt)
+			_z_step(dt)
 			_tease(dt)
 			_soft_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
@@ -1077,7 +1086,19 @@ func body_xform() -> Transform2D:
 
 
 func depth_scale() -> float:
-	return 1.0 + 0.1 * depth
+	return 1.0 + 0.12 * seen_depth()
+
+
+## Depth as drawn: where it hangs, plus how far it is swinging in or out.
+func seen_depth() -> float:
+	return clampf(depth + z_swing, -1.0, 1.0)
+
+
+func _z_step(dt: float) -> void:
+	# Pendulum rate g/L; heavier bodies are pushed less. Held to ±0.9.
+	var w2 := GRAVITY / maxf(length, 60.0)
+	_z_vel += (push_z * 1.4 / MASS[kind] - w2 * z_swing - 1.4 * _z_vel) * dt
+	z_swing = clampf(z_swing + _z_vel * dt, -0.9, 0.9)
 
 
 ## Solid enough to cast a shadow on the wall (and how much).
@@ -1163,7 +1184,8 @@ func color() -> Color:
 		base = base.lerp(Pal.INK, 0.3)
 	# Depth: back ones recede into the room's darkness, front ones catch
 	# a little more of the lamp.
-	base = base.darkened(0.28 * maxf(0.0, -depth)).lightened(0.06 * maxf(0.0, depth))
+	var sd := seen_depth()
+	base = base.darkened(0.28 * maxf(0.0, -sd)).lightened(0.06 * maxf(0.0, sd))
 	if flash_t > 0.0:
 		# One-frame-ish matte flash on impact (lighter, never glowing).
 		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
