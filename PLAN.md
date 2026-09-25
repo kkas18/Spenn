@@ -1488,3 +1488,53 @@ Hver type kommer inn på sin egen måte:
 ## 6. Personlighet i døden
 Fiender som faller får et kryss som øye, og de sukker ved døden. Gelé sukker når den
 sprekker.
+
+# v7.16 – Rene øyelokk, personligheter og fargetemaer
+
+## Øyne (rettet etter skjermbilder)
+Halvlukkede øyne så rotete ut:
+- øyet ble klemt flatt;
+- det mørke lokket hadde feil farge;
+- øyenbrynene var grå klosser;
+- munnen var en taggete strek.
+
+Nå fungerer de slik:
+- **Øyet er alltid rundt.** Et øvre lokk, og et lite nedre lokk når fienden myser,
+  lukker seg over øyet i fargen rundt det: ringens mørke fordypning, eller kroppen for
+  fylte former. Lokket har en fin mørk vippekant, og kanten krummer som et ekte lokk
+  (mandelform).
+- **Samme lokk for alle tilstander:** blunking, myse, selvgodhet og søvnighet er bare
+  hvor langt lokket har kommet.
+- **Lukket øye:** en myk, bøyd strek.
+- **Øyenbryn:** fine buer. Bekymret gir indre ender opp, sint gir indre ender ned, og
+  selvgod gir ett bryn opp. Stolte har svake bryn også i hvile.
+- **Munn:** bekymret er en liten nedovervendt bue, og sammenbitt er en kort, stram strek
+  med knepne hjørner.
+- **Polygonfeil:** lokket ble ikke tegnet fordi polygonet hadde doble hjørner der kanten
+  møter buen. Endepunktene er nå utelatt.
+
+## Personligheter
+Hver fiende får en personlighet (styrt av temperamentet) og egne ansiktsproporsjoner:
+
+| Personlighet | Kjennetegn |
+|---|---|
+| Nysgjerrig | ser seg om etter naboer med noen sekunders mellomrom |
+| Søvnig | tunge lokk, sjelden og langsom blunking |
+| Nervøs | blunker ofte og er aldri helt i ro |
+| Stolt | bryn opp og munn med snev av surmuling |
+| Sjenert | ser bort fra deg og rødmer når du sikter på den |
+
+- Proporsjonene varierer per fiende: øyestørrelse ±12 %, pupill ±15 %, munnbredde
+  ±20 %, og hvilemunn fra surmuling til bredt smil.
+
+## Fargetemaer
+- Fem kuraterte temaer: Nordlys (originalen), Dyphav, Ametyst, Skog og Is.
+- Hver runde starter i et tilfeldig tema, og dagens utfordring gir samme tema for alle.
+  Hver ny bølge glir over i neste tema over 2 s.
+- Temaene følger samme regler som grunnpaletten:
+  - typene holder avstand i fargetone og lyshet;
+  - aldri gull (kulas farge) eller korall (fare);
+  - Vokter, Legen og Speilet beholder materialene sine.
+- Hvert individ har sin egen nyanse rundt temafargen, med litt variasjon i fargetone,
+  metning og lyshet.
+- Strenger, knuseeffekter og skygger følger fargen automatisk.

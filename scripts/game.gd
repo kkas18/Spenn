@@ -292,6 +292,8 @@ func _start_run() -> void:
 		_rng.randomize()
 		randomize()
 	run_kills = 0
+	# Each run starts in its own theme (the daily one is the same for all).
+	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
 	_missions_done = []
 	_mission_slots = []
 	_mission_t = 0.0
@@ -478,6 +480,7 @@ func _process(delta: float) -> void:
 		_acc -= SUBSTEP
 		_step(SUBSTEP)
 	_state_t += delta
+	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
 	_update_tilt(delta)
 	_update_ammo(delta)
 	_update_eyes()
@@ -711,6 +714,8 @@ func _wave_tick(delta: float) -> void:
 			if director.wave_break <= 0.0:
 				director.next_wave()
 				_spawn_t = 0.3
+				# A new wave, a new colour theme, eased in.
+				Pal.next_theme()
 				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
 				Sfx.play("streak", 0.85)
 
@@ -751,6 +756,19 @@ func _update_eyes() -> void:
 		if t.phase == Target.Phase.OFF:
 			continue
 		t.field_w = layout.size.x
+		if t.trait_kind == Target.Trait.CURIOUS and t.is_hittable():
+			# Curious ones keep glancing at a neighbour.
+			t.curious_in -= get_process_delta_time()
+			if t.curious_in <= 0.0:
+				t.curious_in = _rng.randf_range(2.0, 4.5)
+				var near: Target = null
+				var nd := 300.0 * layout.scale
+				for n in targets:
+					if n != t and n.is_hittable() and n.pos.distance_to(t.pos) < nd and _rng.randf() < 0.6:
+						near = n
+						nd = n.pos.distance_to(t.pos)
+				if near:
+					t.watch(near, 0.8)
 		if t.landed:
 			# A new arrival: the neighbours turn to look.
 			t.landed = false

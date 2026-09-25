@@ -41,6 +41,54 @@ const MEDIC := Color("E6ECEF")   # pearl, luma .92 – Legen (ring with a cross 
 const MEDIC_BADGE := Color("4FC79A")   # mint: its badge and its bubbles
 const MIRROR := Color("B3C3D6")   # silver, luma .76 – Speilet (polished hexagon)
 const EYE := Color("E4E7EC")
+
+# Colour themes. Every wave the enemies change into another curated set,
+# easing over two seconds. Each theme keeps the rules of the base one: the
+# kinds sit apart in hue and in lightness (they read in greyscale too),
+# nothing is gold (that is the ball's) or coral (that is danger), and the
+# Vokter (steel), Legen (pearl) and Speilet (silver) keep their materials.
+# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR
+const THEMES := [
+	# Nordlys: the original, azure and emerald
+	[Color("4F8BFF"), Color("2FA66A"), Color("33D1C6"), Color("9A6BFF"), Color("8FE3FF"), Color("7E9CC9"), Color("D05BE0"), Color("9FD85A"), Color("FF7FB6"), Color("E6ECEF"), Color("B3C3D6")],
+	# Dyphav: deep sea, royal blue, deep teal, seafoam
+	[Color("3F7BE6"), Color("1F9A8A"), Color("4CC7EC"), Color("7468F0"), Color("A6ECF2"), Color("7E9CC9"), Color("B85AE0"), Color("7DD8A8"), Color("EE84B8"), Color("E6ECEF"), Color("B3C3D6")],
+	# Ametyst: periwinkle, lavender and orchid
+	[Color("7483FF"), Color("35A386"), Color("58CEDD"), Color("B27CFF"), Color("C7D6FF"), Color("7E9CC9"), Color("E466CF"), Color("B6DE78"), Color("FF8FC8"), Color("E6ECEF"), Color("B3C3D6")],
+	# Skog: jade, mint and moss
+	[Color("4A96E4"), Color("33AD5E"), Color("5FD8B4"), Color("8B7AEA"), Color("A2EAD2"), Color("7E9CC9"), Color("C265DA"), Color("C6DC58"), Color("F28CAC"), Color("E6ECEF"), Color("B3C3D6")],
+	# Is: pale and luminous
+	[Color("78A6FF"), Color("4FBE86"), Color("6FE2DA"), Color("B39BFF"), Color("C6F2FF"), Color("7E9CC9"), Color("DA86EA"), Color("BEE68C"), Color("FFA3CA"), Color("E6ECEF"), Color("B3C3D6")],
+]
+const THEME_TIME := 2.0
+
+static var _theme_from := 0
+static var _theme_to := 0
+static var _theme_k := 1.0
+
+
+static func kind_color(kind: int) -> Color:
+	var a: Color = THEMES[_theme_from][kind]
+	if _theme_k >= 1.0:
+		return THEMES[_theme_to][kind]
+	return a.lerp(THEMES[_theme_to][kind], smoothstep(0.0, 1.0, _theme_k))
+
+
+## Start easing to theme `i` (or straight there with `instant`).
+static func set_theme(i: int, instant := false) -> void:
+	i = posmod(i, THEMES.size())
+	_theme_from = i if instant else _theme_to
+	_theme_to = i
+	_theme_k = 1.0 if instant else 0.0
+
+
+static func next_theme() -> void:
+	set_theme(_theme_to + 1)
+
+
+static func theme_tick(real_dt: float) -> void:
+	if _theme_k < 1.0:
+		_theme_k = minf(1.0, _theme_k + real_dt / THEME_TIME)
 const PUPIL := Color("0E1015")
 
 const SHADOW_OFFSET := Vector2(4, 4)

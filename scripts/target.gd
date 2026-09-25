@@ -57,6 +57,13 @@ const POP_TIME := 0.08
 
 # Temperament, rolled per target so no two behave quite alike.
 enum Temper { CALM, TIMID, BOLD, ERRATIC }
+# Personality, on top of temperament: how it looks and carries itself.
+#   CURIOUS  keeps glancing at its neighbours
+#   SLEEPY   heavy-lidded, slow to blink
+#   JITTERY  blinks a lot, never quite still
+#   PROUD    brows up, chin up
+#   SHY      looks away, blushes when you aim at it
+enum Trait { CURIOUS, SLEEPY, JITTERY, PROUD, SHY }
 
 # Character. How each kind arrives: its own speed down the string (the
 # Dykker drops and bounces on its bungee, heavy ones are lowered on their
@@ -71,6 +78,12 @@ const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD:
 var kind: Kind = Kind.RING
 var soft := false
 var temper: Temper = Temper.CALM
+var trait_kind: Trait = Trait.CURIOUS
+var _eye_scale := 1.0           # each face a little different
+var _pupil_scale := 1.0
+var _mouth_w := 1.0
+var _smile := 1.0               # resting mouth: < 0 a pout, 1 a smile
+var curious_in := 3.0           # the game uses it to pick a neighbour to look at
 var _sd := PackedFloat32Array()  # soft: radial displacement per spoke (px)
 var _sv := PackedFloat32Array()  # soft: radial velocity per spoke
 var _last_vel := Vector2.ZERO
@@ -78,6 +91,7 @@ var _ring_t := 1.0             # rigid: time since the last knock (metal ring)
 var _ring_dir := Vector2.RIGHT
 var _wander_t := 3.0           # idle drift along the rail
 var _hue_shift := 0.0          # each one a slightly different shade of its kind
+var _val_shift := 0.0
 var _dropping := false        # still paying out its string on the way in
 var _gone := false             # burst jelly: the body is gone, the string recoils
 var pop_t := 0.0               # soft: squashed for a moment before it bursts
@@ -261,7 +275,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	pop_t = 0.0
 	_gone = false
 	_dropping = false
-	_hue_shift = randf_range(-0.035, 0.035)
+	_hue_shift = randf_range(-0.04, 0.04)
+	_val_shift = randf_range(-0.05, 0.05)
 	covered = false
 	_guard_wait = -1.0
 	guard_of = null
@@ -270,6 +285,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt_in = randf_range(2.0, 4.0)
 	_taunt_delay = -1.0
 	temper = _roll_temper()
+	_roll_trait()
 	hp = HP[k]
 	radius = RADIUS[k]
 	anchor = anchor_pos
@@ -375,6 +391,25 @@ func _roll_temper() -> Temper:
 	if r < 0.52 + 0.2 * a:
 		return Temper.ERRATIC
 	return Temper.CALM
+
+
+## Personality follows temperament (a timid one is shy or jittery, a bold
+## one proud...), and the face gets its own proportions.
+func _roll_trait() -> void:
+	var pool: Array = [Trait.CURIOUS, Trait.SLEEPY]
+	match temper:
+		Temper.TIMID:
+			pool = [Trait.SHY, Trait.JITTERY, Trait.SHY]
+		Temper.BOLD:
+			pool = [Trait.PROUD, Trait.PROUD, Trait.CURIOUS]
+		Temper.ERRATIC:
+			pool = [Trait.JITTERY, Trait.CURIOUS]
+	trait_kind = pool[randi() % pool.size()]
+	_eye_scale = randf_range(0.88, 1.12)
+	_pupil_scale = randf_range(0.85, 1.15)
+	_mouth_w = randf_range(0.8, 1.2)
+	_smile = randf_range(-0.3, 1.0) if trait_kind != Trait.PROUD else randf_range(-0.4, 0.2)
+	curious_in = randf_range(1.5, 4.0)
 
 
 static func is_soft_kind(k: int) -> bool:
@@ -1281,6 +1316,8 @@ func _tremble() -> Vector2:
 		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
 		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
+	if trait_kind == Trait.JITTERY and phase == Phase.HANGING:
+		j += Vector2(sin(_clock * 23.0 + _hue_shift * 50.0), cos(_clock * 19.0)) * 0.3
 	if (panicked() or hurry) and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	return j
@@ -1319,8 +1356,14 @@ func _update_eye(delta: float) -> void:
 	_closed_t = maxf(0.0, _closed_t - delta)
 	_blink_in -= delta
 	if _blink_in <= 0.0:
-		_blink_t = 0.13
-		_blink_in = randf_range(3.0, 7.0)
+		_blink_t = 0.26 if trait_kind == Trait.SLEEPY else 0.13
+		match trait_kind:
+			Trait.JITTERY:
+				_blink_in = randf_range(1.0, 2.6)
+			Trait.SLEEPY:
+				_blink_in = randf_range(4.0, 8.0)
+			_:
+				_blink_in = randf_range(3.0, 7.0)
 	if _blink_in > 2.0 and morale > 0.5:
 		# Nervous: they blink more.
 		_blink_in -= delta
@@ -1375,20 +1418,12 @@ func color() -> Color:
 
 
 func _base_color() -> Color:
-	var base := Pal.BLUE
-	match kind:
-		Kind.HEAVY: base = Pal.GREEN
-		Kind.SPLIT: base = Pal.TEAL
-		Kind.ROD: base = Pal.PURPLE
-		Kind.DROP: base = Pal.DROP
-		Kind.SHIELD: base = Pal.ARMOR
-		Kind.BOSS: base = Pal.BOSS
-		Kind.REEL: base = Pal.REEL
-		Kind.SHADE: base = Pal.SHADE
-		Kind.MEDIC: base = Pal.MEDIC
-		Kind.MIRROR: base = Pal.MIRROR
+	# The current colour theme (they change, harmoniously, wave by wave).
+	var base := Pal.kind_color(kind)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
-		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), base.v)
+		# Each individual a shade of its own: hue, saturation and value drift
+		# a little around the theme's colour, never far enough to blur kinds.
+		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), clampf(base.v + _val_shift, 0.2, 1.0))
 	return base
 
 
@@ -2019,11 +2054,12 @@ func _mouth(er: float) -> void:
 	var ink := Color(Pal.EYE, 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
 	var dark := Color(Pal.PUPIL, 0.95 * modulate.a)
 	var pts := PackedVector2Array()
+	w *= _mouth_w
 	if _closed_t > 0.0 or phase == Phase.FALLING:
-		# Grimace: a tight zigzag.
-		for i in 7:
-			pts.append(Vector2(lerpf(-w * 0.6, w * 0.6, i / 6.0), y + (1.2 if i % 2 == 0 else -1.2)))
-		f.draw_polyline(pts, ink, 1.6, true)
+		# Clenched: a short tight line, pinched at the corners.
+		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 1.6, true)
+		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.2, true)
+		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.2, true)
 	elif startle_t > 0.0 or panicked():
 		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
 		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
@@ -2042,11 +2078,11 @@ func _mouth(er: float) -> void:
 			pts.append(Vector2(t * w * 0.5, y + 2.0 - (1.0 - t * t) * 3.0))
 		f.draw_polyline(pts, ink, 1.8, true)
 	elif squint or aimed or tele_t > 0.0:
-		# Worried: a flat, wobbling line with the corners pulled down.
+		# Worried: a small downturned curve.
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
-			pts.append(Vector2(t * w * 0.45, y + sin(t * 5.0 + _clock * 14.0) * 0.6 + absf(t) * absf(t) * 1.8))
-		f.draw_polyline(pts, ink, 1.5, true)
+			pts.append(Vector2(t * w * 0.36, y + 1.6 - (1.0 - t * t) * 1.6))
+		f.draw_polyline(pts, ink, 1.4, true)
 	elif smug > 0.35:
 		# Smirk: flat on one side, curled up on the other.
 		for i in 7:
@@ -2054,9 +2090,10 @@ func _mouth(er: float) -> void:
 			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * smug))
 		f.draw_polyline(pts, ink, 1.7, true)
 	else:
+		# At rest, each its own: from a pout to a broad smile.
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
-			pts.append(Vector2(t * w * 0.4, y + (1.0 - t * t) * 2.0))
+			pts.append(Vector2(t * w * 0.4, y + (1.0 - t * t) * 2.2 * _smile))
 		f.draw_polyline(pts, ink, 1.5, true)
 
 
@@ -2064,7 +2101,7 @@ func _eye() -> void:
 	var f := _face
 	_eye_parts()
 	if kind != Kind.ROD:
-		var er := 7.0 if kind == Kind.DROP else (15.0 if kind == Kind.BOSS else 9.5)
+		var er := _eye_r()
 		var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
 		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
 		f.draw_set_transform_matrix(Transform2D(0.0, eo))
@@ -2072,17 +2109,35 @@ func _eye() -> void:
 	f.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## Eye (socket, white, pupil, glint, lids and brows) and, after it, the
-## mouth, in the eye's own space. Discs first so they batch.
-func _eye_parts() -> void:
-	var f := _face
-	# The Skygge's eye sits in the thick part of the crescent.
-	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
+## Eye radius for this kind, and this one's own eye size.
+func _eye_r() -> float:
 	var er := 9.5
 	if kind == Kind.DROP:
 		er = 7.0
 	elif kind == Kind.BOSS:
 		er = 15.0
+	return er * _eye_scale
+
+
+## The colour right around the eye, which the lids are made of: the dark
+## recess of a ring body, or the body itself for filled ones.
+func _skin() -> Color:
+	var c := color()
+	if _hole() > 0.0:
+		return c.darkened(0.68)
+	return c.darkened(0.12)
+
+
+## Eye (socket, white, pupil, glint, lids and brows) and, after it, the
+## mouth, in the eye's own space. The eye itself always stays round; lids
+## in the colour around it close over it, edged with a fine dark line that
+## curves like a real lid. Blinks, squints, smugness and sleepiness are all
+## just how far the lids have come, so every expression stays clean.
+func _eye_parts() -> void:
+	var f := _face
+	# The Skygge's eye sits in the thick part of the crescent.
+	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
+	var er := _eye_r()
 	var mouthed := kind != Kind.ROD
 	if mouthed:
 		# Eye sits a little high so there is room for a mouth below.
@@ -2090,61 +2145,121 @@ func _eye_parts() -> void:
 	var bx := Transform2D(0.0, eo)
 	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
-	var pr := er * 0.48 / wide
+	var pr := er * 0.48 / wide * _pupil_scale
 	er *= lerpf(1.0, wide, 0.5)
 	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
 		# Filled bodies: a dark socket keeps the eye readable.
 		Pal.disc(f, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
+	var lash := Color(Pal.PUPIL, 0.9)
 	if phase == Phase.FALLING:
 		# Knocked out: a small cross for an eye.
-		var xr := er * 0.62
-		f.draw_line(Vector2(-xr, -xr), Vector2(xr, xr), Pal.EYE, 2.4, true)
-		f.draw_line(Vector2(-xr, xr), Vector2(xr, -xr), Pal.EYE, 2.4, true)
+		var xr := er * 0.6
+		f.draw_line(Vector2(-xr, -xr), Vector2(xr, xr), Pal.EYE, 2.2, true)
+		f.draw_line(Vector2(-xr, xr), Vector2(xr, -xr), Pal.EYE, 2.2, true)
 		return
+	# How far the lids are closed (0 open .. 1 shut).
+	var upper := 1.0 - clampf(_open, 0.0, 1.0)
+	upper = maxf(upper, smug * 0.5)
+	if trait_kind == Trait.SLEEPY and startle_t <= 0.0 and not panicked():
+		upper = maxf(upper, 0.32)
+	var lower := 0.0
+	if squint or tele_t > 0.0:
+		lower = 0.22
 	if _closed_t > 0.0:
-		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.4, true)
+		upper = 1.0
+	if upper + lower > 0.92:
+		# Shut: a single soft curve, the lashes of a closed lid.
+		_lid_curve(f, er, 0.08, 1.0, Color(Pal.EYE, 0.9), 2.0)
 		return
-	var open := clampf(_open, 0.0, 1.0)
 	# Fear dilates the pupil (panic, the last of a wave, a nervous team);
 	# a sudden fright shrinks it to a pinpoint instead.
 	if startle_t <= 0.0 and (panicked() or hurry or morale > 0.55):
 		pr = minf(pr * 1.4, er * 0.72)
-	if open < 0.12:
-		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.2, true)
-		return
-	f.draw_set_transform_matrix(bx * Transform2D(0.0, Vector2(1.0, open), 0.0, Vector2.ZERO))
 	Pal.disc(f, Vector2.ZERO, er, Pal.EYE)
-	var pupil := _pupil * (er - pr - 1.2)
+	var look := _pupil
+	if trait_kind == Trait.SHY and not aimed and not incoming:
+		# Shy: never quite meets your eye.
+		look = Vector2(-look.x * 0.6, look.y * 0.4 + 0.35)
+	var pupil := look * (er - pr - 1.2)
 	Pal.disc(f, pupil, pr, Pal.PUPIL)
 	Pal.disc(f, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
-	f.draw_set_transform_matrix(bx)
+	var skin := _skin()
+	if upper > 0.02:
+		_lid(f, er, upper, true, skin, lash)
+	if lower > 0.02:
+		_lid(f, er, lower, false, skin, lash)
+	if trait_kind == Trait.SHY and aimed and soft:
+		# A faint blush when it is looked at down the sights.
+		for sx: float in [-1.0, 1.0]:
+			Pal.disc(f, Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+	if kind == Kind.ROD:
+		return
+	# Brows: fine arcs, set by mood (and by personality at rest).
+	var bc := Color(Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 0.75)
 	var worried := (aimed or panicked() or hurry or morale > 0.6) and not enraged and smug < 0.3 and _taunt < 0.0
-	if worried and kind != Kind.ROD:
-		# Worried brows: inner ends raised.
-		var bc2 := Color(Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 0.85)
-		for sx: float in [-1.0, 1.0]:
-			f.draw_line(Vector2(sx * er * 1.1, -er * 1.2), Vector2(sx * er * 0.3, -er * 1.5), bc2, 2.0, true)
 	if enraged:
-		# Brows pulled in: rage reads at a glance.
-		for sx: float in [-1.0, 1.0]:
-			f.draw_line(Vector2(sx * er * 1.15, -er * 1.25), Vector2(sx * er * 0.25, -er * 0.8), Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 2.2, true)
-	if smug > 0.05 and open >= 0.9 and not enraged:
-		# Smug: a heavy upper lid slides down and one brow goes up.
-		var yc := lerpf(-er, -er * 0.05, smug)
-		var hw := sqrt(maxf(0.0, er * er - yc * yc))
-		var a0 := atan2(yc, -hw)
-		var a1 := atan2(yc, hw)
-		var lid := PackedVector2Array()
-		for i in 11:
-			lid.append(Vector2.from_angle(lerpf(a0, a1, i / 10.0)) * (er + 0.6))
-		var lid_col := color().darkened(0.25)
-		if lid.size() >= 3 and a1 > a0:
-			f.draw_colored_polygon(lid, lid_col)
-		f.draw_line(Vector2(-hw, yc + 1.5 * smug), Vector2(hw, yc - 1.5 * smug), Pal.PUPIL, 1.8, true)
-		var bc := Color(Pal.EYE, smug)
-		f.draw_line(Vector2(-er * 0.95, -er * 1.3), Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), bc, 2.6, true)
-		f.draw_line(Vector2(er * 0.15, -er * 1.6 - 3.0 * smug), Vector2(er * 1.0, -er * 1.35), bc, 2.6, true)
-	if open < 0.9:
-		# Lid lines make the squint read as intent, not just a squash.
-		var y := er * open
-		f.draw_line(Vector2(-er, -y), Vector2(er, -y * 0.7), Pal.PUPIL, 1.6, true)
+		_brow(f, er, -1.0, -1.2, -0.85, bc)
+		_brow(f, er, 1.0, -1.2, -0.85, bc)
+	elif worried:
+		_brow(f, er, -1.0, -1.25, -1.55, bc)
+		_brow(f, er, 1.0, -1.25, -1.55, bc)
+	elif smug > 0.2:
+		# One brow up, the other level: the look of someone unimpressed.
+		_brow(f, er, -1.0, -1.35, -1.3, Color(bc, bc.a * smug))
+		_brow(f, er, 1.0, -1.55 - 0.25 * smug, -1.4, Color(bc, bc.a * smug))
+	elif trait_kind == Trait.PROUD:
+		_brow(f, er, -1.0, -1.45, -1.5, Color(bc, 0.45))
+		_brow(f, er, 1.0, -1.45, -1.5, Color(bc, 0.45))
+
+
+## A lid over the round eye: filled in the skin colour from the top (or the
+## bottom) down to a gently curved edge, with a fine lash line along it.
+func _lid(f: Node2D, er: float, amount: float, top: bool, skin: Color, lash: Color) -> void:
+	var r := er + 0.9
+	var edge := -er + 2.0 * er * amount if top else er - 2.0 * er * amount
+	var hw := sqrt(maxf(0.0, r * r - edge * edge))
+	if hw < 0.5:
+		return
+	# The edge sags toward the middle (top) or lifts (bottom): an almond.
+	var sag := er * 0.22 * (1.0 - amount) * (1.0 if top else -1.0)
+	var pts := PackedVector2Array()
+	var a0 := atan2(edge, hw)
+	var a1 := atan2(edge, -hw)
+	# Around the outside of the eye, from one end of the edge to the other.
+	var span := (a1 - a0) if top else (a1 - a0 - TAU)
+	if top and span > 0.0:
+		span -= TAU
+	if not top and span < 0.0:
+		span += TAU
+	for i in 13:
+		pts.append(Vector2.from_angle(a0 + span * i / 12.0) * r)
+	var edge_pts := PackedVector2Array()
+	for i in 9:
+		var t := lerpf(-1.0, 1.0, i / 8.0)
+		edge_pts.append(Vector2(t * hw, edge + sag * (1.0 - t * t)))
+	# The edge's end points coincide with the arc's: leave them out, or the
+	# polygon has duplicate corners and will not triangulate.
+	pts.append_array(edge_pts.slice(1, edge_pts.size() - 1))
+	f.draw_colored_polygon(pts, skin)
+	f.draw_polyline(edge_pts, lash, 1.5 if top else 1.1, true)
+
+
+## The line of a closed eye: a soft curve, bowed down.
+func _lid_curve(f: Node2D, er: float, y: float, bow: float, col: Color, w: float) -> void:
+	var pts := PackedVector2Array()
+	for i in 9:
+		var t := lerpf(-1.0, 1.0, i / 8.0)
+		pts.append(Vector2(t * er * 0.85, y * er + er * 0.22 * bow * (1.0 - t * t)))
+	f.draw_polyline(pts, col, w, true)
+
+
+## One brow, as a fine arc above the eye; `inner_y` and `outer_y` are in
+## eye radii (negative is up), `sx` the side.
+func _brow(f: Node2D, er: float, sx: float, inner_y: float, outer_y: float, col: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 6:
+		var t := i / 5.0
+		var x := lerpf(0.28, 1.12, t) * er * sx
+		var y := lerpf(inner_y, outer_y, t) * er - sin(PI * t) * er * 0.12
+		pts.append(Vector2(x, y))
+	f.draw_polyline(pts, col, 1.7, true)
