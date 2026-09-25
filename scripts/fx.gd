@@ -263,7 +263,7 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 				f.r = rr
 				f.w = 7.0 if kind != Target.Kind.HEAVY else 5.0
 				f.spin = _rng.randf_range(-3.0, 3.0)
-		Target.Kind.SPLIT, Target.Kind.BOSS:
+		Target.Kind.SPLIT, Target.Kind.BOSS, Target.Kind.MIRROR:
 			var rr := radius - (4.0 if kind == Target.Kind.SPLIT else 0.0)
 			for i in 6:
 				var a := rot + i * TAU / 6.0 + PI / 6.0

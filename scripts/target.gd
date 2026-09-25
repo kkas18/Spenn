@@ -5,7 +5,7 @@ extends Node2D
 ## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
-enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE }
+enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR }
 enum Phase { OFF, HANGING, FALLING }
 
 const N := 10                  # rope points
@@ -13,15 +13,20 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0}
-const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1}
-const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0}
+const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1}
+const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35}
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
-const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9}
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2}
 const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
 const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
+# Spinneren fights in three stages (by health left): two plates; three
+# narrower plates turning faster; one plate whipping round while it lunges
+# and calls divers without pause. [plates, half-width, orbit speed factor,
+# minion interval factor]
+const BOSS_STAGES := [[2, 38.0, 1.0, 1.0], [3, 30.0, 1.25, 0.75], [1, 55.0, 2.0, 0.5]]
 const ANG_K := 55.0            # angular spring back to the string angle (1/s²)
 const ANG_C := 2.6             # angular damping (1/s)
 # Evasion profile per kind: [reaction s (at aggression 0), slide px,
@@ -35,12 +40,14 @@ const EVADE := {
 	Kind.ROD: [0.75, 90.0, 260.0, 0.0, 0.3],
 	Kind.SHIELD: [0.9, 70.0, 210.0, 0.0, 0.5],
 	Kind.REEL: [0.5, 85.0, 300.0, 0.0, 0.25],
+	Kind.MEDIC: [0.6, 120.0, 340.0, 40.0, 0.1],
+	Kind.MIRROR: [0.9, 70.0, 200.0, 0.0, 0.4],
 }
 # Material. Soft bodies are jelly: a ring of radial springs that dents
 # where it is struck, bulges elsewhere (area is kept), ripples round and
 # lags behind when the body is swung. Rigid bodies keep their shape; they
 # ring briefly, rock and spin instead.
-const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE]
+const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC]
 const SOFT_N := 18
 const SOFT_K := 340.0          # radial spring (1/s²)
 const SOFT_C := 7.5            # damping (1/s)
@@ -51,7 +58,7 @@ const POP_TIME := 0.08
 # Temperament, rolled per target so no two behave quite alike.
 enum Temper { CALM, TIMID, BOLD, ERRATIC }
 
-const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0}
+const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9}
 
 var kind: Kind = Kind.RING
 var soft := false
@@ -106,6 +113,19 @@ var scared := false            # overload: panics, stops sinking, climbs its str
 var struck_t := 0.0
 var chain_depth := 0
 var crushed: Array[int] = []    # targets this falling body has already hit
+# Formations march behind a leader (the crowned one); its hook sets theirs.
+# Lose it and the rest panic for a moment (`stun_t`), wide open.
+var leader: Target = null
+var is_leader := false
+var form_off := 0.0
+var stun_t := 0.0
+var hurry := false             # one of a wave's last few: sinks faster, shaking
+var patched := false           # Legen's bubble: soaks the next blow
+var wants_heal := false        # Legen asks the game for someone to mend
+var _heal_t := 3.0
+var boss_stage := 0            # Spinneren: 0, 1, 2
+var field_w := 720.0           # play field width (set by the game)
+var stage_changed := false     # for the game to announce
 
 # Brain: every behaviour is telegraphed before it acts, so it can be read.
 var aggression := 0.0          # 0..1 from the director
@@ -236,6 +256,16 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	struck_t = 0.0
 	chain_depth = 0
 	crushed.clear()
+	leader = null
+	is_leader = false
+	form_off = 0.0
+	stun_t = 0.0
+	hurry = false
+	patched = false
+	wants_heal = false
+	_heal_t = randf_range(2.0, 3.0)
+	boss_stage = 0
+	stage_changed = false
 	_pluck_cd = 0.0
 	aimed = false
 	enraged = false
@@ -472,16 +502,25 @@ func was_cut() -> bool:
 	return _cut
 
 
-## True when a contact from direction `n` (centre → ball) lands on armour.
+## True when a contact from direction `n` (centre → ball) lands on armour
+## (or on Legen's bubble, which soaks any blow once).
 func blocks(n: Vector2) -> bool:
+	if patched:
+		return true
 	match kind:
 		Kind.SHIELD:
 			return absf(angle_difference(n.angle(), shield_ang)) < SHIELD_HALF
 		Kind.BOSS:
-			for k in 2:
-				if absf(angle_difference(n.angle(), orbit + PI * k)) < BOSS_ARC_HALF:
+			var st: Array = BOSS_STAGES[boss_stage]
+			for k in int(st[0]):
+				if absf(angle_difference(n.angle(), orbit + TAU * k / st[0])) < deg_to_rad(st[1]):
 					return true
 	return false
+
+
+## Frightened out of its wits: overload, or its leader just fell.
+func panicked() -> bool:
+	return scared or stun_t > 0.0
 
 
 ## Distance test against the top third of the string, just under the hook:
@@ -537,9 +576,14 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 			_lunge_left += 60.0
 			_speed_bonus = 1.6
 			Sfx.play("whoosh", 0.8, -6.0)
-		elif kind == Kind.BOSS and hp == 4:
-			enraged = true
-			_speed_bonus = 1.4
+		elif kind == Kind.BOSS:
+			var st := 0 if hp > 5 else (1 if hp > 2 else 2)
+			if st != boss_stage:
+				boss_stage = st
+				stage_changed = true
+				enraged = st == 2
+				_speed_bonus = 1.0 + 0.2 * st
+				_brain_t = minf(_brain_t, 1.0)
 		return false
 	_snap(impulse)
 	if soft:
@@ -591,6 +635,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 	_screen_h = screen_h
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	struck_t = maxf(0.0, struck_t - dt)
+	stun_t = maxf(0.0, stun_t - dt)
 	flash_t = maxf(0.0, flash_t - dt)
 	fray_t = maxf(0.0, fray_t - dt)
 	match phase:
@@ -610,9 +655,9 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 					# Overload: it scrambles back up its string, away from you.
 					length = maxf(60.0 * (_screen_h / 1280.0), length - 35.0 * dt)
 				else:
-					length += descent * SPEED_MUL[kind] * _speed_bonus * dt
+					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * dt
 				goal_length = length
-			if scared:
+			if panicked():
 				tele_t = 0.0
 				_lunge_left = 0.0
 				_dodge_cd = maxf(_dodge_cd, 0.5)
@@ -657,9 +702,25 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 func _brain(dt: float) -> void:
 	var a := aggression
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
+	if leader != null:
+		if is_instance_valid(leader) and leader.is_hittable():
+			# In formation: keep station on the leader's hook, no own moves.
+			var want := clampf(leader.anchor.x + form_off, radius + 12.0, field_w - radius - 12.0)
+			if absf(want - anchor.x) > 3.0:
+				_slide_to = want
+				_slide_speed = maxf(leader._slide_speed, 160.0 * _screen_h / 1280.0) * 1.15
+			return
+		leader = null
 	_guard_step(dt)
 	_wander(dt)
+	if kind == Kind.MEDIC:
+		_heal_t -= dt
+		if _heal_t <= 0.0:
+			_heal_t = lerpf(4.5, 2.6, a)
+			wants_heal = true
 	match kind:
+		Kind.MEDIC, Kind.MIRROR:
+			_evade(dt)
 		Kind.RING:
 			# Vakt: with cover available it slides its hook along the rail to
 			# hang behind another target; otherwise it evades like the rest.
@@ -734,12 +795,13 @@ func _brain(dt: float) -> void:
 			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
 			# Spinneren: aimed at, it spins its plates faster to close the gap.
-			orbit += lerpf(1.0, 1.7, a) * (1.35 if enraged else 1.0) * (lerpf(1.4, 2.2, a) if aimed else 1.0) * dt
+			var st: Array = BOSS_STAGES[boss_stage]
+			orbit += lerpf(1.0, 1.7, a) * float(st[2]) * (lerpf(1.4, 2.2, a) if aimed else 1.0) * dt
 			_minion_t -= dt
 			if _minion_t <= 0.0:
-				_minion_t = lerpf(6.0, 3.5, a)
+				_minion_t = lerpf(6.0, 3.5, a) * float(st[3])
 				wants_minion = true
-			_lunge_brain(dt, lerpf(10.0, 6.0, a), 40.0)
+			_lunge_brain(dt, lerpf(10.0, 6.0, a) * (0.45 if boss_stage == 2 else 1.0), 40.0)
 
 
 ## Common evasion: watch the shot (narrowed eye) for a reaction time, then
@@ -762,7 +824,7 @@ func _evade(dt: float) -> void:
 	if _dodge_cd > 0.0 or a < prof[4]:
 		return
 	_aim_t += dt
-	var react: float = prof[0] * lerpf(1.0, 0.4, a) * [1.0, 0.7, 1.35, 0.9][temper]
+	var react: float = prof[0] * lerpf(1.0, 0.4, a) * [1.0, 0.7, 1.35, 0.9][temper] * (0.7 if is_leader else 1.0)
 	if incoming and not aimed:
 		if a < 0.4:
 			return
@@ -1016,8 +1078,8 @@ func _tremble() -> Vector2:
 		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
 		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
-	if scared and phase == Phase.HANGING:
-		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * 1.1
+	if (panicked() or hurry) and phase == Phase.HANGING:
+		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	return j
 
 
@@ -1059,7 +1121,7 @@ func _update_eye(delta: float) -> void:
 	_blink_t = maxf(0.0, _blink_t - delta)
 	startle_t = maxf(0.0, startle_t - delta)
 	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
-	if startle_t > 0.0 or (scared and phase == Phase.HANGING):
+	if startle_t > 0.0 or (panicked() and phase == Phase.HANGING):
 		goal_open = 1.3
 	elif _blink_t > 0.0:
 		goal_open = 0.0
@@ -1097,7 +1159,9 @@ func _base_color() -> Color:
 		Kind.BOSS: base = Pal.BOSS
 		Kind.REEL: base = Pal.REEL
 		Kind.SHADE: base = Pal.SHADE
-	if kind != Kind.SHIELD and kind != Kind.BOSS:
+		Kind.MEDIC: base = Pal.MEDIC
+		Kind.MIRROR: base = Pal.MIRROR
+	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
 		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), base.v)
 	return base
 
@@ -1313,6 +1377,13 @@ func _mesh_build() -> void:
 			_fan(_crescent(r), Vector2(-r * 0.55, 0.0), b)
 		Kind.BOSS:
 			_fan(_hex(r, 3), Vector2.ZERO, b)
+		Kind.MEDIC:
+			_membrane(r - 7.5, 22)
+			_ring_tube(r - 4.5, 4.0, 32, b)
+		Kind.MIRROR:
+			# A polished hexagon: all metal, so it throws the light back.
+			_fan(_hex(r, 2), Vector2.ZERO, B_METAL)
+			_poly_tube(_hex(r - 2.0, 2), 2.0, b)
 	_m_pts = _m_base.duplicate()
 
 
@@ -1493,8 +1564,9 @@ func _draw_plates(ci: RID, keep: float) -> void:
 		Kind.SHIELD:
 			_plate(radius + 5.0, shield_ang, SHIELD_HALF, 4.0, metal, sh)
 		Kind.BOSS:
-			for k in 2:
-				_plate(radius + 11.0, orbit + PI * k, BOSS_ARC_HALF, 3.5, metal, sh)
+			var st: Array = BOSS_STAGES[boss_stage]
+			for k in int(st[0]):
+				_plate(radius + 11.0, orbit + TAU * k / st[0], deg_to_rad(st[1]), 3.5, metal, sh)
 	RenderingServer.canvas_item_add_triangle_array(ci, _p_idx, _p_pts, _p_col, _p_uv)
 
 
@@ -1550,6 +1622,22 @@ func _draw_face() -> void:
 		for i in 12:
 			var a0 := _clock * 0.8 + i * TAU / 12.0
 			f.draw_arc(pos, radius + 16.0, a0, a0 + 0.3, 6, Color(Pal.INK, 0.5 * k), 1.5, true)
+	if patched and phase == Phase.HANGING:
+		# Legen's bubble: a thin, shimmering skin around the body.
+		var wob := 1.0 + 0.03 * sin(_clock * 7.0)
+		f.draw_arc(pos, (radius + 8.0) * wob, 0.0, TAU, 40, Color(Pal.MEDIC_BADGE, 0.55), 2.0, true)
+		f.draw_arc(pos, (radius + 8.0) * wob, -2.4, -1.5, 10, Color(Pal.EYE, 0.6), 2.4, true)
+	if is_leader and phase == Phase.HANGING:
+		# The leader's crown: three gold points over its head.
+		var cp := pos + Vector2(0, -radius - 12.0)
+		var crown := PackedVector2Array()
+		for q: Vector2 in [Vector2(-9, 4), Vector2(-9, -3), Vector2(-4.5, 1), Vector2(0, -6), Vector2(4.5, 1), Vector2(9, -3), Vector2(9, 4)]:
+			crown.append(cp + q * 1.4)
+		var shc := crown.duplicate()
+		for i in shc.size():
+			shc[i] += Vector2(1.5, 1.5)
+		f.draw_colored_polygon(shc, Color(0, 0, 0, 0.35))
+		f.draw_colored_polygon(crown, Pal.GOLD)
 	if kind == Kind.BOSS and phase == Phase.HANGING:
 		var hp_max: int = HP[kind]
 		for i in hp_max:
@@ -1570,6 +1658,7 @@ func _hole() -> float:
 		Kind.SHIELD: return radius - 9.0
 		Kind.REEL: return radius - 7.5
 		Kind.SPLIT: return radius - 9.0
+		Kind.MEDIC: return radius - 9.0
 	return 0.0
 
 
@@ -1577,6 +1666,18 @@ func _hole() -> float:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _face
+	if kind == Kind.MEDIC:
+		# A mint badge with a white cross on the rim.
+		var bp := Vector2(radius * 0.62, -radius * 0.62)
+		Pal.disc(f, bp + Vector2(1.0, 1.0), 7.5, Color(0, 0, 0, 0.35 * col.a))
+		Pal.disc(f, bp, 7.5, Color(Pal.MEDIC_BADGE, col.a))
+		f.draw_rect(Rect2(bp - Vector2(4.5, 1.4), Vector2(9.0, 2.8)), Color(Pal.EYE, col.a))
+		f.draw_rect(Rect2(bp - Vector2(1.4, 4.5), Vector2(2.8, 9.0)), Color(Pal.EYE, col.a))
+	elif kind == Kind.MIRROR:
+		# Two glints across the polished face.
+		var g := Color(1, 1, 1, 0.35 * col.a)
+		f.draw_line(Vector2(-radius * 0.7, radius * 0.1), Vector2(-radius * 0.1, -radius * 0.7), g, 3.0, true)
+		f.draw_line(Vector2(-radius * 0.35, radius * 0.45), Vector2(radius * 0.2, -radius * 0.1), Color(g, g.a * 0.6), 1.6, true)
 	if soft:
 		var h := _hole()
 		if h > 0.0:
@@ -1622,7 +1723,7 @@ func _mouth(er: float) -> void:
 		for i in 7:
 			pts.append(Vector2(lerpf(-w * 0.6, w * 0.6, i / 6.0), y + (1.2 if i % 2 == 0 else -1.2)))
 		f.draw_polyline(pts, ink, 1.6, true)
-	elif startle_t > 0.0 or scared:
+	elif startle_t > 0.0 or panicked():
 		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
 		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
 	elif _taunt >= 0.0:

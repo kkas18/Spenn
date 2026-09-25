@@ -6,9 +6,20 @@ extends RefCounted
 ## punctuate it, each followed by a short breather.
 
 enum Event { NONE, FORMATION, RUSH, BOSS }
+# Waves cut the endless pressure into rounds the player can finish, like a
+# Space Invaders sheet: a wave spawns its quota, then nothing new comes
+# until the field is clear (the last few hurry down). Clearing pays, a
+# short break follows, and the next, bigger wave starts.
+enum Wave { SPAWNING, CLEARING, BREAK }
 
 const EVENT_EVERY := 38.0
 const BREATHER := 4.0
+const WAVE_BREAK := 2.4
+const HURRY_AT := 2            # this many left of a spent wave: they hurry
+# Habits: which side the player favours (-1 left .. 1 right, an average of
+# where the shots go). Spawns lean the other way, and past HABIT_TELL the
+# game says the enemies have noticed.
+const HABIT_TELL := 0.45
 
 var elapsed := 0.0
 var accuracy := 0.55            # EMA of shots that hit something
@@ -17,6 +28,12 @@ var hits := 0
 var next_event := EVENT_EVERY
 var event_count := 0
 var breather := 0.0
+var wave := 1
+var wave_state := Wave.SPAWNING
+var wave_spawned := 0
+var wave_killed := 0
+var wave_break := 0.0
+var side_bias := 0.0
 
 
 func reset() -> void:
@@ -27,6 +44,12 @@ func reset() -> void:
 	next_event = EVENT_EVERY
 	event_count = 0
 	breather = 0.0
+	wave = 1
+	wave_state = Wave.SPAWNING
+	wave_spawned = 0
+	wave_killed = 0
+	wave_break = 0.0
+	side_bias = 0.0
 
 
 func tick(dt: float) -> void:
@@ -38,6 +61,42 @@ func record_shot(hit: bool) -> void:
 	shots += 1
 	hits += 1 if hit else 0
 	accuracy = lerpf(accuracy, 1.0 if hit else 0.0, 0.15)
+
+
+## Aim direction of a shot (x of the unit launch direction).
+func record_aim(dir_x: float) -> void:
+	side_bias = lerpf(side_bias, clampf(dir_x * 2.0, -1.0, 1.0), 0.06)
+
+
+func wave_quota() -> int:
+	return mini(10 + 3 * (wave - 1), 32)
+
+
+func count_spawn(n := 1) -> void:
+	wave_spawned += n
+	if wave_state == Wave.SPAWNING and wave_spawned >= wave_quota():
+		wave_state = Wave.CLEARING
+
+
+func count_kill() -> void:
+	wave_killed += 1
+
+
+func wave_progress() -> float:
+	return clampf(float(wave_killed) / wave_quota(), 0.0, 1.0)
+
+
+## The field is clear: pause, then the next wave.
+func end_wave() -> void:
+	wave_state = Wave.BREAK
+	wave_break = WAVE_BREAK
+
+
+func next_wave() -> void:
+	wave += 1
+	wave_state = Wave.SPAWNING
+	wave_spawned = 0
+	wave_killed = 0
 
 
 func intensity() -> float:
@@ -95,7 +154,7 @@ func reload_time() -> float:
 ## Returns an event when one is due; formation and rush alternate and every
 ## third is the boss.
 func poll_event() -> Event:
-	if elapsed < next_event:
+	if elapsed < next_event or wave_state != Wave.SPAWNING:
 		return Event.NONE
 	event_count += 1
 	next_event = elapsed + EVENT_EVERY * lerpf(1.0, 0.8, clampf(intensity() / 6.0, 0.0, 1.0))
@@ -122,6 +181,10 @@ func pick_kind(rng: RandomNumberGenerator) -> Target.Kind:
 		table.append([Target.Kind.DROP, 1.0 + a * 1.5])
 	if i >= 2.4:
 		table.append([Target.Kind.SHIELD, 0.8 + a * 1.5])
+	if i >= 2.0:
+		table.append([Target.Kind.MEDIC, 0.6 + a])
+	if i >= 2.8:
+		table.append([Target.Kind.MIRROR, 0.7 + a])
 	if i >= 3.0:
 		table.append([Target.Kind.SHADE, 0.8 + a * 1.2])
 	var total := 0.0

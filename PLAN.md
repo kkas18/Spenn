@@ -1058,3 +1058,70 @@ kjedetreff.
 - En egen testrigg viser en kappet Tungvekt som faller og sprenger Vakten under.
 - Balanse med bot: 150 s snitt. Boten sikter bare på det laveste målet og lager derfor
   sjelden kjeder, 0–2 per runde.
+
+# v7.2 – Fase 3: bølger, formasjonsledere, nye fiender, bosstrinn, vanelæring
+
+## Bølger
+Rundt det endeløse presset ligger nå bølger, i Space Invaders-stil:
+- En bølge sender ut kvoten sin, 10 + 3 per bølge (maks 32). Formasjoner teller per
+  medlem og bossen teller som 3.
+- Deretter kommer ingenting nytt før feltet er tomt. De to siste skjelver og synker
+  dobbelt så fort.
+- Et renset felt gir kortet «BØLGE n RENSKET» med bonus (100 + 50·n) × multiplikator,
+  en tonefrase og 0,12 spenning.
+- Så følger 2,4 s pause før neste bølge.
+- Hendelser (formasjon, storm, boss) kommer bare mens bølgen sender ut.
+- Toppfeltet viser «BØLGE n» med fremdrift etter drap. Intensitetskurven er fortsatt
+  tidsstyrt.
+
+## Formasjonsledere
+- Rekker på fem eller flere får en kronet leder i midten, som reagerer 30 % raskere.
+- De andre holder posisjonen på lederens krok og gjør ingen egne trekk.
+- Skytes lederen, blir det «FORMASJON BRUTT» (ferdighetsskudd, 80 poeng). Resten får
+  panikk i 2,2 s og er helt åpne.
+- Kortet sier nå «FELL LEDEREN MED KRONEN».
+
+## Nye fiender
+- **Legen (Medic):** perlehvit gelering med mintmerke.
+  - Hvert 2,6.–4,5. sekund leger den den nærmeste skadde allierte (+1 liv), ellers
+    gir den den nærmeste en boble som tar ett støt.
+  - Gjennomslagskuler og snorkutt går forbi boblen.
+  - Den dukker opp fra intensitet 2,0.
+- **Speilet (Mirror):** polert sekskant i metall.
+  - Rene skudd, altså kuler som ikke har truffet noe ennå, kastes rett tilbake med
+    full elastisitet.
+  - Kula regnes da som banket og kan ta et annet mål.
+  - Speilet selv må treffes av en kule som har sprettet (vegg, speil eller et annet
+    mål), av gjennomslag, av snorkutt eller av en kjedereaksjon.
+  - Det dukker opp fra intensitet 2,8.
+- **Klatreren** er droppet med vilje. Å klatre ned i rykk og stå stille mellom rykkene
+  overlapper med Dykkeren (stuper etter varsel) og Snella (vinsjer seg), så den ville
+  ikke gitt ny spillmekanikk.
+
+## Bosstrinn (Spinneren)
+Bossen går gjennom tre trinn etter gjenværende liv:
+
+| Trinn | Liv | Plater | Rotasjon | Undersåtter |
+|---|---|---|---|---|
+| 1 | 8–6 | 2 × 76° | ×1 | ×1 |
+| 2 | 5–3 | 3 × 60° | ×1,25 | ×0,75 intervall |
+| 3 | 2–1 | 1 × 110° | ×2 | ×0,5 intervall, og den stuper ofte |
+
+Ved hvert skifte skjer dette:
+- de gamle platene knuses av;
+- sjokkbølge, kamerastøt og haptikk;
+- teksten «SPINNEREN · TRINN n».
+
+## Vanelæring
+- **Registrering:** retningen på hvert skudd legges inn i et glidende snitt
+  (-1 venstre, 1 høyre).
+- **Plassering:** nye fiender plasseres bort fra siden du foretrekker, med opptil
+  50 % lavere plassvekt.
+- **Beskjed:** første gang vanen er tydelig (> 0,45 etter 12 skudd), står det én gang
+  per runde: «DE HAR MERKET AT DU SIKTER TIL HØYRE/VENSTRE».
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- En egen testrigg viser Legen med boble, Speilet, kronet formasjon og boss i trinn 2.
+- Balanse med bot, 4 frø: 147 s snitt, 4–5 bølger. Boten treffer sjeldnere nå
+  (65–84 %), fordi fiendene plasseres bort fra der den sikter.

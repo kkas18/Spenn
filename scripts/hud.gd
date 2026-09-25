@@ -575,7 +575,7 @@ class TopBar extends Control:
 				draw_line(c + Vector2(-7, 0), c + Vector2(-2, 0), Color(Tok.TEXT_FAINT, ar), 2.4, true)
 				draw_line(c + Vector2(2, 0), c + Vector2(7, 0), Color(Tok.TEXT_FAINT, ar), 2.4, true)
 		# Phase label 10 px under the score, progress bar 8 px under it.
-		var lv := Loc.t("hud.phase") % phase
+		var lv := Loc.t("hud.wave") % phase
 		var ly := base + 10.0 + caps.get_ascent(13) + ry
 		draw_string(caps, Vector2(0, ly), lv, HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color(Tok.TEXT_SECONDARY, ar))
 		var bw := 132.0

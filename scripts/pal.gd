@@ -37,6 +37,9 @@ const ARMOR := Color("7E9CC9")   # 215°, luma .60 – Vokter body (ring + plate
 const BOSS := Color("D05BE0")   # 290°, luma .52 – Spinneren (filled hexagon), orchid
 const REEL := Color("9FD85A")   # 90°, luma .73 – Snelle (spoked reel), lime
 const SHADE := Color("FF7FB6")   # 335°, luma .64 – Skygge (crescent), rose
+const MEDIC := Color("E6ECEF")   # pearl, luma .92 – Legen (ring with a cross badge)
+const MEDIC_BADGE := Color("4FC79A")   # mint: its badge and its bubbles
+const MIRROR := Color("B3C3D6")   # silver, luma .76 – Speilet (polished hexagon)
 const EYE := Color("E4E7EC")
 const PUPIL := Color("0E1015")
 

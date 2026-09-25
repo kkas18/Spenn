@@ -38,11 +38,11 @@ const CHARGE_KILL := 0.03
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
-enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN }
-const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain"]
-const SKILL_POINTS := [40, 40, 60, 50, 50, 60]
-const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14]
-const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8]]
+enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN, BREAK }
+const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain", "skill.break"]
+const SKILL_POINTS := [40, 40, 60, 50, 50, 60, 80]
+const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14, 0.12]
+const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8], [2, 4, 5, 7]]
 const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 # Chain reactions: a falling body this fast knocks off what it lands on; a
 # freshly struck target slamming a neighbour this hard hurts it.
@@ -60,7 +60,8 @@ var cuts := 0
 var charge := 0.0               # 0..1 tension toward overload
 var overload_t := 0.0           # real seconds of overload left
 var overloads := 0
-var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0]
+var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0]
+var waves_cleared := 0
 var ammo: Array[int] = []       # index 0 is loaded
 var reload_t := 0.0
 
@@ -83,7 +84,6 @@ var _rush_t := 0.0
 var _chain := 0
 var _chain_t := 0.0
 var _next_life_at := EXTRA_LIFE_EVERY
-var _phase_shown := 1
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
 var _tension := 0.0
@@ -98,6 +98,7 @@ var _last_tap_pos := Vector2.ZERO
 var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
+var _habit_told := false
 
 
 func _ready() -> void:
@@ -258,11 +259,12 @@ func _start_run() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	overloads = 0
-	skill_counts = [0, 0, 0, 0, 0, 0]
+	skill_counts = [0, 0, 0, 0, 0, 0, 0]
+	waves_cleared = 0
+	_habit_told = false
 	_chain = 0
 	_chain_t = 0.0
 	_next_life_at = EXTRA_LIFE_EVERY
-	_phase_shown = 1
 	_rush_left = 0
 	_spawn_t = 2.5
 	_last_tap = -10.0
@@ -322,21 +324,35 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	t.aggression = director.aggression()
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
 	_maybe_intro(t)
+	director.count_spawn()
 	return t
 
 
 ## A row of identical targets in a shallow V, dropping in left to right.
+## Rows of five or more march behind a crowned leader in the middle: it
+## dodges for all of them. Bring it down and the rest panic.
 func _spawn_formation(kind: Target.Kind, n: int) -> void:
 	var usable := layout.size.x - 120.0
+	var row: Array[Target] = []
 	for i in n:
 		var t := _free_target()
 		if t == null:
-			return
+			break
 		var x := 60.0 + (i + 0.5) * usable / n
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
 		t.aggression = director.aggression()
 		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
 		_maybe_intro(t)
+		row.append(t)
+	director.count_spawn(row.size())
+	if row.size() >= 5:
+		var lead := row[row.size() / 2]
+		lead.is_leader = true
+		lead.aggression = minf(1.0, lead.aggression + 0.15)
+		for t in row:
+			if t != lead:
+				t.leader = lead
+				t.form_off = t.anchor.x - lead.anchor.x
 
 
 func _spawn_boss() -> void:
@@ -346,6 +362,7 @@ func _spawn_boss() -> void:
 	t.aggression = director.aggression()
 	t.spawn(Target.Kind.BOSS, Vector2(layout.center_x, layout.rail_y + 3.0), 12.0, layout.play_h * 0.22, 0.3)
 	_maybe_intro(t)
+	director.count_spawn(3)
 
 
 func _alive_count() -> int:
@@ -393,6 +410,9 @@ func _best_slot(used: Array[float], slots: int) -> float:
 		var d := INF
 		for u in used:
 			d = minf(d, absf(u - x))
+		# They have learned your habits: the side you favour gets fewer.
+		var side := (x - layout.center_x) / (usable * 0.5)
+		d = minf(d, 1000.0) * (1.0 - 0.5 * clampf(director.side_bias * side, 0.0, 1.0))
 		if d > best_d:
 			best_d = d
 			best_x = x
@@ -423,6 +443,8 @@ func _process(delta: float) -> void:
 		_overload_tick(delta)
 		_pace(delta)
 		_spawn_minions()
+		_medic_work()
+		_boss_stages()
 		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
 
 
@@ -431,13 +453,15 @@ func _process(delta: float) -> void:
 ## heartbeat when a target is close to the line.
 func _pace(delta: float) -> void:
 	director.tick(delta)
+	_wave_tick(delta)
 	_spawn_t -= delta
-	if _alive_count() < director.alive_floor():
-		_spawn_t = minf(_spawn_t, 0.35)
-	if _spawn_t <= 0.0:
-		_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
-		if _alive_count() < director.alive_cap():
-			_spawn_one(director.pick_kind(_rng))
+	if director.wave_state == Director.Wave.SPAWNING:
+		if _alive_count() < director.alive_floor():
+			_spawn_t = minf(_spawn_t, 0.35)
+		if _spawn_t <= 0.0:
+			_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
+			if _alive_count() < director.alive_cap():
+				_spawn_one(director.pick_kind(_rng))
 	match director.poll_event():
 		Director.Event.FORMATION:
 			var k := director.formation_kind(_rng)
@@ -463,13 +487,13 @@ func _pace(delta: float) -> void:
 		_chain_t -= delta
 		if _chain_t <= 0.0:
 			_chain = 0
-	var p := director.phase()
-	hud.bar.phase = p
-	hud.bar.progress = director.phase_progress()
-	if p != _phase_shown:
-		_phase_shown = p
-		fx.popup(Loc.t("hud.phase") % p, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 24)
-		Sfx.play("streak", 0.85)
+	hud.bar.phase = director.wave
+	hud.bar.progress = director.wave_progress()
+	if not _habit_told and director.shots >= 12 and absf(director.side_bias) > Director.HABIT_TELL:
+		# Say it once: the smarter spawns should be felt, and understood.
+		_habit_told = true
+		fx.popup(Loc.t("habit.right" if director.side_bias > 0.0 else "habit.left"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
+		Sfx.play("tease", 0.9, -4.0)
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
@@ -485,6 +509,40 @@ func _pace(delta: float) -> void:
 			Sfx.haptic(8, 0.15)
 	else:
 		_beat_t = 0.0
+
+
+## Wave flow: spawning until the quota is out, then clearing (the last few
+## hurry down, shaking), a clear bonus, a short break and the next wave.
+func _wave_tick(delta: float) -> void:
+	match director.wave_state:
+		Director.Wave.CLEARING:
+			var alive := _alive_count()
+			var last := alive <= Director.HURRY_AT
+			for t in targets:
+				t.hurry = last and t.is_hittable() and t.kind != Target.Kind.BOSS
+			if alive == 0 and _rush_left == 0:
+				_clear_wave()
+		Director.Wave.BREAK:
+			director.wave_break -= delta
+			if director.wave_break <= 0.0:
+				director.next_wave()
+				_spawn_t = 0.3
+				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 26)
+				Sfx.play("streak", 0.85)
+
+
+func _clear_wave() -> void:
+	waves_cleared += 1
+	var bonus := (100 + 50 * director.wave) * _mult() * _surge()
+	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.46)
+	_add_score(bonus, mid)
+	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
+	fx.shock(mid, 8.0, 380.0, 0.6)
+	Sfx.play("clear")
+	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
+	Sfx.haptic_pattern("record")
+	_charge(0.12)
+	director.end_wave()
 
 
 ## Pupils follow the nearest ball in flight (or the pouch while aiming).
@@ -503,6 +561,7 @@ func _update_eyes() -> void:
 	for t in targets:
 		if t.phase == Target.Phase.OFF:
 			continue
+		t.field_w = layout.size.x
 		t.threat = o
 		# Targets that have hung around learn as the run heats up.
 		t.aggression = maxf(t.aggression, director.aggression())
@@ -791,6 +850,9 @@ func _falling_contacts() -> void:
 ## A target struck by another body, not by a ball: scored like a hit, and a
 ## kill is a chain reaction (deeper links pay more).
 func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, depth: int) -> void:
+	if t.patched:
+		_pop_bubble(t, contact)
+		return
 	var col := t.color()
 	var at := t.pos
 	var was_close := t.danger > CLOSE_CALL
@@ -814,6 +876,72 @@ func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, d
 		_skill(Skill.CHAIN, at, depth)
 		if was_close:
 			_skill(Skill.CLUTCH, at)
+
+
+## The leader is down (or gone): the row breaks up. Shot down, the others
+## panic for a moment, wide open, and the break is a skill shot.
+func _break_formation(lead: Target, scored: bool) -> void:
+	lead.is_leader = false
+	var n := 0
+	for m in targets:
+		if m.leader == lead:
+			m.leader = null
+			n += 1
+			if scored and m.is_hittable():
+				m.stun_t = 2.2
+				m.startle_t = 0.4
+	if scored and n > 0:
+		_skill(Skill.BREAK, lead.pos)
+
+
+## Legen, every few seconds: mends the nearest damaged ally, or else wraps
+## the nearest one in a bubble that soaks the next blow.
+func _medic_work() -> void:
+	for m in targets:
+		if m.kind != Target.Kind.MEDIC or not m.wants_heal:
+			continue
+		m.wants_heal = false
+		if not m.is_hittable():
+			continue
+		var best: Target = null
+		var best_s := INF
+		for t in targets:
+			if t == m or not t.is_hittable() or t.kind == Target.Kind.MEDIC or t.patched:
+				continue
+			var d := t.pos.distance_to(m.pos)
+			if d > 300.0 * layout.scale:
+				continue
+			var sc := d - (400.0 if t.hp < Target.HP[t.kind] else 0.0)
+			if sc < best_s:
+				best_s = sc
+				best = t
+		if best == null:
+			continue
+		if best.hp < Target.HP[best.kind]:
+			best.hp += 1
+			fx.popup("+1", best.pos + Vector2(0, -best.radius - 14.0), Pal.MEDIC_BADGE, 18)
+		else:
+			best.patched = true
+		fx.link(m.pos, best.pos, Pal.MEDIC_BADGE)
+		fx.ring(best.pos, Pal.MEDIC_BADGE, best.radius + 12.0)
+		Sfx.play("fade", 1.35, -6.0)
+
+
+## Spinneren moving to its next stage: the old plates shatter off, a
+## shockwave, and the stage is named.
+func _boss_stages() -> void:
+	for t in targets:
+		if t.kind != Target.Kind.BOSS or not t.stage_changed:
+			continue
+		t.stage_changed = false
+		fx.shock(t.pos, 16.0, 360.0, 0.6)
+		fx.shards(t.pos, Pal.METAL_LIGHT, 5, Vector2.ZERO)
+		fx.punch(0.03)
+		fx.shake(2.5)
+		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20)
+		Sfx.play("metal", 0.8)
+		Sfx.play("whoosh", 0.7, -4.0)
+		Sfx.haptic(40, 0.7)
 
 
 func _spawn_minions() -> void:
@@ -880,7 +1008,9 @@ func _collide(b: Ball) -> void:
 				t.startle(b.pos)
 			continue
 		var n := d / dist if dist > 0.001 else -b.vel.normalized()
-		if not b.special and t.blocks(n):
+		if t.kind == Target.Kind.MIRROR and not b.special and b.banks == 0 and b.hits == 0:
+			_on_mirror(b, t, n, cp, rr)
+		elif not b.special and t.blocks(n):
 			_on_block(b, t, n, cp, rr)
 		else:
 			_on_hit(b, t, n, cp, rr)
@@ -911,9 +1041,42 @@ func _resolve(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float, e: float, 
 	return [-imp / K_MASS, -vn]
 
 
+## Speilet: a clean shot (one that has touched nothing yet) is thrown
+## straight back. The ball now counts as banked, so it can take out another.
+func _on_mirror(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
+	b.touch(t.get_instance_id())
+	var res := _resolve(b, t, n, cp, rr, 1.0, 0.0)
+	b.banks += 1
+	var contact := b.pos - n * Ball.RADIUS
+	t.push(res[0] * 0.4, contact)
+	t.dent(contact, res[1])
+	fx.flash(contact, 14.0)
+	fx.sparks(contact, Pal.EYE, 8)
+	fx.ring(contact, Pal.MIRROR, 20.0)
+	fx.popup(Loc.t("popup.mirror"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
+	Sfx.play("clank", 1.35, -5.0)
+	Sfx.note(7, -9.0)
+	Sfx.haptic(10, 0.3)
+
+
+## Legen's bubble takes the blow and bursts; the body underneath is fine.
+func _pop_bubble(t: Target, at: Vector2) -> void:
+	t.patched = false
+	t.push((t.pos - at).normalized() * 60.0, at)
+	fx.ring(t.pos, Pal.MEDIC_BADGE, t.radius + 14.0)
+	fx.sparks(at, Pal.MEDIC_BADGE, 8)
+	fx.popup(Loc.t("popup.bubble"), at + Vector2(0, -18), Pal.MEDIC_BADGE, 16)
+	Sfx.play("burst", 1.45, -8.0)
+	Sfx.haptic(10, 0.3)
+
+
 ## Armour: the ball glances off, the target rocks, nothing breaks.
 func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	b.touch(t.get_instance_id())
+	if t.patched:
+		_resolve(b, t, n, cp, rr, SOFT_E, SOFT_MU)
+		_pop_bubble(t, b.pos - n * Ball.RADIUS)
+		return
 	var res := _resolve(b, t, n, cp, rr, PLATE_E, 0.08)
 	var contact := b.pos - n * Ball.RADIUS
 	t.push(res[0], contact)
@@ -1146,6 +1309,8 @@ func _material_knock(t: Target, hits: int, loud: float) -> void:
 			Sfx.play("clank", p, loud)
 		Target.Kind.BOSS:
 			Sfx.play("metal", p * 0.9, loud)
+		Target.Kind.MIRROR:
+			Sfx.play("metal", p * 1.3, loud)
 		_:
 			Sfx.play("hit", p, loud)
 
@@ -1197,6 +1362,9 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	var bonus := 0
 	_chain += 1
 	_chain_t = CHAIN_WINDOW
+	director.count_kill()
+	if t.is_leader:
+		_break_formation(t, true)
 	_kill_note()
 	if _chain >= 3:
 		bonus += int(gained * 0.2 * mini(_chain - 2, 6))
@@ -1211,6 +1379,8 @@ func _breach(t: Target) -> void:
 	lives -= 1
 	hud.bar.lose_life(lives)
 	var at := Vector2(t.pos.x, layout.danger_y)
+	if t.is_leader:
+		_break_formation(t, false)
 	t.cut()
 	rail.flex(t.anchor.x, 9.0)
 	fx.shake(3.0)
@@ -1380,6 +1550,8 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 		return
 	ammo.pop_front()
 	_shot_seq += 1
+	if state == State.PLAYING or state == State.STARTING:
+		director.record_aim(vel.normalized().x)
 	var dirs: Array[float] = [0.0]
 	if kind == Ammo.TRIPLE:
 		dirs = [-TRIPLE_SPREAD, 0.0, TRIPLE_SPREAD]
