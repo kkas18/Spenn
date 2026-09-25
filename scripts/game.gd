@@ -100,6 +100,11 @@ var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
 var _last_kill := Vector2.ZERO
+var daily := false              # this run is the daily challenge
+var run_kills := 0
+var _missions_done: Array = []  # lines of the missions finished this run
+var _mission_slots: Array = []  # slots already paid this run
+var _mission_t := 0.0
 
 
 func _ready() -> void:
@@ -253,6 +258,18 @@ func _to_menu() -> void:
 ## HUD comes in piece by piece and the first row hangs in.
 func _start_run() -> void:
 	_set_state(State.STARTING)
+	# The daily challenge: the same spawn sequence for everyone that day.
+	daily = hud.daily
+	if daily:
+		_rng.seed = Meta.today()
+		seed(Meta.today())
+	else:
+		_rng.randomize()
+		randomize()
+	run_kills = 0
+	_missions_done = []
+	_mission_slots = []
+	_mission_t = 0.0
 	score = 0
 	lives = LIVES
 	streak = 0
@@ -491,6 +508,10 @@ func _pace(delta: float) -> void:
 			_chain = 0
 	hud.bar.phase = director.wave
 	hud.bar.progress = director.wave_progress()
+	_mission_t -= delta
+	if _mission_t <= 0.0:
+		_mission_t = 0.5
+		_check_missions()
 	if not _habit_told and director.shots >= 12 and absf(director.side_bias) > Director.HABIT_TELL:
 		# Say it once: the smarter spawns should be felt, and understood.
 		_habit_told = true
@@ -512,6 +533,35 @@ func _pace(delta: float) -> void:
 			Sfx.haptic(8, 0.15)
 	else:
 		_beat_t = 0.0
+
+
+## This run so far, in the terms missions and lifetime stats use.
+func _run_stats() -> Dictionary:
+	return {
+		"kills": run_kills, "score": score, "wave": director.wave, "overloads": overloads,
+		"bank": skill_counts[Skill.BANK], "chain": skill_counts[Skill.CHAIN], "cuts": cuts,
+		"double": skill_counts[Skill.DOUBLE], "break": skill_counts[Skill.BREAK],
+		"secs": int(director.elapsed), "shots": director.shots, "hits": director.hits,
+	}
+
+
+## A mission reached mid-run pays at once and says so; its slot takes the
+## next, harder one (shown in the menu, not chased in this run).
+func _check_missions() -> void:
+	var run := _run_stats()
+	for i in Prefs.missions.size():
+		if _mission_slots.has(i):
+			continue
+		var m: Dictionary = Prefs.missions[i]
+		if Meta.progress(m.id, run) < Meta.goal(m.id, int(m.level)):
+			continue
+		var line := Meta.describe(m.id, int(m.level))
+		var pay := Prefs.complete_mission(i)
+		_mission_slots.append(i)
+		_missions_done.append(line)
+		fx.popup("%s  +%s" % [Loc.t("mission.done"), Hud._group(pay)], Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.2), Pal.GOLD_LIGHT, 20, true)
+		Sfx.phrase([4, 5, 6, 7], 0.06, -3.0)
+		Sfx.haptic_pattern("record")
 
 
 ## Wave flow: spawning until the quota is out, then clearing (the last few
@@ -1377,6 +1427,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain += 1
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
+	run_kills += 1
 	_last_kill = t.pos
 	if t.is_leader:
 		_break_formation(t, true)
@@ -1460,14 +1511,16 @@ func _begin_death(at: Vector2) -> void:
 func _show_results() -> void:
 	if state != State.DEATH:
 		return
-	var prev := Prefs.record
-	var is_record := Prefs.submit_score(score)
+	_check_missions()
+	Prefs.record_run(_run_stats())
+	var prev := Prefs.daily_record() if daily else Prefs.record
+	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
 	_set_state(State.GAME_OVER)
 	var feats: Array = []
 	for i in skill_counts.size():
 		feats.append([SKILL_KEY[i], skill_counts[i]])
-	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads)
+	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads, daily, _missions_done)
 	if not is_record:
 		Sfx.play("lose")
 	Motion.after(0.6, func() -> void: hud.locked = false)

@@ -1160,3 +1160,51 @@ Det finnes ingen stems, så miksen styres med nivå og filter:
 - Med bølgenes pauser økte snittet til 153 s.
 - Nedstigningen er skrudd opp ca. 7 %, og bølgepausen er kortet til 2,0 s.
 - Resultat med 6 frø: 137 s snitt, som er likt grunnlinjen.
+
+# v7.4 – Fase 6: oppdrag, dagens utfordring, kuler (skins), statistikk
+
+Det lange løpet rundt rundene ligger i `scripts/meta.gd` (regler og data) og
+`Prefs` (lagring under `[meta]`).
+
+## Oppdrag
+- Tre er aktive om gangen. Hvert er et mål for én runde, trukket fra ti maler:
+  - knus fiender, poeng, bølge, veggskudd;
+  - overbelastninger, kjedereaksjoner, snorkutt, dobbelttreff;
+  - overlev sekunder, bryt formasjoner.
+- Målene vokser med antall fullførte oppdrag.
+- Menyen viser dem under rekorden.
+- Når et oppdrag nås midt i en runde, vises «OPPDRAG FULLFØRT +1 000» i gull med
+  tonefrase og haptikk. Belønningen er 1 000 + 500 per nivå i livstidspoeng.
+- Plassen får et nytt, vanskeligere oppdrag, som vises i menyen.
+- Game Over lister oppdragene som ble fullført i runden.
+
+## Dagens utfordring
+- En bryter i menyen setter neste runde til dagens seed (ÅÅÅÅMMDD). Seeden brukes både
+  for spillets egen RNG og for den globale RNG-en, så alle får samme sekvens av
+  fiender og hendelser den dagen.
+- Utfordringen har egen rekord, «DAGENS REKORD», som nullstilles ved ny dag, og egen
+  tittel og rekordlinje på Game Over.
+
+## Kuler (skins)
+- Seks kosmetiske kuler låses opp med livstidspoeng (alle poeng fra alle runder, pluss
+  oppdrag): Gull (0), Kobber (15 000), Krom (40 000), Jade (80 000),
+  Obsidian (150 000) og Glød (300 000).
+- Valgt kule farger kula i flukt, sporet, pungen og magasinet.
+- Panelet viser en tegnet prøvekule per knapp. Låste kuler er grå og viser prisen.
+
+## Statistikk
+- Panelet viser:
+  - runder, rekord, totale poeng, beste bølge;
+  - fiender knust, treffsikkerhet, overbelastninger;
+  - veggskudd, kjedereaksjoner, snorkutt;
+  - fullførte oppdrag og spilletid.
+- Tallene oppdateres ved hver rundeslutt (`Prefs.record_run`).
+
+## Meny
+Topplinjen har INNSTILLINGER, STATISTIKK, KULER og språk.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- En egen testrigg viser menyen (vanlig og dagens), statistikk, kuler,
+  oppdragsmeldingen, jadekula i spill og Game Over med oppdrag.
+- Balanse er uendret: 155 s og 122 s på frø 1 og 2.

@@ -50,6 +50,14 @@ var _s_credits: Label
 var _s_back: UIButton
 var _m_settings: UIButton
 var _m_lang: UIButton
+var _m_stats: UIButton
+var _m_skins: UIButton
+var _m_daily: UIButton
+var daily := false             # the menu's mode: the next run is the daily challenge
+var _stats: Control
+var _stats_box: VBoxContainer
+var _skins: Control
+var _skins_box: VBoxContainer
 
 
 func _init() -> void:
@@ -78,6 +86,12 @@ func _ready() -> void:
 	_build_menu_bar()
 	_build_pause()
 	_build_settings()
+	var sp := _panel()
+	_stats = sp[0]
+	_stats_box = sp[1]
+	var kp := _panel()
+	_skins = kp[0]
+	_skins_box = kp[1]
 	_over = GameOver.new()
 	_over.hud = self
 	_over.theme = _theme
@@ -92,17 +106,20 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq]:
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
 		c.position = Vector2.ZERO
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
 	var min_h := maxf(60.0, Tok.TOUCH_MIN_DP * l.dp)
 	for b: UIButton in [_b_resume, _b_restart, _b_settings, _b_menu, _s_music, _s_sfx, _s_haptics, _s_motion, _s_guide, _s_lang, _s_back]:
 		b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
-	for b: UIButton in [_m_settings, _m_lang]:
+	for b: UIButton in [_m_settings, _m_lang, _m_stats, _m_skins]:
 		b.custom_minimum_size = Vector2(maxf(64.0, 48.0 * l.dp), maxf(64.0, 48.0 * l.dp))
 	_menu_bar.position = Vector2(l.margin, l.safe_top + Tok.SPACE_LG)
 	_menu_bar.size = Vector2(l.size.x - l.margin * 2.0, maxf(64.0, 48.0 * l.dp))
+	_m_daily.custom_minimum_size = Vector2(maxf(300.0, 44.0 * l.dp), maxf(56.0, 44.0 * l.dp))
+	_m_daily.size = _m_daily.custom_minimum_size
+	_m_daily.position = Vector2(l.size.x * 0.5 - _m_daily.size.x * 0.5, menu_record_y() - 118.0)
 	_over.setup()
 
 
@@ -130,19 +147,30 @@ static func _group(n: int) -> String:
 # ---------------------------------------------------------------- screens
 
 ## Main menu chrome: settings + language buttons and the record/prompt copy.
+## Where the menu's record figure sits (the daily toggle goes above it,
+## the missions below).
+func menu_record_y() -> float:
+	return l.rail_y + l.play_h * 0.62
+
+
 func show_menu() -> void:
 	bar.visible = false
-	_menu_bar.visible = true
-	_menu_bar.modulate.a = 0.0
-	Motion.to(_menu_bar, "modulate:a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.15)
+	_refresh_text()
+	for c: Control in [_menu_bar, _m_daily]:
+		c.visible = true
+		c.modulate.a = 0.0
+		Motion.to(c, "modulate:a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.15)
 	overlay.menu_a = 0.0
 	Motion.to(overlay, "menu_a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.25)
 
 
 func hide_menu_ui() -> void:
 	Motion.to(_menu_bar, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+	Motion.to(_m_daily, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
 	Motion.to(overlay, "menu_a", 0.0, Motion.FAST, Motion.Ease.EXIT)
-	Motion.after(Motion.FAST, func() -> void: _menu_bar.visible = false)
+	Motion.after(Motion.FAST, func() -> void:
+		_menu_bar.visible = false
+		_m_daily.visible = false)
 
 
 ## In-game bar comes in piece by piece: score, then the rest (+80 ms),
@@ -234,8 +262,8 @@ func countdown(cb: Callable) -> void:
 		cb.call())
 
 
-func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0) -> void:
-	_over.play(score, prev_best, is_record, secs, acc, skills, overloads)
+func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0, was_daily := false, done: Array = []) -> void:
+	_over.play(score, prev_best, is_record, secs, acc, skills, overloads, was_daily, done)
 
 
 func hide_game_over() -> void:
@@ -258,7 +286,7 @@ func intro(name: String, desc: String) -> void:
 
 ## A panel is up: cards and enemy intros hold back so nothing overlaps it.
 func modal_open() -> bool:
-	return _pause.visible or _settings.visible or _over.visible
+	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible
 
 
 func intro_busy() -> bool:
@@ -294,6 +322,10 @@ func _refresh_text() -> void:
 	_s_credits.text = Loc.t("settings.credits")
 	_m_settings.text = Loc.t("menu.settings")
 	_m_lang.text = "NO" if Loc.lang == "no" else "EN"
+	_m_stats.text = Loc.t("menu.stats")
+	_m_skins.text = Loc.t("menu.skins")
+	_m_daily.text = Loc.t("menu.daily")
+	_m_daily.theme_type_variation = &"PrimaryButton" if daily else &""
 	_over.refresh_text()
 	bar.queue_redraw()
 	overlay.queue_redraw()
@@ -442,9 +474,146 @@ func _build_menu_bar() -> void:
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_menu_bar.add_child(gap)
+	_m_stats = button(func() -> void: _open_meta(_stats, _stats_box, _fill_stats))
+	_menu_bar.add_child(_m_stats)
+	_m_skins = button(func() -> void: _open_meta(_skins, _skins_box, _fill_skins))
+	_menu_bar.add_child(_m_skins)
 	_m_lang = button(func() -> void: Loc.next_language())
 	_m_lang.custom_minimum_size = Vector2(64, 64)
 	_menu_bar.add_child(_m_lang)
+	for b: UIButton in [_m_settings, _m_stats, _m_skins, _m_lang]:
+		b.add_theme_font_size_override("font_size", Tok.TYPE_CAPTION + 1)
+	_menu_bar.add_theme_constant_override("separation", Tok.SPACE_SM)
+	# Mode toggle: the next pull starts either a normal run or today's
+	# seeded challenge (same spawns for everyone that day, its own record).
+	_m_daily = button(func() -> void:
+		daily = not daily
+		_refresh_text())
+	_m_daily.theme = _theme
+	_m_daily.visible = false
+	add_child(_m_daily)
+
+
+# ---------------------------------------------------------------- meta panels
+
+## Stats and skins: full-screen panels over the menu, rebuilt on open so
+## they always show the latest numbers.
+func _open_meta(p: Control, box: VBoxContainer, fill: Callable) -> void:
+	for c in box.get_children():
+		c.queue_free()
+	fill.call(box)
+	var back := button(func() -> void: _close_meta(p))
+	back.text = Loc.t("settings.back")
+	back.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), maxf(60.0, Tok.TOUCH_MIN_DP * l.dp))
+	box.add_child(_spacer(Tok.SPACE_SM))
+	box.add_child(back)
+	hide_menu_ui()
+	scrim_to(1.0, 0.25)
+	_open_panel(p, box, 0.08)
+	Sfx.play("panel")
+
+
+func _close_meta(p: Control) -> void:
+	_close_panel(p)
+	scrim_to(0.0, 0.25)
+	show_menu()
+
+
+func _row(name: String, value: String) -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(440, 30)
+	var a := label(Tok.TYPE_LABEL, Tok.TEXT_SECONDARY, _font_caps)
+	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	a.text = name
+	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var b := label(Tok.TYPE_LABEL + 2, Tok.TEXT_PRIMARY, _font_caps)
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	b.text = value
+	row.add_child(a)
+	row.add_child(b)
+	return row
+
+
+func _fill_stats(box: VBoxContainer) -> void:
+	var st := Prefs.stats
+	var t := label(Tok.TYPE_LABEL + 1, Tok.TEXT_SECONDARY, _font_caps)
+	t.text = Loc.t("stats.title")
+	box.add_child(t)
+	box.add_child(_spacer(Tok.SPACE_SM))
+	var secs := int(st.get("secs", 0))
+	var shots := int(st.get("shots", 0))
+	var rows := [
+		["stats.runs", _group(int(st.get("runs", 0)))],
+		["stats.best", _group(Prefs.record)],
+		["stats.total", _group(Prefs.total_points)],
+		["stats.wave", str(int(st.get("best_wave", 0)))],
+		["stats.kills", _group(int(st.get("kills", 0)))],
+		["stats.accuracy", "%d %%" % (int(round(100.0 * int(st.get("hits", 0)) / shots)) if shots > 0 else 0)],
+		["gameOver.overloads", _group(int(st.get("overloads", 0)))],
+		["skill.bank", _group(int(st.get("bank", 0)))],
+		["skill.chain", _group(int(st.get("chain", 0)))],
+		["skill.cut", _group(int(st.get("cuts", 0)))],
+		["stats.missions", str(Prefs.mission_level)],
+		["stats.time", "%d:%02d" % [secs / 3600, (secs / 60) % 60]],
+	]
+	for r: Array in rows:
+		box.add_child(_row(Loc.t(r[0]), r[1]))
+
+
+## Skins: each a button with a swatch; locked ones show what they cost.
+func _fill_skins(box: VBoxContainer) -> void:
+	var t := label(Tok.TYPE_LABEL + 1, Tok.TEXT_SECONDARY, _font_caps)
+	t.text = Loc.t("skins.title")
+	box.add_child(t)
+	var sub := label(Tok.TYPE_CAPTION + 1, Tok.TEXT_FAINT, _font_caps)
+	sub.text = Loc.t("skins.total") % _group(Prefs.total_points)
+	box.add_child(sub)
+	box.add_child(_spacer(Tok.SPACE_SM))
+	for i in Meta.SKINS.size():
+		var sk: Array = Meta.SKINS[i]
+		var open := Meta.skin_unlocked(i, Prefs.total_points)
+		var b := button(func() -> void:
+			if Meta.skin_unlocked(i, Prefs.total_points):
+				Prefs.set_skin(i)
+				_open_meta(_skins, _skins_box, _fill_skins)
+			else:
+				Sfx.play("deny")
+				Sfx.haptic_pattern("error"), i == Prefs.skin)
+		b.custom_minimum_size = Vector2(maxf(360.0, 52.0 * l.dp), maxf(60.0, Tok.TOUCH_MIN_DP * l.dp))
+		var name := Loc.t(sk[0])
+		if i == Prefs.skin:
+			b.text = "%s  ·  %s" % [name, Loc.t("skins.equipped")]
+		elif open:
+			b.text = name
+		else:
+			b.text = "%s  ·  %s" % [name, Loc.t("skins.locked") % _group(int(sk[1]))]
+			b.modulate.a = 0.55
+		b.icon = _swatch(Meta.skin_colors(i), open)
+		b.expand_icon = false
+		box.add_child(b)
+
+
+## A small lit ball for a skin button (drawn into a texture once).
+func _swatch(c: Array, open: bool) -> Texture2D:
+	var n := 36
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var r := n * 0.5 - 2.0
+	var ctr := Vector2(n * 0.5, n * 0.5)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var d := p.distance_to(ctr)
+			if d > r + 0.5:
+				continue
+			var a := clampf(r + 0.5 - d, 0.0, 1.0)
+			var col: Color = c[0] if d > r - 1.6 else c[1]
+			if p.distance_to(ctr - Vector2(r, r) * 0.34) < r * 0.32:
+				col = col.lerp(c[2], 0.55)
+			if not open:
+				col = Color(col.get_luminance(), col.get_luminance(), col.get_luminance())
+			img.set_pixel(x, y, Color(col, a))
+	return ImageTexture.create_from_image(img)
 
 
 # ---------------------------------------------------------------- top bar
@@ -629,11 +798,23 @@ class Overlay extends Control:
 		var disp := hud.display_font()
 		if menu_a > 0.0:
 			var a := menu_a
-			var y := l.rail_y + l.play_h * 0.66
-			draw_string(caps, Vector2(0, y), Loc.t("menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color(Tok.TEXT_SECONDARY, a))
-			var rec := Hud._group(Prefs.record)
+			var y := hud.menu_record_y()
+			draw_string(caps, Vector2(0, y), Loc.t("menu.dailyBest" if hud.daily else "menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color(Tok.TEXT_SECONDARY, a))
+			var rec := Hud._group(Prefs.daily_record() if hud.daily else Prefs.record)
 			draw_string(num, Vector2(2, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Color(Tok.SHADOW, Tok.SHADOW.a * a))
 			draw_string(num, Vector2(0, y + 56.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 56, Color(Tok.TEXT_PRIMARY, a))
+			# Missions: three goals for a single run, rewarded in points.
+			var my := y + 100.0
+			if my + 3 * 26.0 < l.fork_y - 100.0:
+				draw_string(caps, Vector2(0, my), Loc.t("menu.missions"), HORIZONTAL_ALIGNMENT_CENTER, w, 11, Color(Tok.PRIMARY, a * 0.9))
+				for i in Prefs.missions.size():
+					var m: Dictionary = Prefs.missions[i]
+					var line := Meta.describe(m.id, int(m.level))
+					var yy := my + 28.0 + i * 26.0
+					var tw := caps.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+					var x0 := w * 0.5 - tw * 0.5
+					draw_arc(Vector2(x0 - 14.0, yy - 5.0), 4.5, 0.0, TAU, 16, Color(Tok.TEXT_FAINT, a), 1.5, true)
+					draw_string(caps, Vector2(x0, yy), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(Tok.TEXT_SECONDARY, a))
 			var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Tok.PRIMARY, p))
 		if hud.modal_open():
@@ -697,6 +878,8 @@ class GameOver extends Control:
 	var _acc := 0
 	var _skills: Array = []
 	var _overloads := 0
+	var _daily := false
+	var _done: Array = []
 	var _ticked := 0.0
 	var _record_done := false
 	var _box: VBoxContainer
@@ -730,8 +913,10 @@ class GameOver extends Control:
 		_retry.text = Loc.t("gameOver.restart")
 		_menu.text = Loc.t("gameOver.mainMenu")
 
-	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array, overloads: int) -> void:
+	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array, overloads: int, was_daily: bool, done: Array) -> void:
 		refresh_text()
+		_daily = was_daily
+		_done = done
 		_score = score
 		_prev = prev_best
 		_record = is_record
@@ -794,7 +979,7 @@ class GameOver extends Control:
 		var num := hud.num_font()
 		var cy := l.size.y * 0.34
 		var ka := Motion.ease_value(Motion.Ease.ENTER, _t / Motion.NORMAL)
-		draw_string(caps, Vector2(0, cy - 96.0 + (1.0 - ka) * 8.0), Loc.t("gameOver.title"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(Tok.TEXT_SECONDARY, ka))
+		draw_string(caps, Vector2(0, cy - 96.0 + (1.0 - ka) * 8.0), Loc.t("menu.daily" if _daily else "gameOver.title"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(Tok.PRIMARY if _daily else Tok.TEXT_SECONDARY, ka))
 		var k := Motion.ease_value(Motion.Ease.ENTER, clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0))
 		var shown := Hud._group(int(round(_score * k)))
 		var sa := minf(1.0, (_t - COUNT_FROM) / 0.15)
@@ -819,7 +1004,7 @@ class GameOver extends Control:
 			ky += 30.0
 		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
 		if kb > 0.0:
-			var best_line := "%s  %s" % [Loc.t("gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
+			var best_line := "%s  %s" % [Loc.t("menu.dailyBest" if _daily else "gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
 			draw_string(caps, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
 		var ks := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.4) / Motion.NORMAL)
 		if ks > 0.0:
@@ -829,6 +1014,12 @@ class GameOver extends Control:
 		var feats := _feats()
 		if kk > 0.0 and feats != "":
 			draw_string(caps, Vector2(0, ky + 56.0 + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.PRIMARY_LO.lightened(0.25), kk))
+		# Missions finished in this run, each with a gold tick.
+		var km := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.65) / Motion.NORMAL)
+		if km > 0.0:
+			for i in _done.size():
+				var line := Loc.t("mission.done") + "  ·  " + str(_done[i])
+				draw_string(caps, Vector2(0, ky + 92.0 + i * 24.0 + (1.0 - km) * 6.0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.PRIMARY, km))
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)

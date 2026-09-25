@@ -129,7 +129,7 @@ func _draw() -> void:
 	# Six fading segments, matte gold, no glow.
 	for i in TRAIL:
 		var k := 1.0 - float(i) / TRAIL
-		draw_line(_trail[i], _trail[i + 1], Color(Pal.GOLD_DARK, 0.4 * k), RADIUS * 1.5 * k, true)
+		draw_line(_trail[i], _trail[i + 1], Color(Meta.skin_colors(Prefs.skin)[0], 0.4 * k), RADIUS * 1.5 * k, true)
 	# Stretch along the flight (speed) or squash against a fresh contact.
 	# R·S·R⁻¹ keeps the lighting world-aligned while the shape deforms.
 	var axis := vel.angle()
@@ -150,15 +150,17 @@ func _draw() -> void:
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## Matte gold ball lit from the upper left. `rot` turns the seam so spin
-## reads; a pierce ball carries a dark slit along its flight direction.
+## Matte ball (gold, or the chosen skin) lit from the upper left. `rot`
+## turns the seam so spin reads; a pierce ball carries a dark slit along
+## its flight direction.
 static func draw_ball(ci: CanvasItem, p: Vector2, r: float, is_special: bool, rot: float, dir: Vector2, shadow := true) -> void:
+	var c: Array = Meta.skin_colors(Prefs.skin)
 	if shadow:
 		Pal.disc(ci, p + Pal.SHADOW_OFFSET * 0.8, r, Pal.SHADOW)
-	Pal.disc(ci, p, r, Pal.GOLD_DARK)
-	Pal.disc(ci, p - Vector2(1.3, 1.3), r - 1.6, Pal.GOLD)
-	Pal.disc(ci, p - Vector2(r, r) * 0.34, r * 0.32, Color(Pal.GOLD_LIGHT, 0.55))
-	ci.draw_arc(p, r * 0.58, rot, rot + PI * 0.75, 12, Color(Pal.GOLD_DARK, 0.55), 1.4, true)
+	Pal.disc(ci, p, r, c[0])
+	Pal.disc(ci, p - Vector2(1.3, 1.3), r - 1.6, c[1])
+	Pal.disc(ci, p - Vector2(r, r) * 0.34, r * 0.32, Color(c[2], 0.55))
+	ci.draw_arc(p, r * 0.58, rot, rot + PI * 0.75, 12, Color(c[0], 0.55), 1.4, true)
 	if is_special:
 		var d := dir.normalized() if dir.length() > 0.01 else Vector2.UP
 		ci.draw_line(p - d * r * 0.72, p + d * r * 0.72, Pal.METAL_DARK, 3.0, true)
