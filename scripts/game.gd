@@ -99,6 +99,7 @@ var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
+var _last_kill := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -206,6 +207,7 @@ func _clear_field() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
+	Music.danger = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
 	_vignette.set_shader_parameter("glow", 0.0)
 
@@ -497,6 +499,7 @@ func _pace(delta: float) -> void:
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
+	Music.danger = _tension
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
@@ -538,6 +541,10 @@ func _clear_wave() -> void:
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
 	fx.shock(mid, 8.0, 380.0, 0.6)
+	# Final-kill camera: lean in on the last one and let time drag.
+	fx.focus(_last_kill, 0.06, 1.1)
+	fx.slowmo(0.3, 0.5)
+	Music.duck(5.0, 0.6)
 	Sfx.play("clear")
 	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
 	Sfx.haptic_pattern("record")
@@ -1180,7 +1187,12 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	Sfx.haptic(14, 0.45)
 	if s == Skill.CLUTCH:
 		fx.slowmo(0.45, 0.28)
-		fx.punch(0.02)
+		fx.focus(at, 0.035, 0.6)
+	elif (s == Skill.DOUBLE and n >= 2) or (s == Skill.CHAIN and n >= 2) or s == Skill.BREAK:
+		# The rare ones get the camera and a breath of slow motion.
+		fx.slowmo(0.4, 0.3)
+		fx.focus(at, 0.045, 0.8)
+		Music.duck(3.0, 0.3)
 	_charge(SKILL_CHARGE[s])
 
 
@@ -1216,6 +1228,7 @@ func _begin_overload() -> void:
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
+	Music.duck(6.0, 0.8)
 	hud.bar.hot = true
 	_show_mult()
 	Music.overload = true
@@ -1292,8 +1305,9 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
 		fx.shake(3.0)
-		fx.punch(0.045)
+		fx.focus(t.pos, 0.09, 1.3)
 		fx.slowmo(0.3, 0.6)
+		Music.duck(6.0, 0.7)
 		Sfx.haptic(80, 0.9)
 	if kind == Target.Kind.SPLIT:
 		_split(t)
@@ -1363,6 +1377,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain += 1
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
+	_last_kill = t.pos
 	if t.is_leader:
 		_break_formation(t, true)
 	_kill_note()
@@ -1476,6 +1491,8 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 	score += n
 	hud.bar.score = score
 	hud.bar.pulse = 1.0
+	if n >= 100:
+		hud.bar.glint = 1.0
 	if from != Vector2.INF:
 		fx.tokens(from, Vector2(layout.center_x, layout.score_baseline - 16.0), clampi(2 + n / 25, 2, 8))
 	while score >= _next_life_at:

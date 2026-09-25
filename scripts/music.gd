@@ -10,6 +10,10 @@ extends Node
 ##   PLAY   play track, open (a touch louder as the pressure rises)
 ##   PAUSE  play track held, low-passed to ~700 Hz and quieter
 ##   DEATH  filtered down and faded out over ~1.2 s
+## While playing, the mix follows the game (there are no stems, so this is
+## done with level and filter): louder as the pressure rises, a closing
+## low-pass as a target nears the line (tunnel vision, the heartbeat comes
+## through), muffled in overload, and ducked under the big accents.
 ## A track that has faded out stops, and starts from the top when it is
 ## next wanted, so every run begins on the downbeat.
 
@@ -21,6 +25,9 @@ const SILENT_DB := -80.0
 var mode := Mode.SILENT
 var intensity := 0.0           # 0..1, set by the game while playing
 var overload := false          # overload: the mix goes warm and close
+var danger := 0.0              # 0..1, the closest target to the line
+var _duck := 0.0               # dB taken off (eases back)
+var _duck_hold := 0.0
 
 var _bus := 0
 var _lp: AudioEffectLowPassFilter
@@ -74,6 +81,12 @@ func start() -> void:
 		mode = Mode.MENU
 
 
+## Pull the music down `db` for `hold` seconds under a big accent.
+func duck(db: float, hold := 0.5) -> void:
+	_duck = maxf(_duck, db)
+	_duck_hold = maxf(_duck_hold, hold)
+
+
 func set_mode(m: Mode) -> void:
 	mode = m
 
@@ -95,6 +108,7 @@ func _process(delta: float) -> void:
 				cut_t = 6500.0
 			Mode.PLAY:
 				play_t = lerpf(-3.0, 0.0, intensity)
+				cut_t = lerpf(20000.0, 3200.0, smoothstep(0.55, 1.0, danger))
 				if overload:
 					# Slowed time: the band goes muffled, as if heard through
 					# the rush of it, so the bright note ladder rides on top.
@@ -105,6 +119,11 @@ func _process(delta: float) -> void:
 				cut_t = 700.0
 			Mode.DEATH:
 				cut_t = 350.0
+	_duck_hold -= rd
+	if _duck_hold <= 0.0:
+		_duck = maxf(0.0, _duck - rd * 10.0)
+	if play_t > SILENT_DB:
+		play_t -= _duck
 	# Fades move in dB with a time constant: in quickly, out gently.
 	var out_tc := 1.2 if mode == Mode.DEATH else 0.6
 	_menu_db = _approach(_menu_db, menu_t, rd, 0.35 if menu_t > _menu_db else out_tc)

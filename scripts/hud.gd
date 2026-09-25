@@ -466,6 +466,7 @@ class TopBar extends Control:
 	var knot_shake := 0.0
 	var show_fps := false
 	var hot := false               # overload: the multiplier pill blazes
+	var glint := 0.0               # a big gain: the counter flashes gold
 	var _clock := 0.0
 	var a_score := 1.0             # staggered reveal alphas
 	var a_right := 1.0
@@ -513,6 +514,7 @@ class TopBar extends Control:
 		pulse = maxf(0.0, pulse - rd / 0.18)
 		badge_pop = maxf(0.0, badge_pop - rd / 0.3)
 		knot_shake = maxf(0.0, knot_shake - rd / 0.6)
+		glint = maxf(0.0, glint - rd / 0.5)
 		_clock += rd
 		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, rd))
 		queue_redraw()
@@ -533,7 +535,7 @@ class TopBar extends Control:
 		var tw := num.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_set_transform(Vector2(w * 0.5, base + (1.0 - asc) * 6.0), 0.0, Vector2(s, s))
 		draw_string(num, Vector2(-tw * 0.5 + 2.0, 2.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.SHADOW, Tok.SHADOW.a * asc))
-		draw_string(num, Vector2(-tw * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, asc))
+		draw_string(num, Vector2(-tw * 0.5, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY.lerp(Tok.PRIMARY_HI, glint), asc))
 		draw_set_transform(Vector2.ZERO)
 		var ar := a_right
 		var ry := (1.0 - ar) * 6.0
@@ -546,8 +548,9 @@ class TopBar extends Control:
 			var bc := Vector2(sx + mw * 0.5, base - 12.0 + ry)
 			draw_set_transform(bc, 0.0, Vector2(bs, bs))
 			var rr := Rect2(-mw * 0.5, -12.0, mw, 24.0)
-			if hot:
-				var glow := 0.5 + 0.5 * sin(_clock * 14.0)
+			if hot or mult >= 3:
+				# Overload blazes; a high streak multiplier glows steadily.
+				var glow := 0.5 + 0.5 * sin(_clock * (14.0 if hot else 3.0))
 				for g in 3:
 					draw_rect(rr.grow(3.0 + g * 3.0), Color(Tok.PRIMARY, (0.14 - g * 0.04) * (0.6 + 0.4 * glow) * ar))
 			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Color(Tok.SHADOW, Tok.SHADOW.a * ar))

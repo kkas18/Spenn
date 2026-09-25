@@ -14,7 +14,7 @@ enum Wave { SPAWNING, CLEARING, BREAK }
 
 const EVENT_EVERY := 38.0
 const BREATHER := 4.0
-const WAVE_BREAK := 2.4
+const WAVE_BREAK := 2.0
 const HURRY_AT := 2            # this many left of a spent wave: they hurry
 # Habits: which side the player favours (-1 left .. 1 right, an average of
 # where the shots go). Spawns lean the other way, and past HABIT_TELL the
@@ -121,7 +121,7 @@ func aggression() -> float:
 ## keeps climbing more slowly; no plateau within any realistic run.
 func descent(scale: float) -> float:
 	var i := intensity()
-	return minf(7.0 + 9.0 * pow(i, 0.85), 70.0) * lerpf(0.9, 1.15, aggression()) * scale
+	return minf(7.5 + 9.8 * pow(i, 0.85), 72.0) * lerpf(0.9, 1.15, aggression()) * scale
 
 
 ## Targets allowed on the field at once.

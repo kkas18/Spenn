@@ -49,6 +49,13 @@ const TOKEN_TIME := 0.5
 var _slow_left := 0.0
 var _base_scale := 1.0           # sustained slow time (overload), under everything else
 var _punch := 0.0
+# Focus: the camera leans in on a point for a big moment (a boss falling,
+# the last kill of a wave), easing in and back out over real time.
+var _focus_pt := Vector2.ZERO
+var _focus_amt := 0.0
+var _focus_t := -1.0
+var _focus_dur := 1.0
+var _focus_w := 0.0              # eased 0..1 weight, drives zoom and pan
 var _rings: Array[Dictionary] = []
 var _next_ring := 0
 var _shards: Array[Dictionary] = []
@@ -409,6 +416,19 @@ func punch(amount: float) -> void:
 	_punch = maxf(_punch, amount)
 
 
+## Leans the camera in on `at` by `amount` (0.06 ≈ 6 %) for `dur` real
+## seconds: a quick ease in, a hold, a slow ease out.
+func focus(at: Vector2, amount: float, dur := 0.9) -> void:
+	if Prefs.reduced_motion:
+		return
+	if _focus_t >= 0.0 and amount < _focus_amt * _focus_w:
+		return
+	_focus_pt = at
+	_focus_amt = amount
+	_focus_dur = dur
+	_focus_t = 0.0
+
+
 ## Sustained slow time (overload): the floor the other effects work under.
 func set_base_time(scale: float) -> void:
 	_base_scale = scale
@@ -433,6 +453,8 @@ func reset_time() -> void:
 	_base_scale = 1.0
 	_hitstop_live = false
 	_punch = 0.0
+	_focus_t = -1.0
+	_focus_w = 0.0
 	Engine.time_scale = 1.0
 
 
@@ -468,6 +490,8 @@ func clear() -> void:
 		s.emitting = false
 	_shake_t = 0.0
 	_punch = 0.0
+	_focus_t = -1.0
+	_focus_w = 0.0
 	if shake_target:
 		shake_target.position = Vector2.ZERO
 		shake_target.scale = Vector2.ONE
@@ -489,9 +513,18 @@ func _process(delta: float) -> void:
 		if _shake_t <= 0.0:
 			_shake_amp = 0.0
 	_punch = maxf(0.0, _punch - rd * 0.12)
+	_focus_w = 0.0
+	if _focus_t >= 0.0:
+		_focus_t += rd
+		var k := _focus_t / _focus_dur
+		if k >= 1.0:
+			_focus_t = -1.0
+		else:
+			# In over the first 15 %, hold, out over the last 45 %.
+			_focus_w = smoothstep(0.0, 0.15, k) * (1.0 - smoothstep(0.55, 1.0, k))
 	if shake_target and l:
-		var sc := 1.0 + _punch
-		var c := Vector2(l.center_x, l.rail_y + l.play_h * 0.5)
+		var sc := 1.0 + _punch + _focus_amt * _focus_w
+		var c := Vector2(l.center_x, l.rail_y + l.play_h * 0.5).lerp(_focus_pt, _focus_w * 0.85)
 		shake_target.scale = Vector2(sc, sc)
 		shake_target.position = c * (1.0 - sc) + off
 	var any := false

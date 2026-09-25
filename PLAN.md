@@ -1125,3 +1125,38 @@ Ved hvert skifte skjer dette:
 - En egen testrigg viser Legen med boble, Speilet, kronet formasjon og boss i trinn 2.
 - Balanse med bot, 4 frø: 147 s snitt, 4–5 bølger. Boten treffer sjeldnere nå
   (65–84 %), fordi fiendene plasseres bort fra der den sikter.
+
+# v7.3 – Fase 4+5: kamera, effekter, adaptiv lyd og musikk
+
+## Kamera
+`fx.focus(punkt, mengde, varighet)` lener kameraet inn mot et punkt i sanntid:
+rask inn, hold, rolig ut. Det slås av med reduserte animasjoner.
+
+| Øyeblikk | Kamera | Sakte film |
+|---|---|---|
+| Siste drap i en bølge | 6 % | 0,3 i 0,5 s |
+| Bossen faller | 9 % | 0,3 i 0,6 s |
+| Trippeltreff, kjede ×2+, formasjon brutt | 4,5 % | 0,4 i 0,3 s |
+| Siste sekund | 3,5 % | 0,45 i 0,28 s |
+
+## HUD
+- Telleren ruller som før og blinker gull ved gevinster på 100 poeng eller mer.
+- Multiplikatorpillen gløder rolig fra ×3, og pulserer raskt under overbelastning.
+- Overbelastningen gir allerede varmt fargeskifte i vignetten (v7.0).
+
+## Adaptiv musikk
+Det finnes ingen stems, så miksen styres med nivå og filter:
+- Musikken blir sterkere med intensiteten.
+- Når et mål nærmer seg linjen, lukker et lavpass seg mot 3,2 kHz. Det gir tunnelsyn,
+  og hjerteslaget kommer tydeligere frem.
+- Under overbelastning lukker lavpasset seg til 1,4 kHz.
+- `Music.duck` demper musikken under de store aksentene:
+  - overbelastning −6 dB;
+  - renset bølge −5 dB;
+  - boss −6 dB;
+  - sjeldne ferdighetsskudd −3 dB.
+
+## Balanse
+- Med bølgenes pauser økte snittet til 153 s.
+- Nedstigningen er skrudd opp ca. 7 %, og bølgepausen er kortet til 2,0 s.
+- Resultat med 6 frø: 137 s snitt, som er likt grunnlinjen.
