@@ -137,7 +137,9 @@ func _draw_wall_shadows() -> void:
 		var r := t.radius * t.depth_scale() * lerpf(1.45, 2.0, far)
 		var al := a * lerpf(0.6, 0.38, far)
 		if t.phase == Target.Phase.HANGING and t.rope_alpha > 0.0:
-			_layer.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.14 * a), 2.0, true)
+			# World space: the body shadow below leaves its own transform set.
+			_layer.draw_set_transform(Vector2.ZERO)
+			_layer.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.1 * a), 2.0, true)
 		var stretch := 1.0
 		if t.kind == Target.Kind.ROD:
 			stretch = (Target.ROD_HALF + t.radius) / t.radius

@@ -107,7 +107,7 @@ var _mission_slots: Array = []  # slots already paid this run
 var _mission_t := 0.0
 # Tilt parallax: the phone's lean (relative to how it is usually held)
 # shifts the world a few px against the wall behind it.
-const TILT_PX := 9.0
+const TILT_PX := 14.0
 var _tilt := Vector2.ZERO
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
@@ -613,7 +613,7 @@ func _wave_tick(delta: float) -> void:
 			if director.wave_break <= 0.0:
 				director.next_wave()
 				_spawn_t = 0.3
-				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45), Pal.INK, 26)
+				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
 				Sfx.play("streak", 0.85)
 
 

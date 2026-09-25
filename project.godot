@@ -43,6 +43,9 @@ window/energy_saving/keep_screen_on=true
 
 [input_devices]
 
+sensors/enable_accelerometer=true
+sensors/enable_gravity=true
+
 pointing/emulate_touch_from_mouse=true
 
 [physics]

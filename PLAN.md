@@ -1313,3 +1313,14 @@ i én samlet transform rundt fokuspunktet.
 ## QA
 - Oppstart er ren, og hele spillforløpet er kjørt.
 - En egen testrigg viser kamerarulling og gulvperspektiv.
+
+# v7.8 – Rettelser etter test på telefon
+
+- **Svarte streker:** strengskyggene arvet posisjonen og vinkelen til forrige
+  kroppsskygge, fordi transformen ikke ble nullstilt. Det ga mørke streker på tilfeldige
+  steder. Transformen nullstilles nå før hver strengskygge, og strengskyggen er dempet
+  (0,1).
+- **Vippeeffekten:** akselerometeret er nå slått eksplisitt på i prosjektet
+  (`input_devices/sensors`), og forskyvningen er økt fra 9 til 14 px.
+- **Bølgetekst:** «BØLGE n» vises høyere (28 % av feltet), så den ikke havner bak
+  hendelseskort som «FORMASJON».
