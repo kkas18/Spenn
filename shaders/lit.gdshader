@@ -10,6 +10,9 @@ shader_type canvas_item;
 // A whole layer (string, shadow, body) is one draw call.
 
 const vec3 SUN = vec3(-0.46, -0.62, 0.64);
+// Where the viewer is, relative to straight on (the phone's tilt): the
+// highlights slide across the surfaces as you lean, as on real gloss.
+uniform vec2 view = vec2(0.0);
 
 void vertex() {
 	float band = floor(UV.x * 0.25 + 0.5);
@@ -36,7 +39,7 @@ void fragment() {
 	float band = floor(UV.x * 0.25 + 0.5);
 	vec2 q = vec2(UV.x - band * 4.0, UV.y);
 	vec3 L = normalize(SUN);
-	vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+	vec3 H = normalize(L + normalize(vec3(view, 1.0)));
 	vec4 c = COLOR;
 	if (band == 1.0) {
 		// Contact shadow: soft, darkest under the body's middle.
@@ -63,18 +66,18 @@ void fragment() {
 		if (band == 6.0) {
 			// Polished metal: little diffuse, a sharp highlight and a hint of
 			// the room reflected (lighter facing up, darker facing down).
-			float env = 0.5 - 0.5 * n.y;
-			float s = pow(max(dot(n, H), 0.0), 40.0) * 0.75;
+			float env = 0.5 - 0.5 * clamp(n.y + view.y, -1.0, 1.0);
+			float s = pow(max(dot(n, H), 0.0), 40.0) * 0.9;
 			col = c.rgb * (0.4 + 0.35 * clamp(ndl, 0.0, 1.0) + 0.4 * env) + s;
 		} else {
 			bool jelly = band == 0.0;
 			// Wrapped diffuse: a soft terminator, never a hard black side.
 			float d = clamp(ndl * 0.7 + 0.3, 0.0, 1.0);
-			float s = pow(max(dot(n, H), 0.0), jelly ? 42.0 : 16.0) * (jelly ? 0.5 : 0.2);
+			float s = pow(max(dot(n, H), 0.0), jelly ? 42.0 : 22.0) * (jelly ? 0.55 : 0.3);
 			col = c.rgb * (0.42 + 0.78 * d) + s;
 			if (jelly) {
 				// Light passing through the thin rim on the shadow side.
-				col += c.rgb * pow(1.0 - n.z, 3.0) * clamp(0.2 - ndl, 0.0, 1.0) * 0.6;
+				col += c.rgb * pow(1.0 - n.z, 3.0) * clamp(0.2 - ndl, 0.0, 1.0) * 0.8;
 			}
 		}
 		COLOR = vec4(col, c.a * edge(r));

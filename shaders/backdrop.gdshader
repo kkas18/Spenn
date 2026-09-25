@@ -64,6 +64,22 @@ void fragment() {
 	// Ground below the danger line, with a soft horizon.
 	float g = smoothstep(danger_y - 6.0, danger_y + 90.0, px.y);
 	col = mix(col, ground.rgb, g * 0.85);
+	// The floor in perspective: faint boards running toward a vanishing
+	// point high above the slingshot, and seams that crowd together toward
+	// the far edge (the danger line), so the ground reads as a plane.
+	if (g > 0.0) {
+		float v = max(px.y - danger_y, 0.0) / max(size.y - danger_y, 1.0);
+		float persp = 0.12 + v;
+		float u = (px.x - size.x * 0.5) / persp / 90.0;
+		float fu = abs(fract(u) - 0.5);
+		float board = 1.0 - smoothstep(0.0, 0.035 / persp * 0.12 + 0.01, 0.5 - fu);
+		float zz = 1.0 / persp;
+		float fz = abs(fract(zz * 0.9) - 0.5);
+		float seam = 1.0 - smoothstep(0.0, 0.06, 0.5 - fz);
+		float fade = smoothstep(0.0, 0.25, v) * g;
+		col -= vec3(0.032) * max(1.0 - board, 0.0) * fade;
+		col -= vec3(0.022) * max(1.0 - seam, 0.0) * fade * (1.0 - v * 0.5);
+	}
 	// Light pooled around the slingshot.
 	vec2 sp = vec2(size.x * 0.5, size.y * 0.9);
 	float pool = exp(-length((px - sp) * vec2(1.0, 2.2)) / (size.x * 0.38));

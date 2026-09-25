@@ -56,6 +56,7 @@ var _focus_amt := 0.0
 var _focus_t := -1.0
 var _focus_dur := 1.0
 var _focus_w := 0.0              # eased 0..1 weight, drives zoom and pan
+var _focus_rot := 0.0            # a slight roll toward the moment (rad)
 var _rings: Array[Dictionary] = []
 var _next_ring := 0
 var _shards: Array[Dictionary] = []
@@ -462,6 +463,10 @@ func focus(at: Vector2, amount: float, dur := 0.9) -> void:
 	_focus_amt = amount
 	_focus_dur = dur
 	_focus_t = 0.0
+	# Roll toward the side it happened on, more for bigger moments (≤1.5°).
+	if l:
+		var side := clampf((at.x - l.center_x) / (l.size.x * 0.5), -1.0, 1.0)
+		_focus_rot = deg_to_rad(-side * clampf(amount * 18.0, 0.3, 1.5))
 
 
 ## Sustained slow time (overload): the floor the other effects work under.
@@ -530,6 +535,7 @@ func clear() -> void:
 	if shake_target:
 		shake_target.position = Vector2.ZERO
 		shake_target.scale = Vector2.ONE
+		shake_target.rotation = 0.0
 
 
 func _process(delta: float) -> void:
@@ -560,8 +566,10 @@ func _process(delta: float) -> void:
 	if shake_target and l:
 		var sc := 1.0 + _punch + _focus_amt * _focus_w
 		var c := Vector2(l.center_x, l.rail_y + l.play_h * 0.5).lerp(_focus_pt, _focus_w * 0.85)
+		var rot := _focus_rot * _focus_w
 		shake_target.scale = Vector2(sc, sc)
-		shake_target.position = c * (1.0 - sc) + off + view
+		shake_target.rotation = rot
+		shake_target.position = c - Transform2D(rot, Vector2(sc, sc), 0.0, Vector2.ZERO).basis_xform(c) + off + view
 	var any := false
 	for k in _tokens:
 		if k.t < 0.0:

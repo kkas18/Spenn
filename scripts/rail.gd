@@ -12,6 +12,7 @@ var _flex_amp := 0.0
 var _flex_t := 10.0
 var _line := PackedVector2Array()
 var _inlay := PackedVector2Array()
+var _under := PackedVector2Array()
 var charge := 0.0              # 0..1, set by the game
 var hot := false               # overload running
 var _shown := 0.0
@@ -82,6 +83,12 @@ func _draw() -> void:
 		draw_rect(Rect2(x0, y, ww, 8.0), Pal.METAL)
 		draw_rect(Rect2(x0, y, ww, 1.6), Pal.METAL_LIGHT)
 		draw_rect(Rect2(x0, y + 8.6, ww, 1.2), Color(0, 0, 0, 0.35))
+		# Seen from below: the beam's underside, a dark face that is deeper
+		# toward the ends (perspective), as if it runs away into the walls.
+		_under.clear()
+		_under.append_array([Vector2(x0, y + 9.8), Vector2(x0 + ww, y + 9.8), Vector2(x0 + ww, y + 15.0), Vector2(w * 0.5, y + 12.2), Vector2(x0, y + 15.0)])
+		draw_colored_polygon(_under, Color(Pal.METAL_DARK.darkened(0.3), 0.95))
+		draw_line(Vector2(x0, y + 9.9), Vector2(x0 + ww, y + 9.9), Color(Pal.METAL_LIGHT, 0.18), 1.0)
 	_draw_inlay(y + 3.4)
 	# Hooks in two passes (plates and stems, then eyelets) so each pass is a
 	# single batch however many strings hang from the beam.

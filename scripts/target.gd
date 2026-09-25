@@ -1222,6 +1222,17 @@ static func _dirs(seg: int) -> PackedVector2Array:
 	return _dir_cache[seg]
 
 
+## The viewer's lean (-1..1 each way): shared by every lit body so their
+## highlights slide together, and by the mirror's glints.
+static var view_dir := Vector2.ZERO
+
+
+static func set_view(v: Vector2) -> void:
+	view_dir = v
+	if _lit:
+		_lit.set_shader_parameter("view", v * 0.35)
+
+
 func _setup_canvas() -> void:
 	if _lit == null:
 		_lit = ShaderMaterial.new()
@@ -1697,9 +1708,11 @@ func _details(col: Color) -> void:
 		f.draw_rect(Rect2(bp - Vector2(1.4, 4.5), Vector2(2.8, 9.0)), Color(Pal.EYE, col.a))
 	elif kind == Kind.MIRROR:
 		# Two glints across the polished face.
+		# They slide across the face as the viewer leans (and it turns).
 		var g := Color(1, 1, 1, 0.35 * col.a)
-		f.draw_line(Vector2(-radius * 0.7, radius * 0.1), Vector2(-radius * 0.1, -radius * 0.7), g, 3.0, true)
-		f.draw_line(Vector2(-radius * 0.35, radius * 0.45), Vector2(radius * 0.2, -radius * 0.1), Color(g, g.a * 0.6), 1.6, true)
+		var sh := (view_dir.rotated(-body_rot) * radius * 0.35)
+		f.draw_line(Vector2(-radius * 0.7, radius * 0.1) + sh, Vector2(-radius * 0.1, -radius * 0.7) + sh, g, 3.0, true)
+		f.draw_line(Vector2(-radius * 0.35, radius * 0.45) + sh * 1.4, Vector2(radius * 0.2, -radius * 0.1) + sh * 1.4, Color(g, g.a * 0.6), 1.6, true)
 	if soft:
 		var h := _hole()
 		if h > 0.0:

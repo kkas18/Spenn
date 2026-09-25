@@ -1286,3 +1286,30 @@ balanse er uendret.
 ## QA
 - Oppstart er ren, og hele spillforløpet er kjørt.
 - Før/etter-bilder viser skyggene og dybdeforskjellen.
+
+# v7.7 – 2.5D del 2: glans, perspektiv, kamerarulling
+
+## Glans som følger blikket
+- Den delte lysshaderen tar imot seerens helning (`view`, fra vippesensoren). Høylysene
+  glir over gelé, skall og metall når du vipper, og det samme gjør høylyset på
+  sprettertens metall.
+- Høylysene er gjort kraftigere:
+  - skall: eksponent 22, styrke 0,3;
+  - metall: 0,9;
+  - lys som skinner gjennom kanten av geléen: 0,8.
+- Speilets to glimt forskyves også med helningen.
+
+## Perspektiv
+- **Gulvet:** får svake planker som løper mot et forsvinningspunkt, og skjøter som
+  ligger tettere mot linjen. Bakken leses dermed som et plan.
+- **Bjelken:** viser undersiden sin, en mørk flate som er dypere mot endene, så den ser
+  ut til å løpe inn i veggene.
+
+## Kamerarulling
+`fx.focus` ruller verden opptil 1,5° mot den siden øyeblikket skjer på. Rullingen er
+størst ved de største øyeblikkene. Zoom, panorering, rulling og parallakse regnes nå ut
+i én samlet transform rundt fokuspunktet.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- En egen testrigg viser kamerarulling og gulvperspektiv.

@@ -60,6 +60,12 @@ var _under_l: Line2D
 var _under_r: Line2D
 var _front: Node2D
 var _fork: Node2D               # static: redrawn only on layout change
+
+
+## The fork's gloss follows the viewer's lean too (see Target.set_view).
+func set_view(v: Vector2) -> void:
+	if _fork and _fork.material:
+		(_fork.material as ShaderMaterial).set_shader_parameter("view", v * 0.35)
 var _pts_l := PackedVector2Array()
 var _pts_r := PackedVector2Array()
 var _rest_len := 1.0

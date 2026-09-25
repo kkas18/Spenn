@@ -495,6 +495,9 @@ func _update_tilt(delta: float) -> void:
 	var v := Vector2(-_tilt.x, _tilt.y) * TILT_PX * layout.scale
 	fx.view = v
 	backdrop.view = v
+	var lean := Vector2(-_tilt.x, _tilt.y)
+	Target.set_view(lean)
+	slingshot.set_view(lean)
 
 
 ## The endless pacing: regular spawns under a rising cap, events with a
