@@ -63,7 +63,15 @@ const MIX := {
 	# overload: a chord swelling in, and falling away (made by the import tool)
 	"rise": [-10.0, 0.0, 1],
 	"fall": [-13.0, 0.0, 1],
+	# creature voices (made by the import tool), pitched onto the key
+	"voice_up": [-17.0, 0.0, 1],
+	"voice_taunt": [-18.0, 0.0, 1],
+	"voice_down": [-16.0, 0.0, 1],
 }
+
+# Voices sing on the notes of the key (C minor: C D Eb G, and the octave).
+const VOICE_STEPS := [1.0, 1.1225, 1.1892, 1.4983, 2.0]
+const VOICE_GAP := 0.09
 
 # Tuned tines, one per step of the ladder the kills climb (C D Eb G over
 # the octaves, the play track's key). Played at their own pitch, no drift.
@@ -72,6 +80,7 @@ const NOTE_DB := -14.0
 
 var _takes := {}
 var _notes: Array[AudioStream] = []
+var _voice_last := -1.0
 var _last := {}
 var _last_take := {}
 var _players: Array[AudioStreamPlayer] = []
@@ -193,6 +202,25 @@ func phrase(steps: Array, gap := 0.07, volume_db := 0.0) -> void:
 			note(i, volume_db)
 		else:
 			Motion.after(gap * k, func() -> void: note(i, volume_db - 1.5 * k))
+
+
+## A creature's syllable: `shape` is up (startle), taunt or down (death);
+## `register` sets the octave by size (0.5 big and low .. 2 small and high),
+## and the note is a step of the key, so a crowd of them stays in tune.
+func voice(shape: String, register: float, step: int, volume_db := 0.0) -> void:
+	var name := "voice_" + shape
+	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _voice_last < VOICE_GAP:
+		return
+	_voice_last = now
+	var p := _players[_voice()]
+	p.stream = _takes[name][0]
+	p.pitch_scale = clampf(register * VOICE_STEPS[posmod(step, VOICE_STEPS.size())], 0.3, 3.0)
+	p.volume_db = float(MIX[name][0]) + minf(volume_db, 0.0)
+	p.play()
+	_started[_players.find(p)] = now
 
 
 ## A free voice, or the one that has played the longest.

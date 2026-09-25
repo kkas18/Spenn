@@ -100,6 +100,7 @@ var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
 var _last_kill := Vector2.ZERO
+var _cocky_t := 0.0             # after a breach the survivors get cocky
 var daily := false              # this run is the daily challenge
 var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
@@ -235,6 +236,8 @@ func _clear_field() -> void:
 	rail.charge = 0.0
 	_heat = 0.0
 	Music.danger = 0.0
+	Target.morale = 0.0
+	_cocky_t = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
 	_vignette.set_shader_parameter("glow", 0.0)
 
@@ -642,6 +645,13 @@ func _pace(delta: float) -> void:
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
 	Music.danger = _tension
+	# The team's nerve: shooting well makes them sweat; a breach (or a run
+	# of misses) makes them cocky for a while.
+	_cocky_t = maxf(0.0, _cocky_t - delta)
+	var nerve := (director.accuracy - 0.55) * 2.2 + minf(streak, 12) * 0.06
+	if _cocky_t > 0.0:
+		nerve = minf(nerve, -0.7)
+	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
@@ -741,6 +751,12 @@ func _update_eyes() -> void:
 		if t.phase == Target.Phase.OFF:
 			continue
 		t.field_w = layout.size.x
+		if t.landed:
+			# A new arrival: the neighbours turn to look.
+			t.landed = false
+			for n in targets:
+				if n != t and n.is_hittable() and n.pos.distance_to(t.pos) < 240.0 * layout.scale:
+					n.watch(t, 0.7)
 		t.threat = o
 		# Targets that have hung around learn as the run heats up.
 		t.aggression = maxf(t.aggression, director.aggression())
@@ -1102,6 +1118,7 @@ func _medic_work() -> void:
 		else:
 			best.patched = true
 		fx.link(m.pos, best.pos, Pal.MEDIC_BADGE)
+		m.watch(best, 1.2)
 		fx.ring(best.pos, Pal.MEDIC_BADGE, best.radius + 12.0)
 		Sfx.play("fade", 1.35, -6.0)
 
@@ -1557,6 +1574,14 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
 	run_kills += 1
+	# The neighbours follow the fall with their eyes; the closest flinch.
+	for n in targets:
+		if n != t and n.is_hittable():
+			var d := n.pos.distance_to(t.pos)
+			if d < 260.0 * layout.scale:
+				n.watch(t, 0.9)
+				if d < 120.0 * layout.scale:
+					n.startle(t.pos)
 	_last_kill = t.pos
 	if t.is_leader:
 		_break_formation(t, true)
@@ -1594,6 +1619,7 @@ func _breach(t: Target) -> void:
 			o.taunt()
 	streak = 0
 	_chain = 0
+	_cocky_t = 5.0
 	hud.bar.streak = 0
 	_show_mult()
 	if overload_t <= 0.0:

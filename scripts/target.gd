@@ -58,6 +58,14 @@ const POP_TIME := 0.08
 # Temperament, rolled per target so no two behave quite alike.
 enum Temper { CALM, TIMID, BOLD, ERRATIC }
 
+# Character. How each kind arrives: its own speed down the string (the
+# Dykker drops and bounces on its bungee, heavy ones are lowered on their
+# chain link by clanking link, the Snelle reels itself down, the Speilet
+# spins in and flashes, the Skygge fades in on the way).
+const ENTRY_SPEED := {Kind.DROP: 1700.0, Kind.HEAVY: 320.0, Kind.BOSS: 260.0, Kind.REEL: 420.0, Kind.MIRROR: 650.0}
+# Voice register by size and build: small ones squeak, big ones rumble.
+const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9}
+
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9}
 
 var kind: Kind = Kind.RING
@@ -134,6 +142,16 @@ var depth := 0.0
 # a damped pendulum in depth whose rate follows the string length. Visual,
 # like depth; it adds to it wherever depth shows.
 static var push_z := 0.0
+# The team's nerve (-1 cocky .. 1 nervous), set by the game from how well
+# the player is doing: nervous ones sweat, blink more and dilate; cocky
+# ones turn smug even far from the line.
+static var morale := 0.0
+var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
+var _watch_t := 0.0
+var landed := false             # arrived this frame (the game tells neighbours)
+var _entry_run := 0.0
+var _admire_t := 0.0            # Speilet admiring its own reflection
+var _vain_in := 6.0
 var _jolt_cd := 0.0
 var z_swing := 0.0
 var _z_vel := 0.0
@@ -281,6 +299,12 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	z_swing = 0.0
 	_z_vel = 0.0
 	_jolt_cd = 0.0
+	_watch = null
+	_watch_t = 0.0
+	landed = false
+	_entry_run = 0.0
+	_admire_t = 0.0
+	_vain_in = randf_range(4.0, 8.0)
 	# Armoured kinds keep to the middle plane: their plates are world-sized.
 	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
 	_pluck_cd = 0.0
@@ -363,12 +387,50 @@ const TAUNT_TIME := 0.9
 ## Arrival: the string snaps taut and the body bounces on it; jelly dents
 ## from below, a shell rings.
 func _land() -> void:
+	landed = true
 	vel.y += 50.0
 	dent(pos + Vector2(0, radius), 320.0)
 	if not soft:
 		_ring_t = 0.0
 		_ring_dir = Vector2.DOWN
+	match kind:
+		Kind.DROP:
+			# Bungee: it overshoots, bounces and settles.
+			vel.y += 260.0
+			dent(pos + Vector2(0, radius), 520.0)
+		Kind.HEAVY, Kind.BOSS:
+			vel.y += 90.0
+			Sfx.play("clank", 0.8, -10.0)
+		Kind.MIRROR:
+			tilt = 0.0
+			flash_t = 0.12
+			Sfx.play("metal", 1.6, -14.0)
 	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
+	if randf() < 0.35:
+		voice("up", -9.0)
+
+
+func _on_entry() -> void:
+	match kind:
+		Kind.REEL:
+			Sfx.play("reel", 0.9, -6.0)
+		Kind.SHADE:
+			hidden_amt = 1.0
+		Kind.DROP:
+			Sfx.play("whoosh", 1.3, -10.0)
+
+
+## Sings one syllable on a note of the key, in this kind's register.
+func voice(shape: String, db := 0.0) -> void:
+	Sfx.voice(shape, VOICE_REG[kind], randi() % 4, db)
+
+
+## Looks at a neighbour for a moment (it fell, or just arrived).
+func watch(o: Target, t: float) -> void:
+	if o == self or aimed:
+		return
+	_watch = o
+	_watch_t = t
 
 
 const GUARD_KINDS := [Kind.HEAVY, Kind.SHIELD]
@@ -401,7 +463,7 @@ func _guard_step(dt: float) -> void:
 ## smug ones break into a little dance now and then.
 func _tease(dt: float) -> void:
 	var start := 0.25 if temper == Temper.BOLD else 0.4
-	var want := 0.0 if (temper == Temper.TIMID or scared) else smoothstep(start, start + 0.25, danger)
+	var want := 0.0 if (temper == Temper.TIMID or scared) else maxf(smoothstep(start, start + 0.25, danger), -morale * 0.55)
 	smug = move_toward(smug, want, dt * 1.5)
 	if _taunt_delay >= 0.0:
 		_taunt_delay -= dt
@@ -430,7 +492,7 @@ func taunt() -> void:
 	var now := Time.get_ticks_msec()
 	if now - _last_tease_ms > 1600:
 		_last_tease_ms = now
-		Sfx.play("tease", randf_range(1.12, 1.3))
+		voice("taunt", -2.0)
 
 
 ## The phone was jerked downward: does this one take fright and climb?
@@ -593,6 +655,7 @@ func strike_string(p: Vector2) -> bool:
 ## The string is severed: the body falls whatever its armour or health.
 func cut() -> void:
 	_cut = true
+	voice("down", -2.0)
 	hp = 0
 	_closed_t = 1.2
 	flash_t = 0.07
@@ -629,6 +692,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 				_brain_t = minf(_brain_t, 1.0)
 		return false
 	_snap(impulse)
+	voice("down")
 	if soft:
 		pop_t = POP_TIME
 		vel = Vector2.ZERO
@@ -667,6 +731,7 @@ func startle(from: Vector2) -> void:
 	if startle_t > 0.0 or _closed_t > 0.0:
 		return
 	startle_t = 0.45
+	voice("up", -3.0)
 	# Missed it: once the fright passes, it mocks you.
 	if temper != Temper.TIMID and _taunt_delay < 0.0:
 		_taunt_delay = 0.5
@@ -689,8 +754,19 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				visible = delay <= 0.0
 				return
 			if length < goal_length:
-				length = minf(goal_length, length + 900.0 * dt)
+				var sp: float = ENTRY_SPEED.get(kind, 900.0) * (_screen_h / 1280.0)
+				if not _dropping:
+					_on_entry()
+				var step_len := minf(goal_length - length, sp * dt)
+				length += step_len
 				_dropping = true
+				_entry_run += step_len
+				if (kind == Kind.HEAVY or kind == Kind.BOSS) and _entry_run > 34.0:
+					# Lowered on its chain: a quiet clank per few links.
+					_entry_run = 0.0
+					Sfx.play("clank", randf_range(1.3, 1.5), -20.0)
+				if kind == Kind.MIRROR:
+					tilt += 11.0 * dt
 			else:
 				if _dropping:
 					_dropping = false
@@ -1102,7 +1178,7 @@ func body_xform() -> Transform2D:
 		sy *= 1.0 - br * 0.6
 	var a := squash_dir.angle() + PI * 0.5
 	var squash := Transform2D(a, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-a, Vector2.ZERO)
-	var tilt_x := cos(tilt) if phase == Phase.FALLING else 1.0
+	var tilt_x := cos(tilt) if phase == Phase.FALLING or (kind == Kind.MIRROR and _dropping) else 1.0
 	var wig := 0.0
 	var bob := Vector2.ZERO
 	if _taunt >= 0.0:
@@ -1245,8 +1321,19 @@ func _update_eye(delta: float) -> void:
 	if _blink_in <= 0.0:
 		_blink_t = 0.13
 		_blink_in = randf_range(3.0, 7.0)
+	if _blink_in > 2.0 and morale > 0.5:
+		# Nervous: they blink more.
+		_blink_in -= delta
 	_blink_t = maxf(0.0, _blink_t - delta)
 	startle_t = maxf(0.0, startle_t - delta)
+	_watch_t = maxf(0.0, _watch_t - delta)
+	if kind == Kind.MIRROR and phase == Phase.HANGING:
+		_admire_t = maxf(0.0, _admire_t - delta)
+		_vain_in -= delta
+		if _vain_in <= 0.0:
+			_vain_in = randf_range(6.0, 10.0)
+			if not aimed and not incoming:
+				_admire_t = 1.3
 	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
 	if startle_t > 0.0 or (panicked() and phase == Phase.HANGING):
 		goal_open = 1.3
@@ -1255,9 +1342,17 @@ func _update_eye(delta: float) -> void:
 	_open = lerpf(_open, goal_open, Pal.damp(0.35, delta))
 	# Pupil follows the ball: 0.15 per frame, clamped inside the eye ring.
 	var goal := Vector2.ZERO
-	if has_look:
-		var d := (look_at - pos).rotated(-body_rot)
+	var target := look_at
+	var looking := has_look
+	if _watch_t > 0.0 and is_instance_valid(_watch) and not incoming:
+		target = _watch.pos
+		looking = true
+	if looking:
+		var d := (target - pos).rotated(-body_rot)
 		goal = d.normalized() * minf(1.0, d.length() / 160.0) if d.length() > 0.01 else Vector2.ZERO
+	if _admire_t > 0.0:
+		# Up and to the left, at the glint on its own face.
+		goal = Vector2(-0.75, -0.65)
 	_pupil = _pupil.lerp(goal, Pal.damp(0.15, delta))
 
 
@@ -1844,6 +1939,19 @@ func _hole() -> float:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _face
+	if morale > 0.35 and phase == Phase.HANGING and not panicked():
+		# Nervous sweat: a drop that runs down the side and fades.
+		var k := fposmod(_clock * 0.8 + _hue_shift * 20.0, 1.0)
+		var a := (morale - 0.35) / 0.65 * sin(PI * k) * col.a
+		var p := Vector2(radius * 0.55, -radius * 0.55 + k * radius * 0.6)
+		Pal.disc(f, p, 2.6, Color(Pal.DROP.lightened(0.4), 0.8 * a))
+		f.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.2, -0.8), p + Vector2(0, -5.5), p + Vector2(2.2, -0.8)]), Color(Pal.DROP.lightened(0.4), 0.8 * a))
+	if _admire_t > 0.0:
+		# The Speilet catching its own reflection: a small star on the glint.
+		var s := sin(PI * minf(1.0, _admire_t / 1.3)) * 4.5
+		var sp := Vector2(-radius * 0.42, -radius * 0.42)
+		f.draw_line(sp - Vector2(s, 0), sp + Vector2(s, 0), Color(1, 1, 1, 0.9 * col.a), 1.4, true)
+		f.draw_line(sp - Vector2(0, s), sp + Vector2(0, s), Color(1, 1, 1, 0.9 * col.a), 1.4, true)
 	if kind == Kind.MEDIC:
 		# A mint badge with a white cross on the rim.
 		var bp := Vector2(radius * 0.62, -radius * 0.62)
@@ -1886,6 +1994,19 @@ func _details(col: Color) -> void:
 		Kind.REEL:
 			Pal.disc(f, Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
 			Pal.disc(f, Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
+		Kind.BOSS:
+			# Cracks spread across the shell stage by stage.
+			if boss_stage >= 1:
+				var cc := Color(col.darkened(0.55), col.a)
+				var cracks := [[Vector2(0.55, -0.7), Vector2(0.3, -0.35), Vector2(0.42, -0.1)], [Vector2(-0.8, 0.2), Vector2(-0.45, 0.28), Vector2(-0.3, 0.55)]]
+				if boss_stage >= 2:
+					cracks.append([Vector2(0.1, 0.85), Vector2(0.2, 0.5), Vector2(0.05, 0.3)])
+					cracks.append([Vector2(-0.6, -0.6), Vector2(-0.35, -0.42), Vector2(-0.4, -0.15)])
+				for c: Array in cracks:
+					var pts := PackedVector2Array()
+					for q: Vector2 in c:
+						pts.append(q * radius)
+					f.draw_polyline(pts, cc, 2.0, true)
 
 
 ## The mouth carries the mood: a small smile at rest, a worried line when
@@ -1974,10 +2095,20 @@ func _eye_parts() -> void:
 	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
 		# Filled bodies: a dark socket keeps the eye readable.
 		Pal.disc(f, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
-	if _closed_t > 0.0 or phase == Phase.FALLING:
+	if phase == Phase.FALLING:
+		# Knocked out: a small cross for an eye.
+		var xr := er * 0.62
+		f.draw_line(Vector2(-xr, -xr), Vector2(xr, xr), Pal.EYE, 2.4, true)
+		f.draw_line(Vector2(-xr, xr), Vector2(xr, -xr), Pal.EYE, 2.4, true)
+		return
+	if _closed_t > 0.0:
 		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.4, true)
 		return
 	var open := clampf(_open, 0.0, 1.0)
+	# Fear dilates the pupil (panic, the last of a wave, a nervous team);
+	# a sudden fright shrinks it to a pinpoint instead.
+	if startle_t <= 0.0 and (panicked() or hurry or morale > 0.55):
+		pr = minf(pr * 1.4, er * 0.72)
 	if open < 0.12:
 		f.draw_line(Vector2(-er * 0.85, 0), Vector2(er * 0.85, 0), Pal.EYE, 2.2, true)
 		return
@@ -1987,6 +2118,12 @@ func _eye_parts() -> void:
 	Pal.disc(f, pupil, pr, Pal.PUPIL)
 	Pal.disc(f, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
 	f.draw_set_transform_matrix(bx)
+	var worried := (aimed or panicked() or hurry or morale > 0.6) and not enraged and smug < 0.3 and _taunt < 0.0
+	if worried and kind != Kind.ROD:
+		# Worried brows: inner ends raised.
+		var bc2 := Color(Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 0.85)
+		for sx: float in [-1.0, 1.0]:
+			f.draw_line(Vector2(sx * er * 1.1, -er * 1.2), Vector2(sx * er * 0.3, -er * 1.5), bc2, 2.0, true)
 	if enraged:
 		# Brows pulled in: rage reads at a glance.
 		for sx: float in [-1.0, 1.0]:

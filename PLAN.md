@@ -1443,3 +1443,48 @@ stang), med skygge og lys fra øvre venstre. Leddene glir med når kjettingen se
 skjules der kroppen dekker enden.
 
 Spillmekanikken er uendret: alle strenger kan kappes som før.
+
+# v7.15 – Fiendenes karakter
+
+## 1. Innganger
+Hver type kommer inn på sin egen måte:
+- **Dykker:** faller fort med et sus og spretter på strikken.
+- **Tungvekt og Spinneren:** senkes sakte i kjettingen med et stille klirr for hvert
+  par ledd, og lander tungt.
+- **Snella:** sveiver seg ned.
+- **Speilet:** snurrer inn og blinker med metallklang.
+- **Skyggen:** toner seg inn på vei ned.
+- **Gelé:** lander som før med en bløt dump.
+
+## 2. Humør (lagmoral)
+- `Target.morale` går fra −1 (kjepphøy) til 1 (nervøs). Den regnes ut av
+  treffsikkerheten og serien din.
+- **Nervøse:** svettedrope langs siden, hyppigere blunking, store pupiller og
+  bekymrede øyenbryn.
+- **Etter et brudd:** laget er kjepphøyt i 5 s, med tunge øyelokk og løftet
+  øyenbryn, også langt fra linjen.
+
+## 3. Reaksjoner på hverandre
+- Når en fiende dør, følger naboene innenfor 260 px fallet med øynene, og de nærmeste
+  skvetter.
+- En nykommer blir tatt imot med et blikk.
+- Legen ser på den den hjelper.
+
+## 4. Stemmer i toneart
+- Tre syntetiserte stavelser: opp (skvetter), erting og ned (dør). De går gjennom to
+  formantfiltre, så de høres ut som korte stemmer.
+- Hver type har sitt register: små piper og store buldrer. Tonen er alltid et trinn i
+  c-moll-skalaen, så et helt kor holder seg stemt.
+- Høyst én stavelse per 90 ms. Stemmene erstatter den gamle ertelyden.
+
+## 5. Uttrykk
+- Frykt gir store pupiller, mens et plutselig sjokk gir knappenålspupiller.
+- Bekymrede øyenbryn når fienden er i siktet, i panikk, blant de siste i bølgen eller
+  nervøs.
+- **Speilet** er forfengelig: av og til ser det på sitt eget glimt, og en liten stjerne
+  blinker.
+- **Spinneren** får sprekker i skallet for hvert trinn.
+
+## 6. Personlighet i døden
+Fiender som faller får et kryss som øye, og de sukker ved døden. Gelé sukker når den
+sprekker.

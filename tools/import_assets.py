@@ -250,6 +250,43 @@ def build_surge():
         sf.write(os.path.join(OUT, "sfx", ("rise_0.ogg", "fall_0.ogg")[v]), _level(y, sr), sr, format="OGG", subtype="VORBIS")
 
 
+def build_voices():
+    """Tiny creature voices: a sung syllable through two formant bands with
+    a quick pitch gesture, at C5, pitched by the game onto the notes of the
+    key. Three shapes: a rising chirp (startle), a two-step taunt, a falling
+    sigh (death)."""
+    sr = 44100
+    f0 = 523.25
+    shapes = {
+        "voice_up": (0.16, lambda k: 0.88 + 0.3 * k),
+        "voice_taunt": (0.26, lambda k: np.where(k < 0.45, 1.0, 1.2)),
+        "voice_down": (0.34, lambda k: 1.12 - 0.42 * k ** 0.8),
+    }
+    for name, (dur, glide) in shapes.items():
+        n = int(dur * sr)
+        t = np.arange(n) / sr
+        k = t / dur
+        f = f0 * glide(k) * (1.0 + 0.012 * np.sin(2 * np.pi * 7.0 * t))
+        ph = 2 * np.pi * np.cumsum(f) / sr
+        # A buzzy source (a few harmonics) so the formants have something to shape.
+        src = sum(np.sin(ph * h) / h for h in range(1, 7))
+        out = np.zeros(n)
+        for fc, gain in ((900.0, 1.0), (2300.0, 0.45)):
+            # Two-pole resonator per formant.
+            r = np.exp(-np.pi * 180.0 / sr)
+            c = 2 * r * np.cos(2 * np.pi * fc / sr)
+            y1 = y2 = 0.0
+            band = np.zeros(n)
+            for i in range(n):
+                y = src[i] + c * y1 - r * r * y2
+                y2, y1 = y1, y
+                band[i] = y
+            out += band / np.abs(band).max() * gain
+        env = np.minimum(k / 0.08, 1.0) * (1.0 - np.maximum(k - 0.55, 0.0) / 0.45) ** 1.5
+        m = _level(out * env, sr)
+        sf.write(os.path.join(OUT, "sfx", name + "_0.ogg"), m, sr, format="OGG", subtype="VORBIS")
+
+
 def build_music():
     os.makedirs(os.path.join(OUT, "music"), exist_ok=True)
     for name, (src, loop_len, xfade) in MUSIC.items():
@@ -309,5 +346,6 @@ if __name__ == "__main__":
     build_whoosh()
     build_notes()
     build_surge()
+    build_voices()
     build_music()
     build_particles()
