@@ -1538,3 +1538,20 @@ Hver fiende får en personlighet (styrt av temperamentet) og egne ansiktspropors
 - Hvert individ har sin egen nyanse rundt temafargen, med litt variasjon i fargetone,
   metning og lyshet.
 - Strenger, knuseeffekter og skygger følger fargen automatisk.
+
+# v7.17 – Skarphet
+
+Grafikken er gjennomgått i høy oppløsning (1080×2400 og 1440×3200).
+
+- **Kropper, strenger, bjelke og lys:** tegnes som vektorgeometri i skjermens egen
+  oppløsning. Kantutjevningen gjøres i shaderen (`fwidth`) eller med
+  antialiaserte linjer, så de er allerede skarpe.
+- **Skrift:** ble rastrert ved 720 px-oppsettets størrelse og så skalert opp,
+  og ble da myk på telefoner med høy tetthet. Nå rastreres glyfene i skjermens
+  faktiske oppløsning (`FontFile.oversampling` = skjermbredde / 720).
+  Kantskarpheten måles ca. 18 % høyere ved 1080 px bredde, og mer ved 1440.
+- **MSDF-skrift:** ble prøvd og forkastet. Den variable Manrope-fonten har
+  overlappende konturer som gir små feil i «A».
+- **Sirkelteksturen for øyne, nagler og perler:** 128 → 256 px, og ringen
+  64 → 128 px. Store sirkler på skjermer med høy tetthet beholder da en kant
+  på én piksel.

@@ -128,9 +128,11 @@ static var _circle_tex: ImageTexture
 ## A white disc with a smooth edge and mipmaps, built once. Discs drawn
 ## from it are plain textured rects, which the renderer batches: dozens of
 ## eyes, rivets and beads cost a single draw call instead of one each.
+## 256 px, so even large discs on a high-density screen keep a one-pixel
+## edge (mipmaps take care of the small ones).
 static func circle_tex() -> ImageTexture:
 	if _circle_tex == null:
-		var n := 128
+		var n := 256
 		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 		var c := n * 0.5
 		for y in n:
@@ -149,7 +151,7 @@ static var _hoop_tex: ImageTexture
 ## batched like the discs.
 static func hoop_tex() -> ImageTexture:
 	if _hoop_tex == null:
-		var n := 64
+		var n := 128
 		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 		var c := n * 0.5
 		var ro := c - 1.5

@@ -356,10 +356,21 @@ func _refresh_text() -> void:
 
 # ---------------------------------------------------------------- building
 
+## The game is laid out at 720 px wide and scaled to the screen; text is
+## rasterized at the real pixel size of the screen (oversampling), so on a
+## 1440 px phone it is drawn from glyphs twice as detailed, not blown up.
+func _crisp_fonts(list: Array) -> void:
+	var k := maxf(1.0, float(DisplayServer.window_get_size().x) / 720.0)
+	for f in list:
+		if f is FontFile:
+			(f as FontFile).oversampling = k
+
+
 func _build_fonts() -> void:
 	var ts := TextServerManager.get_primary_interface()
 	var fraunces: Font = load("res://fonts/Fraunces.ttf")
 	var manrope: Font = load("res://fonts/Manrope.ttf")
+	_crisp_fonts([fraunces, manrope])
 	_font_caps = FontVariation.new()
 	_font_caps.base_font = manrope
 	_font_caps.variation_opentype = {ts.name_to_tag("wght"): 700}
