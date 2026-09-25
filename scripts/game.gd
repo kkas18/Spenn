@@ -44,6 +44,10 @@ const SKILL_POINTS := [40, 40, 60, 50, 50, 60]
 const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14]
 const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8]]
 const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
+# Chain reactions: a falling body this fast knocks off what it lands on; a
+# freshly struck target slamming a neighbour this hard hurts it.
+const CRUSH_SPEED := 220.0
+const KNOCK_SPEED := 240.0
 
 var layout: Layout
 var director := Director.new()
@@ -685,6 +689,8 @@ func _step(dt: float) -> void:
 	backdrop.danger = worst
 	backdrop.descent = descent
 	_target_contacts()
+	if state == State.PLAYING or state == State.STARTING:
+		_falling_contacts()
 	slingshot.step(dt)
 	for b in balls:
 		if not b.active:
@@ -743,10 +749,71 @@ func _target_contacts() -> void:
 			c.push(nrm * j_imp, contact)
 			a.dent(contact, closing * 0.8)
 			c.dent(contact, closing * 0.8)
+			# Billiards: a target sent flying by a hit takes a neighbour with it.
+			if closing > KNOCK_SPEED * layout.scale and (a.struck_t > 0.0 or c.struck_t > 0.0) and (state == State.PLAYING or state == State.STARTING):
+				var striker := a if a.struck_t >= c.struck_t else c
+				var victim := c if striker == a else a
+				striker.struck_t = 0.0
+				var dir := nrm if striker == a else -nrm
+				_chain_hit(victim, dir * j_imp * 0.5, contact, closing, striker.chain_depth + 1)
+				continue
 			if closing > 140.0 and _knock_sfx_cd <= 0.0:
 				_knock_sfx_cd = 0.08
 				Sfx.play("knock", randf_range(0.9, 1.1), linear_to_db(clampf(closing / 600.0, 0.15, 0.7)))
 				Sfx.haptic(6, 0.2)
+
+
+## A killed shell or a cut target falls; whatever still hangs in its way is
+## knocked off its string (or loses a point of health) and falls in turn.
+func _falling_contacts() -> void:
+	var min_speed := CRUSH_SPEED * layout.scale
+	for f in targets:
+		if not f.is_crushing(min_speed):
+			continue
+		for t in targets:
+			if t == f or not t.is_solid() or f.crushed.has(t.get_instance_id()):
+				continue
+			var cp := t.closest_point(f.pos)
+			var rr := f.contact_radius() * 0.85 + (t.radius if t.kind != Target.Kind.ROD else t.radius * 0.6)
+			if f.pos.distance_squared_to(cp) >= rr * rr:
+				continue
+			f.crushed.append(t.get_instance_id())
+			var n := (cp - f.pos).normalized()
+			var closing := (f.vel - t.vel).dot(n)
+			if closing < min_speed * 0.6:
+				continue
+			# The faller gives up much of its speed and glances off.
+			f.vel -= n * closing * 0.6
+			f.spin *= -0.6
+			_chain_hit(t, n * closing * f.mass() * 0.9, cp - n * t.radius * 0.5, closing, f.chain_depth + 1)
+
+
+## A target struck by another body, not by a ball: scored like a hit, and a
+## kill is a chain reaction (deeper links pay more).
+func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, depth: int) -> void:
+	var col := t.color()
+	var at := t.pos
+	var was_close := t.danger > CLOSE_CALL
+	t.dent(contact, closing)
+	var killed := t.hit(impulse, contact)
+	t.chain_depth = depth
+	var gained := t.points() * _mult() * _surge()
+	if killed and t.kind == Target.Kind.BOSS:
+		gained *= 5
+	if killed:
+		gained += _kill_bonus(t, gained)
+	_add_score(gained, at)
+	fx.hitstop()
+	fx.flash(contact, t.radius * 0.7)
+	fx.sparks(contact, col, 8)
+	fx.ring(contact, col.lightened(0.15), t.radius)
+	fx.popup("+%d" % gained, at + Vector2(0, -t.radius - 14.0))
+	_break_fx(t, killed, col, linear_to_db(clampf(closing / 900.0, 0.3, 1.0)))
+	if killed:
+		_charge(CHARGE_KILL)
+		_skill(Skill.CHAIN, at, depth)
+		if was_close:
+			_skill(Skill.CLUTCH, at)
 
 
 func _spawn_minions() -> void:
@@ -880,6 +947,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var was_close := t.danger > CLOSE_CALL
 	var hit_at := t.pos
 	var killed := t.hit(impulse, contact)
+	t.chain_depth = 0
 	var gained := t.points() * b.hits * _mult() * _surge()
 	if killed and kind == Target.Kind.BOSS:
 		gained *= 5
@@ -904,43 +972,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.popup(label, t.pos + Vector2(0, -t.radius - 14.0))
 	if b.hits >= 2:
 		fx.shake(2.0 + minf(b.hits - 2, 1))
-	if killed:
-		if t.soft:
-			# The jelly squashes for a moment, then bursts.
-			var at := t.pos
-			var rot := t.body_rot
-			var r := t.radius
-			fx.after(Target.POP_TIME, func() -> void:
-				fx.burst(kind, at, rot, r, col, Vector2.ZERO)
-				fx.puff(at, col, 2, r * 1.3, 0.32))
-		else:
-			fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
-		if not t.soft:
-			fx.shards(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.vel)
-		if not t.soft:
-			fx.puff(t.pos, col, 6 if kind == Target.Kind.BOSS else 2, t.radius * (1.8 if kind == Target.Kind.BOSS else 1.3), 0.32)
-		if t.soft:
-			# Jelly bursts wetly; the smaller it is, the higher it sounds.
-			Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
-			Sfx.play("squish", 1.1, loud - 6.0)
-		else:
-			Sfx.play("burst", randf_range(0.92, 1.08), loud)
-			_material_knock(t, b.hits, loud)
-		Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
-		Sfx.haptic(18, 0.5)
-		if kind == Target.Kind.BOSS:
-			fx.shake(3.0)
-			fx.punch(0.045)
-			fx.slowmo(0.3, 0.6)
-			Sfx.haptic(80, 0.9)
-		if kind == Target.Kind.SPLIT:
-			_split(t)
-	else:
-		if t.soft:
-			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
-		else:
-			_material_knock(t, b.hits, loud)
-		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
+	_break_fx(t, killed, col, loud, b.hits)
 	if b.hits == 2:
 		_grant(Ammo.PIERCE)
 	if killed:
@@ -973,6 +1005,8 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	var text := Loc.t(SKILL_KEY[s])
 	if s == Skill.DOUBLE and n >= 2:
 		text = Loc.t("skill.triple") if n == 2 else Loc.t("skill.multi") % (n + 1)
+	elif s == Skill.CHAIN and n >= 2:
+		text += " ×%d" % n
 	fx.popup("%s +%d" % [text, pts], at + Vector2(0, -64.0), Pal.GOLD_LIGHT, 24, true)
 	fx.ring(at, Pal.GOLD, 48.0)
 	var steps: Array = SKILL_NOTES[s].duplicate()
@@ -1060,6 +1094,46 @@ func _end_overload(quiet: bool) -> void:
 ## octave up in overload), so a streak of kills plays a rising melody.
 func _kill_note() -> void:
 	Sfx.note(_chain - 1 + (4 if overload_t > 0.0 else 0), -3.0)
+
+
+## What a struck target does, seen and heard: a kill bursts the jelly (after
+## its squash) or shatters the shell; a survivor squishes or knocks.
+func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> void:
+	var kind := t.kind
+	if not killed:
+		if t.soft:
+			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		else:
+			_material_knock(t, hits, loud)
+		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
+		return
+	if t.soft:
+		# The jelly squashes for a moment, then bursts.
+		var at := t.pos
+		var rot := t.body_rot
+		var r := t.radius
+		fx.after(Target.POP_TIME, func() -> void:
+			fx.burst(kind, at, rot, r, col, Vector2.ZERO)
+			fx.puff(at, col, 2, r * 1.3, 0.32))
+		# Jelly bursts wetly; the smaller it is, the higher it sounds.
+		Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		Sfx.play("squish", 1.1, loud - 6.0)
+	else:
+		var boss := kind == Target.Kind.BOSS
+		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
+		fx.shards(t.pos, col, 6 if boss else 2, t.vel)
+		fx.puff(t.pos, col, 6 if boss else 2, t.radius * (1.8 if boss else 1.3), 0.32)
+		Sfx.play("burst", randf_range(0.92, 1.08), loud)
+		_material_knock(t, hits, loud)
+	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
+	Sfx.haptic(18, 0.5)
+	if kind == Target.Kind.BOSS:
+		fx.shake(3.0)
+		fx.punch(0.045)
+		fx.slowmo(0.3, 0.6)
+		Sfx.haptic(80, 0.9)
+	if kind == Target.Kind.SPLIT:
+		_split(t)
 
 
 ## Rigid shells each sound like what they are made of.

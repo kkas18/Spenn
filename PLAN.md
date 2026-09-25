@@ -1027,3 +1027,34 @@ Alle poengsummer ganges med multiplikatoren og med ×2 under overbelastning.
   - første forsøk ga overbelastning hvert ~18. sekund og 164 s snitt, altså for lett;
   - etter justering blir det ca. én overbelastning per 40–50 s, med 135 s snitt
     (grunnlinje 137 s).
+
+# v7.1 – Fase 2: fysiske kjedereaksjoner
+
+## Fallende kropper
+Et drept skall eller en kappet fiende faller med ekte fart. Det som henger i veien:
+- får et treff og slås av strengen, eller mister ett liv hvis det tåler flere treff;
+- begynner selv å falle, så kjeden kan fortsette.
+
+Fallkroppen mister 60 % av farten og spinner motsatt vei. Fallende kropper forblir
+solide litt lenger enn før (falming starter etter 0,6 s i stedet for 0,45 s), så de når
+lenger ned.
+
+## Biljard
+Et mål som nettopp er truffet (0,45 s) og smeller inn i en nabo med over 240 px/s
+lukkehastighet, skader naboen. Hvert mål kan bare gi ett slikt støt per treff.
+
+## Poeng
+- Hvert ledd poengsettes som et treff.
+- Et drap gir ferdighetsskuddet «KJEDEREAKSJON».
+- Dypere ledd betaler mer og vises som «×2», «×3» og så videre.
+- Siste sekund gjelder også i kjeder.
+
+## Refaktorering
+Treff- og knuseeffektene er samlet i `_break_fx`, som brukes både av kuletreff og av
+kjedetreff.
+
+## QA
+- Oppstart er ren, og hele spillforløpet er kjørt.
+- En egen testrigg viser en kappet Tungvekt som faller og sprenger Vakten under.
+- Balanse med bot: 150 s snitt. Boten sikter bare på det laveste målet og lager derfor
+  sjelden kjeder, 0–2 per runde.

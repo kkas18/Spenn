@@ -101,6 +101,11 @@ var ang_vel := 0.0
 var wind := 0.0                # horizontal breeze acceleration (px/s²)
 var startle_t := 0.0           # wide eye + flinch after a near miss
 var scared := false            # overload: panics, stops sinking, climbs its string
+# Chain reactions: a struck body can knock into others; a falling one lands
+# on whatever hangs below. `chain_depth` counts the links back to the ball.
+var struck_t := 0.0
+var chain_depth := 0
+var crushed: Array[int] = []    # targets this falling body has already hit
 
 # Brain: every behaviour is telegraphed before it acts, so it can be read.
 var aggression := 0.0          # 0..1 from the director
@@ -228,6 +233,9 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	ang_vel = 0.0
 	startle_t = 0.0
 	scared = false
+	struck_t = 0.0
+	chain_depth = 0
+	crushed.clear()
 	_pluck_cd = 0.0
 	aimed = false
 	enraged = false
@@ -455,6 +463,11 @@ func bottom_y() -> float:
 	return pos.y + radius
 
 
+## A falling body still solid and fast enough to knock off what it meets.
+func is_crushing(min_speed: float) -> bool:
+	return phase == Phase.FALLING and pop_t <= 0.0 and not _gone and modulate.a > 0.35 and vel.length() > min_speed
+
+
 func was_cut() -> bool:
 	return _cut
 
@@ -515,6 +528,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 	squash_dir = impulse.normalized() if impulse.length() > 0.01 else Vector2.UP
 	_closed_t = 1.2 if kind != Kind.BOSS else 0.35
 	flash_t = 0.07
+	struck_t = 0.45
 	hp -= 1
 	if hp > 0:
 		if kind == Kind.HEAVY and not enraged:
@@ -576,6 +590,7 @@ func startle(from: Vector2) -> void:
 func step(dt: float, descent: float, danger_y: float, danger_band: float, screen_h: float) -> void:
 	_screen_h = screen_h
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
+	struck_t = maxf(0.0, struck_t - dt)
 	flash_t = maxf(0.0, flash_t - dt)
 	fray_t = maxf(0.0, fray_t - dt)
 	match phase:
@@ -631,7 +646,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			_soft_step(dt)
 			# Burst jelly is gone; only its recoiling string remains.
 			if not soft:
-				modulate.a = clampf(1.0 - (fall_t - 0.45) / 0.5, 0.0, 1.0)
+				modulate.a = clampf(1.0 - (fall_t - 0.6) / 0.5, 0.0, 1.0)
 			_rope_step(dt)
 			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0 or _gone) and rope_alpha <= 0.0:
 				phase = Phase.OFF
@@ -943,6 +958,7 @@ func _rope_step(dt: float) -> void:
 
 func _snap(impulse: Vector2) -> void:
 	phase = Phase.FALLING
+	crushed.clear()
 	_attached = false
 	vel = impulse * 0.5 / MASS[kind] + Vector2(0, -120)
 	# Keep the wobble it already had; heavier bodies tumble slower.
