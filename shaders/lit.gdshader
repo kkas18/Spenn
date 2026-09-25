@@ -7,6 +7,9 @@ shader_type canvas_item;
 // selects the material, in bands 4 apart:
 //   0 jelly · 1 contact shadow · 2 cord · 3 wire · 4 painted shell
 //   5 membrane (the recessed inside of a ring) · 6 polished metal
+//   7 twisted steel cable
+// Strings carry their running length in UV.y: cords show a soft braid,
+// cables a tight twist of strands.
 // A whole layer (string, shadow, body) is one draw call.
 
 const vec3 SUN = vec3(-0.46, -0.62, 0.64);
@@ -16,7 +19,7 @@ uniform vec2 view = vec2(0.0);
 
 void vertex() {
 	float band = floor(UV.x * 0.25 + 0.5);
-	if (band != 2.0 && band != 3.0) {
+	if (band != 2.0 && band != 3.0 && band != 7.0) {
 		// Carry the normal into world space (rotation and squash of the
 		// body, and of the command's own transform) so the light stays put
 		// while bodies swing and spin. Strings are already in world space.
@@ -44,14 +47,23 @@ void fragment() {
 	if (band == 1.0) {
 		// Contact shadow: soft, darkest under the body's middle.
 		COLOR = vec4(0.0, 0.0, 0.0, c.a * (1.0 - smoothstep(0.3, 1.0, length(q))));
-	} else if (band == 2.0 || band == 3.0) {
+	} else if (band == 2.0 || band == 3.0 || band == 7.0) {
 		// Strings: a cylinder across their width (they hang near vertical).
 		float w = clamp(q.x, -1.0, 1.0);
 		vec3 n = vec3(w, 0.0, sqrt(1.0 - w * w));
 		float d = clamp(dot(n, L), 0.0, 1.0);
-		bool wire = band == 3.0;
+		bool wire = band != 2.0;
 		float s = pow(max(dot(n, H), 0.0), wire ? 28.0 : 10.0) * (wire ? 0.5 : 0.12);
-		COLOR = vec4(c.rgb * (0.45 + 0.7 * d) + s, c.a * edge(abs(q.x)));
+		vec3 col = c.rgb * (0.45 + 0.7 * d) + s;
+		if (band == 2.0) {
+			// Braided cord: soft diagonal plaits.
+			col *= 0.9 + 0.1 * sin(q.y * 1.3 + w * 2.4);
+		} else if (band == 7.0) {
+			// Cable: strands laid in a tight helix, each catching the light.
+			float h = fract(q.y * 0.42 + w * 0.45);
+			col *= 0.72 + 0.4 * smoothstep(0.0, 0.5, h) * (1.0 - smoothstep(0.5, 1.0, h));
+		}
+		COLOR = vec4(col, c.a * edge(abs(q.x)));
 	} else if (band == 5.0) {
 		// Recessed membrane: in its own shadow on the upper left rim,
 		// catching the light on the lower right.

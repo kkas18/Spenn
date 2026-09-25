@@ -1419,3 +1419,27 @@ Sidesvingen er ekte fysikk, så treffsonene følger fiendene dit de faktisk er.
 ## QA
 En testrigg simulerer et rykk med `Input.set_accelerometer`. Engstelige og noen rolige
 fiender klatret ca. 43 px, mens modige, Tungvekt og noen rolige ble hengende.
+
+# v7.14 – Løse streker i menyen, og strenger etter materiale
+
+## Løse streker på startskjermen
+Samme feil som med veggskyggene: hver tittelbokstavs streng arvet transformen til
+bokstaven før. Bare den første bokstaven hang riktig, og resten ga løse, skrå streker
+midt på skjermen. Transformen nullstilles nå før hver streng.
+
+## Strenger etter hva de bærer
+
+| Fiende | Streng |
+|---|---|
+| Gelé (Vakt, Splitter, Skygge, Legen) | Farget, flettet snor med myk fletting i shaderen |
+| Dykker | Tykk strikk som blir tynnere jo mer den strekkes |
+| Snelle | Fint, blankt fiskesnøre |
+| Vokter og Speilet | Tvunnet stålkabel (nytt lysbånd 7 med spiralslåtte kordeler) |
+| Tungvekt og Spinneren | Ekte stålkjetting |
+| Pendel | Ren ståltråd som før |
+
+Kjettingen har ledd hver 7. px, annenhver sett flatt (åpen oval) og fra kanten (kort
+stang), med skygge og lys fra øvre venstre. Leddene glir med når kjettingen senkes, og
+skjules der kroppen dekker enden.
+
+Spillmekanikken er uendret: alle strenger kan kappes som før.

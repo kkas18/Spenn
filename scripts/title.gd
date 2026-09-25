@@ -120,6 +120,8 @@ func _draw() -> void:
 		var d: Dictionary = _letters[i]
 		var a: float = d.alpha
 		if d.attached:
+			# World space: the letter before left its own transform set.
+			draw_set_transform(Vector2.ZERO)
 			draw_line(d.anchor, d.pos + Vector2(0, -fs * 0.62).rotated(d.rot), Color(Pal.STRING, a), 1.6, true)
 		var w := font.get_string_size(d.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var col := Pal.GOLD if i == Loc.title_accent() else Pal.INK

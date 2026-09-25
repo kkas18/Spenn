@@ -1114,6 +1114,64 @@ func body_xform() -> Transform2D:
 	return Transform2D(0.0, pos + _jit + bob) * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
 
 
+## Steel chain along the string: links every 7 px, alternately seen flat
+## (an open oval) and edge-on (a short bar), lit from the upper left, and
+## hidden where the body covers the end. World space.
+func _draw_chain(f: Node2D) -> void:
+	const STEP := 7.0
+	var a := rope_alpha * modulate.a
+	var steel := Color(Pal.METAL_LIGHT.lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5), a)
+	var shine := Color(Pal.INK, 0.55 * a)
+	var shadow := Color(0.0, 0.0, 0.0, 0.45 * a)
+	var hide := radius * depth_scale() * 0.85
+	var inv := _xf.affine_inverse()
+	var dist := 0.0
+	var next := STEP * 0.5
+	var k := 0
+	for i in range(1, _r_mid.size()):
+		var p0 := _r_mid[i - 1]
+		var p1 := _r_mid[i]
+		var seg := p0.distance_to(p1)
+		while seg > 0.0 and next <= dist + seg:
+			var c := p0.lerp(p1, (next - dist) / seg)
+			next += STEP
+			k += 1
+			if _attached and c.distance_to(pos) < hide:
+				continue
+			var ang := (p1 - p0).angle()
+			if k % 2 == 0:
+				f.draw_set_transform_matrix(inv * Transform2D(ang, Vector2(1.0, 0.58), 0.0, c + Vector2(0.8, 0.8)))
+				f.draw_arc(Vector2.ZERO, 4.6, 0.0, TAU, 12, shadow, 1.8, true)
+				f.draw_set_transform_matrix(inv * Transform2D(ang, Vector2(1.0, 0.58), 0.0, c))
+				f.draw_arc(Vector2.ZERO, 4.6, 0.0, TAU, 12, steel, 1.6, true)
+				f.draw_arc(Vector2.ZERO, 4.6, PI * 1.05, PI * 1.55, 5, shine, 1.0, true)
+			else:
+				var d := Vector2.from_angle(ang) * 4.6
+				f.draw_set_transform_matrix(inv)
+				f.draw_line(c - d + Vector2(0.8, 0.8), c + d + Vector2(0.8, 0.8), shadow, 2.4, true)
+				f.draw_line(c - d, c + d, steel, 2.0, true)
+		dist += seg
+	f.draw_set_transform_matrix(inv)
+
+
+func rope_style() -> Rope:
+	match kind:
+		Kind.DROP:
+			return Rope.BUNGEE
+		Kind.REEL:
+			return Rope.MONO
+		Kind.SHIELD, Kind.MIRROR:
+			return Rope.CABLE
+		Kind.HEAVY, Kind.BOSS:
+			return Rope.CHAIN
+	return Rope.CORD if soft else Rope.WIRE
+
+
+## Current distance from the hook to the body (how stretched the string is).
+func _rope_len_now() -> float:
+	return pos.distance_to(anchor) if _attached else length
+
+
 func depth_scale() -> float:
 	return 1.0 + 0.12 * seen_depth()
 
@@ -1257,6 +1315,15 @@ const B_WIRE := 12.0
 const B_SHELL := 16.0
 const B_MEMBRANE := 20.0
 const B_METAL := 24.0
+const B_CABLE := 28.0
+# How each kind hangs: its string, by what it has to carry.
+#   cord    jelly bodies: a dyed braided cord
+#   bungee  the Dykker: thick elastic, thinning as it stretches
+#   mono    the Snelle: fine fishing line off its reel
+#   cable   armoured Vokter and Speilet: twisted steel
+#   chain   Tungvekt and Spinneren: the heaviest, on steel chain
+#   wire    the rest of the shells: plain wire
+enum Rope { CORD, BUNGEE, MONO, CABLE, CHAIN, WIRE }
 const ROPE_SUB := 2                 # smoothing steps per rope segment
 
 static var _lit: ShaderMaterial
@@ -1343,8 +1410,23 @@ func _draw_rope(ci: RID) -> void:
 			_r_mid[k] = 0.5 * ((2.0 * p1) + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t2 * t)
 			k += 1
 	_r_mid[k] = _pts[N - 1]
+	var style := rope_style()
 	var hw := (1.6 if soft else 1.1) + danger * 0.3
 	var band := B_CORD if soft else B_WIRE
+	match style:
+		Rope.BUNGEE:
+			# Elastic: thick, thinner the more it is stretched.
+			hw = clampf(2.6 * sqrt(maxf(length, 40.0) / maxf(_rope_len_now(), 1.0)), 1.4, 2.8)
+		Rope.MONO:
+			hw = 0.75
+			band = B_WIRE
+		Rope.CABLE:
+			hw = 1.7
+			band = B_CABLE
+		Rope.CHAIN:
+			# Only a dark core here; the links are drawn on the face layer.
+			hw = 0.7
+			band = B_WIRE
 	_r_pts.resize(m * 2)
 	_r_uv.resize(m * 2)
 	var run := 0.0
@@ -1371,6 +1453,16 @@ func _draw_rope(ci: RID) -> void:
 	# darker tinted wire for shells; near the line it pales under strain.
 	var tint := _base_color()
 	var sc := (tint.darkened(0.2) if soft else tint.darkened(0.35).lerp(Pal.STRING, 0.3)).lerp(Pal.INK_DIM, danger * 0.5)
+	match style:
+		Rope.CHAIN:
+			sc = Color(0.0, 0.0, 0.0, 0.6)
+		Rope.CABLE:
+			# Bare steel, only faintly tinted by what hangs from it.
+			sc = Pal.METAL_LIGHT.lerp(tint, 0.12).lerp(Pal.INK_DIM, danger * 0.5)
+		Rope.MONO:
+			sc = Pal.INK.lerp(tint, 0.25)
+		Rope.BUNGEE:
+			sc = tint.darkened(0.1)
 	_one_col[0] = Color(sc, rope_alpha)
 	RenderingServer.canvas_item_add_triangle_array(ci, _r_idx, _r_pts, _one_col, _r_uv)
 
@@ -1697,6 +1789,8 @@ func _draw_face() -> void:
 			var a := -0.9 + k * 0.9
 			f.draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
 			f.draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
+	if rope_style() == Rope.CHAIN and rope_alpha > 0.0 and _r_mid.size() > 1:
+		_draw_chain(f)
 	if _gone:
 		f.draw_set_transform_matrix(Transform2D.IDENTITY)
 		return
