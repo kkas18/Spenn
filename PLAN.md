@@ -1338,3 +1338,14 @@ i én samlet transform rundt fokuspunktet.
   effekt fra en som mangler data.
 - **Diagnose:** FPS-visningen (trippeltrykk på knutene) viser også sensorverdiene
   (G x y z).
+
+# v7.10 – Gyroskop i vippeeffekten
+
+- Gyroskopet slås nå på i prosjektet (`sensors/enable_gyroscope`).
+- Rotasjonsfarten integreres til en vinkel som glir tilbake til midten over ca. 2 s.
+  Vinkelen legges til tyngdekraftdelen.
+- Parallaksen reagerer dermed raskere og merker også dreining uten vipping, altså
+  rotasjon rundt telefonens loddrette akse.
+- «INGEN SENSOR» vises bare når verken tyngdekraft, akselerometer eller gyroskop gir
+  data.
+- FPS-visningen viser også gyroskopverdiene.

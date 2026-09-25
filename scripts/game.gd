@@ -111,6 +111,7 @@ const TILT_PX := 18.0
 var _tilt := Vector2.ZERO
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
+var _gyro := Vector2.ZERO       # integrated rotation (rad), easing back to 0
 
 
 func _ready() -> void:
@@ -492,13 +493,25 @@ func _update_tilt(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	var sg := sensor_gravity()
 	var want := Vector2.ZERO
-	if sg != Vector3.ZERO and Prefs.tilt and not Prefs.reduced_motion:
+	var on := Prefs.tilt and not Prefs.reduced_motion
+	if sg != Vector3.ZERO and on:
 		var g := Vector2(sg.x, sg.y) / 9.81
 		if not _tilt_seen:
 			_tilt_seen = true
 			_tilt_ref = g
 		_tilt_ref = _tilt_ref.lerp(g, 1.0 - exp(-rd / 6.0))
-		want = ((g - _tilt_ref) * 5.0).limit_length(1.0)
+		want = (g - _tilt_ref) * 5.0
+	# Gyroscope (rad/s): turns about the phone's upright axis (y) and its
+	# left-right axis (x), integrated and eased back to centre over ~2 s.
+	# Quicker than gravity, and it also sees a turn with no lean at all.
+	var gy := Input.get_gyroscope()
+	if on and gy.length() > 0.0005:
+		_gyro += Vector2(-gy.y, -gy.x) * rd
+		_gyro *= exp(-rd / 2.0)
+		want += Vector2(_gyro.x, -_gyro.y) * 2.6
+	else:
+		_gyro = Vector2.ZERO
+	want = want.limit_length(1.0)
 	if slingshot.is_aiming():
 		want = _tilt
 	_tilt = _tilt.lerp(want, Pal.damp(0.12, rd))

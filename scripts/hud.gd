@@ -337,7 +337,7 @@ func _refresh_text() -> void:
 	# Says whether the phone actually reports a sensor, so a missing effect
 	# can be told apart from a switched-off one.
 	var tilt_txt := Loc.setting("settings.tilt", Loc.on_off(Prefs.tilt))
-	if Prefs.tilt and _game_sensor() == Vector3.ZERO:
+	if Prefs.tilt and _game_sensor() == Vector3.ZERO and Input.get_gyroscope() == Vector3.ZERO:
 		tilt_txt += " · " + Loc.t("settings.noSensor")
 	_s_tilt.text = tilt_txt
 	_s_lang.text = Loc.setting("settings.language", "settings.languageName")
@@ -781,7 +781,8 @@ class TopBar extends Control:
 		draw_rect(Rect2(track.position, Vector2(bw * clampf(shown_progress, 0.0, 1.0), 3.0)), Color(Tok.TEXT_SECONDARY, ar))
 		if show_fps:
 			var sg := hud._game_sensor()
-			var fps := "%d FPS  ·  G %.1f %.1f %.1f" % [Engine.get_frames_per_second(), sg.x, sg.y, sg.z]
+			var gy := Input.get_gyroscope()
+			var fps := "%d FPS  ·  G %.1f %.1f %.1f  ·  GYRO %.2f %.2f %.2f" % [Engine.get_frames_per_second(), sg.x, sg.y, sg.z, gy.x, gy.y, gy.z]
 			draw_string(caps, Vector2(0, ly), fps, HORIZONTAL_ALIGNMENT_RIGHT, w - l.margin, 11, Tok.TEXT_FAINT)
 
 
