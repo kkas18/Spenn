@@ -2,7 +2,7 @@ extends CanvasLayer
 class_name SpennIntro
 
 signal finished
-var elapsed:=0.0
+var elapsed:float=0.0
 var title:Label
 var subtitle:Label
 var veil:ColorRect
