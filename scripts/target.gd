@@ -4,11 +4,11 @@ class_name SpennTarget
 signal destroyed(points: int)
 signal struck(at: Vector2, color: Color)
 
-@export var target_color := Color("#6557D9")
-@export var points := 100
-@export var radius := 34.0
-var hp := 1
-var phase := 0.0
+@export var target_color: Color = Color("#6557D9")
+@export var points: int = 100
+@export var radius: float = 34.0
+var hp: int = 1
+var phase: float = 0.0
 
 func _ready() -> void:
 	add_to_group("targets")
