@@ -1,98 +1,73 @@
 extends Node2D
-## Lightweight procedural 2.5D cloud environment for Spenn.
-## Keeps gameplay 2D while creating depth with layered motion and atmosphere.
-
-@export var drift_speed: float = 7.0
-var t: float = 0.0
-
-const SKY_TOP := Color("#69BFE7")
-const SKY_MID := Color("#A9DCF0")
-const SKY_HORIZON := Color("#F6D5B4")
-const SUN := Color("#FFF0BE")
-
-var far_clouds: Array = [
-	[Vector2(90, 255), 0.70], [Vector2(420, 320), 0.90], [Vector2(680, 230), 0.62],
-	[Vector2(250, 455), 0.78], [Vector2(590, 510), 0.72]
-]
-var mid_clouds: Array = [
-	[Vector2(30, 610), 1.05], [Vector2(355, 690), 1.18], [Vector2(700, 620), 1.0],
-	[Vector2(160, 865), 1.12], [Vector2(560, 900), 1.25]
-]
-var front_clouds: Array = [
-	[Vector2(-40, 1080), 1.65], [Vector2(285, 1160), 1.85], [Vector2(700, 1090), 1.55]
-]
-
-func _ready() -> void:
-	z_index = -100
-	queue_redraw()
-
-func _process(delta: float) -> void:
-	t += delta
-	queue_redraw()
-
-func _draw() -> void:
-	_draw_sky()
-	_draw_sun()
-	_draw_layer(far_clouds, 0.18, Color(0.91, 0.96, 1.0, 0.52), 42.0)
-	_draw_haze()
-	_draw_islands()
-	_draw_layer(mid_clouds, 0.45, Color(0.96, 0.98, 1.0, 0.76), 58.0)
-	_draw_layer(front_clouds, 0.90, Color(1.0, 0.985, 0.97, 0.92), 76.0)
-
-func _draw_sky() -> void:
-	var bands := 20
-	for i in range(bands):
-		var k: float = float(i) / float(bands - 1)
-		var c: Color = SKY_TOP.lerp(SKY_MID, min(k * 1.45, 1.0))
-		if k > 0.55:
-			c = SKY_MID.lerp(SKY_HORIZON, (k - 0.55) / 0.45)
-		draw_rect(Rect2(0, i * 64.0, 720, 66), c)
-
-func _draw_sun() -> void:
-	var p := Vector2(580, 270)
-	for r in range(120, 35, -14):
-		var a: float = 0.008 + (120.0 - r) / 120.0 * 0.018
-		draw_circle(p, r, Color(SUN, a))
-	draw_circle(p, 36, Color(SUN, 0.82))
-
-func _draw_haze() -> void:
-	draw_rect(Rect2(0, 520, 720, 360), Color(1.0, 0.83, 0.72, 0.075))
-
-func _draw_cloud(center: Vector2, scale_v: float, color: Color) -> void:
-	var shadow: Color = Color(0.28, 0.48, 0.62, color.a * 0.12)
-	draw_ellipse(center + Vector2(5, 15) * scale_v, Vector2(92, 31) * scale_v, shadow)
-	var parts: Array = [
-		[Vector2(-65, 5), 43.0], [Vector2(-25, -15), 57.0],
-		[Vector2(22, -22), 67.0], [Vector2(70, 2), 45.0]
-	]
-	for part in parts:
-		draw_circle(center + part[0] * scale_v, part[1] * scale_v, color)
-
-func draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
-	var points: PackedVector2Array = PackedVector2Array()
-	for i in range(25):
-		var a: float = TAU * float(i) / 24.0
-		points.append(center + Vector2(cos(a) * radii.x, sin(a) * radii.y))
-	draw_colored_polygon(points, color)
-
-func _draw_layer(items: Array, parallax: float, color: Color, wrap_margin: float) -> void:
-	for item in items:
-		var p: Vector2 = item[0]
-		var s: float = item[1]
-		var x: float = fmod(p.x + t * drift_speed * parallax + wrap_margin, 820.0) - wrap_margin
-		var bob: float = sin(t * (0.16 + parallax * 0.05) + p.x * 0.01) * (2.0 + parallax * 2.5)
-		_draw_cloud(Vector2(x, p.y + bob), s, color)
-
-func _draw_islands() -> void:
-	_draw_island(Vector2(115, 505), 0.52)
-	_draw_island(Vector2(605, 575), 0.42)
-
-func _draw_island(p: Vector2, s: float) -> void:
-	var rock: PackedVector2Array = PackedVector2Array([
-		p + Vector2(-72, 0) * s, p + Vector2(68, 0) * s,
-		p + Vector2(35, 68) * s, p + Vector2(5, 112) * s,
-		p + Vector2(-34, 63) * s
-	])
-	draw_colored_polygon(rock, Color("#71899A"))
-	draw_circle(p + Vector2(0, -2) * s, 72 * s, Color("#91B77E"))
-	draw_arc(p + Vector2(0, -1) * s, 70 * s, PI, TAU, 28, Color("#E4E7C4"), 5.0 * s, true)
+## Cinematic 2.5D sky foundation. Procedural fallback until final painted assets are imported.
+@export var drift_speed:float=3.2
+var t:float=0.0
+const TOP:=Color("#153B68")
+const MID:=Color("#477FA8")
+const HORIZON:=Color("#F1B779")
+const GOLD:=Color("#FFD47B")
+var far:Array=[[Vector2(80,330),0.55],[Vector2(390,275),0.48],[Vector2(660,360),0.62]]
+var mid:Array=[[Vector2(30,640),0.9],[Vector2(430,590),0.85],[Vector2(700,720),1.0]]
+var front:Array=[[Vector2(-40,1030),1.5],[Vector2(330,1140),1.7],[Vector2(740,1050),1.45]]
+func _ready()->void:
+ z_index=-100
+ queue_redraw()
+func _process(delta:float)->void:
+ t+=delta
+ queue_redraw()
+func _draw()->void:
+ _sky()
+ _sun()
+ _distant_islands()
+ _cloud_layer(far,0.12,Color(0.78,0.87,0.94,0.36))
+ _island(Vector2(165,720),0.78)
+ _island(Vector2(585,610),0.58)
+ _cloud_layer(mid,0.32,Color(0.92,0.95,0.98,0.66))
+ _cloud_layer(front,0.68,Color(0.985,0.97,0.93,0.94))
+ draw_rect(Rect2(0,1120,720,160),Color(0.97,0.73,0.50,0.08))
+func _sky()->void:
+ for i in range(32):
+  var k:float=float(i)/31.0
+  var c:Color=TOP.lerp(MID,minf(k*1.55,1.0))
+  if k>0.54:c=MID.lerp(HORIZON,(k-0.54)/0.46)
+  draw_rect(Rect2(0,float(i)*40.0,720,42),c)
+ # cinematic edge depth
+ for i in range(8):
+  draw_rect(Rect2(float(i)*8,0,8,1280),Color(0.02,0.08,0.16,0.025*(8-i)))
+  draw_rect(Rect2(712-float(i)*8,0,8,1280),Color(0.02,0.08,0.16,0.025*(8-i)))
+func _sun()->void:
+ var p:=Vector2(585,405)
+ for r in range(180,35,-18):
+  draw_circle(p,r,Color(GOLD,0.006+float(180-r)*0.00008))
+ draw_circle(p,35,Color("#FFE8A6"))
+func _cloud(center:Vector2,s:float,c:Color)->void:
+ _ellipse(center+Vector2(4,22)*s,Vector2(105,34)*s,Color(0.08,0.22,0.36,c.a*0.16))
+ var lobes:Array=[[Vector2(-72,9),42.0],[Vector2(-38,-17),56.0],[Vector2(8,-30),70.0],[Vector2(58,-13),57.0],[Vector2(86,12),38.0]]
+ for l in lobes:
+  draw_circle(center+l[0]*s,l[1]*s,c)
+ draw_arc(center+Vector2(-3,-9)*s,69*s,3.55,5.72,18,Color(1,0.95,0.82,c.a*0.30),4*s,true)
+func _cloud_layer(items:Array,parallax:float,c:Color)->void:
+ for item in items:
+  var p:Vector2=item[0]
+  var s:float=item[1]
+  var x:float=fmod(p.x+t*drift_speed*parallax+130.0,980.0)-130.0
+  _cloud(Vector2(x,p.y+sin(t*0.17+p.x)*3.0),s,c)
+func _distant_islands()->void:
+ _island(Vector2(95,470),0.25)
+ _island(Vector2(650,475),0.30)
+ _island(Vector2(365,510),0.20)
+func _island(p:Vector2,s:float)->void:
+ var rock:=PackedVector2Array([p+Vector2(-88,0)*s,p+Vector2(92,0)*s,p+Vector2(62,48)*s,p+Vector2(18,132)*s,p+Vector2(-25,102)*s,p+Vector2(-66,45)*s])
+ draw_colored_polygon(rock,Color("#344C59"))
+ draw_colored_polygon(PackedVector2Array([p+Vector2(-80,0)*s,p+Vector2(82,0)*s,p+Vector2(50,24)*s,p+Vector2(-52,25)*s]),Color("#6E8B55"))
+ draw_arc(p,82*s,PI,TAU,28,Color("#D6B66A"),5*s,true)
+ # small castle silhouette
+ draw_rect(Rect2(p+Vector2(-15,-38)*s,Vector2(30,38)*s),Color("#233846"))
+ draw_rect(Rect2(p+Vector2(-30,-22)*s,Vector2(15,22)*s),Color("#233846"))
+ draw_rect(Rect2(p+Vector2(15,-26)*s,Vector2(15,26)*s),Color("#233846"))
+func _ellipse(center:Vector2,radii:Vector2,c:Color)->void:
+ var pts:=PackedVector2Array()
+ for i in range(33):
+  var a:float=TAU*float(i)/32.0
+  pts.append(center+Vector2(cos(a)*radii.x,sin(a)*radii.y))
+ draw_colored_polygon(pts,c)
