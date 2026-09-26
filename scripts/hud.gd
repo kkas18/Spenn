@@ -307,7 +307,18 @@ func perk_toast(id: String, level: int) -> void:
 	overlay.toast_t = 0.0
 
 
+## Drops any card showing or waiting (a run ended).
+func clear_cards() -> void:
+	overlay.card_queue.clear()
+	overlay.card_t = 99.0
+
+
+## Shows a card; if one is still up, this one waits its turn (never lost).
 func card(title: String, sub: String, hold := 1.0) -> void:
+	if overlay.card_busy():
+		if overlay.card_queue.size() < 3:
+			overlay.card_queue.append([title, sub, hold])
+		return
 	overlay.card_title = title
 	overlay.card_sub = sub
 	overlay.card_hold = hold
@@ -830,6 +841,10 @@ class Overlay extends Control:
 	var card_sub := ""
 	var card_t := 99.0
 	var card_hold := 1.0
+	var card_queue: Array = []
+
+	func card_busy() -> bool:
+		return card_title != "" and card_t < Motion.NORMAL + card_hold + Motion.SLOW
 	var wave_t := 99.0
 	var wave_n := 1
 	var toast_t := 99.0
@@ -976,6 +991,12 @@ class Overlay extends Control:
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
 		card_t += rd
+		if not card_queue.is_empty() and not card_busy():
+			var c: Array = card_queue.pop_front()
+			card_title = c[0]
+			card_sub = c[1]
+			card_hold = c[2]
+			card_t = 0.0
 		wave_t += rd
 		toast_t += rd
 		intro_t += rd

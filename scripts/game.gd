@@ -326,6 +326,7 @@ func _clear_field() -> void:
 	_end_flow(true)
 	flow = 0.0
 	_end_hazard()
+	hud.clear_cards()
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
@@ -1921,7 +1922,11 @@ func _breach(t: Target) -> void:
 ## scene darkens; the results come in at ~0.9 s.
 func _begin_death(at: Vector2) -> void:
 	_end_overload(true)
+	# Flow and any hazard end with the run, so none lingers behind the results.
+	_end_flow(true)
+	_end_hazard()
 	_heat = 0.0
+	hud.clear_cards()
 	_vignette.set_shader_parameter("glow", 0.0)
 	_set_state(State.DEATH)
 	hud.locked = true

@@ -1839,3 +1839,19 @@ Derfor overrasker byttene spilleren uten å føles tilfeldige eller urettferdige
 
 Hvert triks og hver ny fiende introduseres første gang med navn og forklaring.
 - Bot (6 frø): median ca. 181 s, som før. Treffsikkerheten synker litt, så triksene virker.
+
+## v7.31 – Gjennomgang (revisjon) og feilrettinger
+
+Sjekket:
+- 4 lange bot-runder (opptil bølge 11) uten skriptfeil. Den eneste feilmeldingen kom fra
+  testboten selv.
+- Alle tekstnøkler finnes på både norsk og engelsk, også dynamiske nøkler som taktikk, nemesis,
+  triks, fiender og fordeler.
+- Ytelse: ca. 380 tegnekall per bilde i et travelt sluttspill. Ren skripttid ca. 9 ms per bilde
+  (7 ms i v7.23) på testmaskinen.
+
+Rettet:
+- Døde du midt i FLYT, vindkast eller mørklegging, ble effekten liggende bak resultatskjermen.
+  Nå avsluttes alt ved døden.
+- Kort som kom samtidig (for eksempel Nemesis og en hendelse), overskrev hverandre, så meldinger
+  kunne forsvinne. Nå står de i kø (maks 3) og tømmes når runden slutter.
