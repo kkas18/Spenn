@@ -952,6 +952,34 @@ static func pill(ci: CanvasItem, r: Rect2, col: Color) -> void:
 	ci.draw_polyline(pts, col, 1.0, true)
 
 
+## A brass lever switch on an engraved plate: `labels` at the two ends
+## (the lit one is the side the lever leans to), a steel rod from a brass
+## boss and a brass ball on its end. `a` is the lever's angle: negative
+## leans left, positive right.
+static func lever(ci: CanvasItem, plate: Rect2, a: float, labels: Array, f: Font) -> void:
+	pill(ci, Rect2(plate.position + Vector2(2, 3.5), plate.size), Color(0, 0, 0, 0.45))
+	pill(ci, plate, Tok.PRIMARY_LO)
+	pill(ci, plate.grow(-2.5), Tok.PRIMARY)
+	pill(ci, plate.grow(-6.0), Color("0E1015"))
+	var fs := 22
+	var base := plate.get_center().y + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
+	for i in 2:
+		var t: String = labels[i]
+		var tw := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var x := plate.position.x + (30.0 if i == 0 else plate.size.x - 30.0) - tw * 0.5
+		var on := (a < 0.0) == (i == 0)
+		ci.draw_string(f, Vector2(x, base), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI if on else Tok.TEXT_FAINT)
+	var piv := Vector2(plate.get_center().x, plate.end.y - 12.0)
+	var tip := piv + Vector2(0, -plate.size.y * 0.72).rotated(a)
+	ci.draw_line(piv + Vector2(1.5, 2.5), tip + Vector2(1.5, 2.5), Color(0, 0, 0, 0.4), 5.0, true)
+	ci.draw_line(piv, tip, Pal.METAL_LIGHT, 4.0, true)
+	ci.draw_line(piv + Vector2(-0.8, 0), tip + Vector2(-0.8, 0), Color(1, 1, 1, 0.25), 1.2, true)
+	brass_disc(ci, piv, 8.0, Tok.PRIMARY_LO)
+	ci.draw_circle(tip + Vector2(1.5, 2.5), 9.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+	ci.draw_circle(tip, 9.0, Tok.PRIMARY, true, -1.0, true)
+	ci.draw_circle(tip + Vector2(-2.5, -3.0), 3.0, Color(1, 1, 1, 0.45), true, -1.0, true)
+
+
 ## A brass medallion: cast shadow, milled rim lit from the top left and a
 ## sunken dark face (radius `r`, centred on `c`).
 static func brass_disc(ci: CanvasItem, c: Vector2, r: float, face := Color("0E1015")) -> void:
@@ -1358,30 +1386,7 @@ class Lever extends UIButton:
 		var k := Motion.ease_value(Motion.Ease.EMPHASIZED, _drop)
 		draw_set_transform(Vector2(0, (1.0 - k) * -40.0))
 		var plate := Rect2(4.0, size.y * 0.22, size.x - 8.0, size.y * 0.66)
-		Hud.pill(self, Rect2(plate.position + Vector2(2, 3.5), plate.size), Color(0, 0, 0, 0.45))
-		Hud.pill(self, plate, Tok.PRIMARY_LO)
-		Hud.pill(self, plate.grow(-2.5), Tok.PRIMARY)
-		Hud.pill(self, plate.grow(-6.0), Color("0E1015"))
-		var f := hud.body_font()
-		var fs := 22
-		var base := plate.get_center().y + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
-		var on_no := _a < 0.0
-		for i in 2:
-			var t: String = ["NO", "EN"][i]
-			var tw := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-			var x := plate.position.x + (30.0 if i == 0 else plate.size.x - 30.0) - tw * 0.5
-			var on := on_no == (i == 0)
-			draw_string(f, Vector2(x, base), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI if on else Tok.TEXT_FAINT)
-		# The lever: a steel rod from a brass boss, a brass ball on its end.
-		var piv := Vector2(plate.get_center().x, plate.end.y - 12.0)
-		var tip := piv + Vector2(0, -plate.size.y * 0.72).rotated(_a)
-		draw_line(piv + Vector2(1.5, 2.5), tip + Vector2(1.5, 2.5), Color(0, 0, 0, 0.4), 5.0, true)
-		draw_line(piv, tip, Pal.METAL_LIGHT, 4.0, true)
-		draw_line(piv + Vector2(-0.8, 0), tip + Vector2(-0.8, 0), Color(1, 1, 1, 0.25), 1.2, true)
-		Hud.brass_disc(self, piv, 8.0, Tok.PRIMARY_LO)
-		draw_circle(tip + Vector2(1.5, 2.5), 9.0, Color(0, 0, 0, 0.45), true, -1.0, true)
-		draw_circle(tip, 9.0, Tok.PRIMARY, true, -1.0, true)
-		draw_circle(tip + Vector2(-2.5, -3.0), 3.0, Color(1, 1, 1, 0.45), true, -1.0, true)
+		Hud.lever(self, plate, _a, ["NO", "EN"], hud.body_font())
 		draw_set_transform(Vector2.ZERO)
 
 
@@ -1467,11 +1472,11 @@ class SetRow extends UIButton:
 		var cy := size.y * 0.5
 		match kind:
 			Kind.SWITCH:
-				return Rect2(size.x - 88.0, cy - 25.0, 88.0, 50.0)
+				return Rect2(size.x - 156.0, cy - 30.0, 156.0, 60.0)
 			Kind.STEPS:
 				var w := 3.0 * BAR_W + 2.0 * BAR_GAP
 				return Rect2(size.x - w, cy - 20.0, w, 40.0)
-		return Rect2(size.x - 176.0, cy - 27.0, 176.0, 54.0)
+		return Rect2(size.x - 156.0, cy - 30.0, 156.0, 60.0)
 
 	func _on_press() -> void:
 		var v := _value()
@@ -1521,8 +1526,11 @@ class SetRow extends UIButton:
 			_shown = want
 		if absf(_shown - want) > 0.0005 or absf(_sv) > 0.01:
 			# A spring, a little under-damped: the knob overshoots and settles.
+			var was := _shown
 			_sv += (420.0 * (want - _shown) - 24.0 * _sv) * dt
 			_shown += _sv * dt
+			if kind != Kind.STEPS and (was - 0.5) * (_shown - 0.5) < 0.0:
+				Sfx.play("tick", 0.9, -8.0)
 			queue_redraw()
 
 	func _draw() -> void:
@@ -1565,21 +1573,8 @@ class SetRow extends UIButton:
 				else:
 					draw_circle(c, 4.0, Color(Tok.DANGER, 0.5 + 0.5 * _hold), true, -1.0, true)
 			Kind.SWITCH:
-				var e := clampf(_shown, -0.12, 1.12)
-				var on := clampf(_shown, 0.0, 1.0)
-				Hud.pill(self, r.grow(2.0), Tok.PRIMARY_LO)
-				Hud.pill(self, r, Color("0A0C10"))
-				if on > 0.01:
-					Hud.pill(self, r.grow(-5.0), Color(Tok.PRIMARY, 0.85 * on))
-					Hud.pill(self, Rect2(r.position + Vector2(10, 7), Vector2(r.size.x - 20, 4)), Color(Tok.PRIMARY_HI, 0.5 * on))
-				var kc := r.position + Vector2(25.0 + (r.size.x - 50.0) * e, r.size.y * 0.5)
-				draw_circle(kc + Vector2(1.5, 3.0), 20.0, Color(0, 0, 0, 0.45), true, -1.0, true)
-				draw_circle(kc, 20.0, Tok.PRIMARY_LO, true, -1.0, true)
-				draw_circle(kc + Vector2(-0.8, -1.0), 17.5, Tok.PRIMARY.lerp(Tok.PRIMARY_HI, 0.25 * on), true, -1.0, true)
-				draw_arc(kc, 18.0, PI * 1.05, PI * 1.6, 12, Color(Tok.PRIMARY_HI, 0.9), 1.6, true)
-				for k in 3:
-					var gx := kc.x - 5.0 + k * 5.0
-					draw_line(Vector2(gx, kc.y - 6.0), Vector2(gx, kc.y + 6.0), Color(Color("5E4620"), 0.7), 1.6, true)
+				# The same brass lever as the language switch: Off | On.
+				Hud.lever(self, r, lerpf(-0.62, 0.62, clampf(_shown, -0.15, 1.15)), [Loc.t("settings.off"), Loc.t("settings.on")], f)
 			Kind.STEPS:
 				var word := Loc.t("settings.level.%d" % v)
 				var ww := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, 21).x
@@ -1602,16 +1597,7 @@ class SetRow extends UIButton:
 						draw_rect(Rect2(x + 3.0, bottom - 3.0 - fh, BAR_W - 6.0, fh), Tok.PRIMARY)
 						draw_rect(Rect2(x + 3.0, bottom - 3.0 - fh, 2.0, fh), Color(Tok.PRIMARY_HI, 0.8))
 			Kind.LANG:
-				var e := clampf(_shown, -0.08, 1.08)
-				Hud.pill(self, r.grow(2.0), Tok.PRIMARY_LO)
-				Hud.pill(self, r, Color("0A0C10"))
-				var hw := (r.size.x - 10.0) * 0.5
-				Hud.pill(self, Rect2(r.position.x + 5.0 + hw * e, r.position.y + 5.0, hw, r.size.y - 10.0), Tok.PRIMARY)
-				for i in 2:
-					var t: String = ["NO", "EN"][i]
-					var tw := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
-					var tb := cy + (f.get_ascent(22) - f.get_descent(22)) * 0.5
-					draw_string(f, Vector2(r.position.x + 5.0 + hw * (i + 0.5) - tw * 0.5, tb), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Tok.ON_PRIMARY if absf(e - i) < 0.5 else Tok.TEXT_SECONDARY)
+				Hud.lever(self, r, lerpf(-0.62, 0.62, clampf(_shown, -0.15, 1.15)), ["NO", "EN"], f)
 
 
 # ---------------------------------------------------------------- top bar

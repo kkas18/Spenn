@@ -2114,3 +2114,11 @@ Rettet:
 - Første gang forklarer et kort hvordan det fungerer.
 - Bot (6 frø, tre kjøringer): 3–8 dytt per runde, og noen avbrutt. Overlevelsen er innenfor
   støyen mot samme kode uten dytting (median ca. 170 mot 173 s).
+
+## v7.41 – Spaken overalt der noe slås av og på
+
+- Messingspaken fra språkvalget i menyen brukes nå til alle av/på-valg i Innstillinger
+  (Siktelinje, Vippeeffekt, Reduserte animasjoner, Vibrasjon) og til språkraden (NO/EN).
+- Spaken slår over med fjær og overslag, og klikker når den passerer midten. Siden den lener
+  mot, lyser i gull.
+- Tegningen deles (Hud.lever), så menyspaken og innstillingene ser helt like ut.
