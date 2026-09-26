@@ -9,7 +9,25 @@ extends Node
 
 const POOL := 14
 const MIN_GAP := 0.05           # same sound can't retrigger faster than this
-const LEVEL_DB := [-80.0, -19.0, -13.0, -8.0]   # off, low, medium, high
+const LEVEL_DB := [-80.0, -24.0, -18.0, -13.0]  # off, low, medium, high
+const STRINGS_DB := -4.0        # the strings sit under the effects
+# The mix keeps the music in front of the busy middle of the field:
+# - each sound may retrigger only so often (GAP, else MIN_GAP);
+# - the small field sounds (LOW) give way when many are already sounding:
+#   past DENSE of them in the last DENSITY_WIN s each new one is quieter,
+#   and past DENSE * 2 it is dropped. Accents always play.
+const GAP := {
+	"token": 0.14, "tick": 0.08, "deny": 0.4, "slide": 0.3, "creak": 0.3,
+	"knock": 0.07, "snap": 0.08, "wood": 0.07, "metal": 0.07, "squish": 0.07,
+	"splat": 0.09, "clank": 0.08, "whoosh": 0.12, "twang": 0.1, "reel": 0.2,
+	"fade": 0.15, "tease": 0.6, "count": 0.06,
+}
+const LOW := ["token", "tick", "knock", "snap", "wood", "metal", "squish", "splat", "clank",
+	"whoosh", "twang", "slide", "creak", "reel", "fade", "reload", "release", "tease", "deny"]
+const DENSITY_WIN := 0.4
+const DENSE := 5
+const VOICE_MIN_GAP := 0.25
+const HARP_GAP := 0.11
 const DIR := "res://assets/sfx/"
 
 # name: [gain dB, pitch drift (±), takes]
@@ -51,8 +69,8 @@ const MIX := {
 	"restart": [-13.0, 0.0, 1],
 	"deny": [-13.0, 0.0, 1],
 	# enemy evasion (Kenney RPG Audio)
-	"slide": [-21.0, 0.06, 3],
-	"creak": [-20.0, 0.05, 3],
+	"slide": [-26.0, 0.06, 3],
+	"creak": [-24.0, 0.05, 3],
 	# an enemy mocking a near miss (kept rare and quiet)
 	"tease": [-19.0, 0.0, 3],
 	# materials: jelly (freesound CC0) and rigid shells (Kenney)
@@ -71,12 +89,11 @@ const MIX := {
 
 # Voices sing on the notes of the key (C minor: C D Eb G, and the octave).
 const VOICE_STEPS := [1.0, 1.1225, 1.1892, 1.4983, 2.0]
-const VOICE_GAP := 0.09
 
 # Tuned tines, one per step of the ladder the kills climb (C D Eb G over
 # the octaves, the play track's key). Played at their own pitch, no drift.
 const NOTE_COUNT := 9
-const NOTE_DB := -14.0
+const NOTE_DB := -17.0
 
 # Strings: the background fibres are a harp and the top bar's tension
 # string a low steel string (plucked-string samples, tools/import_assets.py),
@@ -91,6 +108,9 @@ var _taut: Array[AudioStream] = []
 var _hplayers: Array[AudioStreamPlayer] = []
 var _hnext := 0
 var _hbus := 0
+var _recent: Array[float] = []   # when the last sounds started (the density window)
+var _harp_last := -1.0
+var _note_last := -1.0
 var _takes := {}
 var _notes: Array[AudioStream] = []
 var _voice_last := -1.0
@@ -112,16 +132,21 @@ func _ready() -> void:
 	AudioServer.add_bus(_bus)
 	AudioServer.set_bus_name(_bus, "Sfx")
 	AudioServer.set_bus_send(_bus, &"Master")
-	# Glue: take the sharpest air off, hold peaks, a small dark room.
+	# Room for the music: cut the lows (the track's bass and kick live
+	# there), soften the grating top, then glue the bursts together so a
+	# busy moment gets denser, not louder; a small dark room.
+	var low := AudioEffectHighPassFilter.new()
+	low.cutoff_hz = 140.0
+	AudioServer.add_bus_effect(_bus, low)
 	var shelf := AudioEffectHighShelfFilter.new()
-	shelf.cutoff_hz = 7000.0
-	shelf.gain = 0.6
+	shelf.cutoff_hz = 5000.0
+	shelf.gain = 0.45
 	AudioServer.add_bus_effect(_bus, shelf)
 	var comp := AudioEffectCompressor.new()
-	comp.threshold = -22.0
-	comp.ratio = 3.5
-	comp.attack_us = 3000.0
-	comp.release_ms = 160.0
+	comp.threshold = -30.0
+	comp.ratio = 4.0
+	comp.attack_us = 2000.0
+	comp.release_ms = 150.0
 	AudioServer.add_bus_effect(_bus, comp)
 	var room := AudioEffectReverb.new()
 	room.room_size = 0.3
@@ -194,7 +219,7 @@ func apply_volume() -> void:
 	AudioServer.set_bus_volume_db(_bus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
 	AudioServer.set_bus_mute(_bus, Prefs.sfx_volume == 0)
 	if _hbus > 0:
-		AudioServer.set_bus_volume_db(_hbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
+		AudioServer.set_bus_volume_db(_hbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)] + STRINGS_DB)
 		AudioServer.set_bus_mute(_hbus, Prefs.sfx_volume == 0)
 
 
@@ -202,8 +227,18 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	if now - float(_last.get(name, -1.0)) < MIN_GAP:
+	if now - float(_last.get(name, -1.0)) < float(GAP.get(name, MIN_GAP)):
 		return
+	# Density: the small field sounds make way when the field is busy.
+	while not _recent.is_empty() and now - _recent[0] > DENSITY_WIN:
+		_recent.pop_front()
+	var over := _recent.size() - DENSE
+	var low := LOW.has(name)
+	if low and over >= DENSE:
+		return
+	if low and over > 0:
+		volume_db -= 1.5 * over
+	_recent.append(now)
 	_last[name] = now
 	var list: Array = _takes[name]
 	var take := _rng.randi() % list.size()
@@ -225,6 +260,10 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 func note(i: int, volume_db := 0.0, pitch := 1.0) -> void:
 	if _headless or Prefs.sfx_volume == 0 or _notes.is_empty():
 		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _note_last < 0.06:
+		return
+	_note_last = now
 	if i >= NOTE_COUNT:
 		i = NOTE_COUNT - 4 + (i - NOTE_COUNT) % 4
 	var p := _players[_voice()]
@@ -272,6 +311,10 @@ func _string(stream: AudioStream, pitch: float, volume_db: float) -> void:
 func harp(i: int, volume_db := 0.0, on_grid := true) -> void:
 	if _harp.is_empty():
 		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if on_grid and now - _harp_last < HARP_GAP:
+		return
+	_harp_last = now
 	var st := _harp[clampi(i, 0, HARP_COUNT - 1)]
 	var db := HARP_DB + minf(volume_db, 0.0)
 	var wait := to_grid() if on_grid else 0.0
@@ -312,7 +355,7 @@ func voice(shape: String, register: float, step: int, volume_db := 0.0) -> void:
 	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	if now - _voice_last < VOICE_GAP:
+	if now - _voice_last < VOICE_MIN_GAP:
 		return
 	_voice_last = now
 	var p := _players[_voice()]

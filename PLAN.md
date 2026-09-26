@@ -2160,3 +2160,28 @@ Rettet:
   - Bølge fullført gir et akkordslag, og ny rekord et arpeggio oppover.
   - Musikken åpner seg og løftes i finalen, og sendes inn i et stort, mørkt rom under
     mørklegging.
+
+## v7.43 – Lydmiks: musikken foran, effektene i riktig lag
+
+- **Problem:** effektene overdøvde musikken og skurte. Målt i en bot-runde spilte det ca.
+  30 lyder i sekundet (1 086 «token», 497 stemmer, 420 kombotoner og 326 harpetoner på
+  134 s), og effektene lå ca. 14 dB over musikken i nivå.
+- **Nivåer:**
+  - Musikken er 3 dB opp og effektene 5 dB ned.
+  - Strengene (harpe og spenningsstreng) ligger ytterligere 4 dB under effektene.
+  - Kombotonene er 3 dB ned.
+  - Musikken dukkes mindre under store øyeblikk (2–4 dB i stedet for 3–6).
+- **EQ og komprimering på effektbussen:**
+  - Lavkutt ved 140 Hz, slik at musikkens bass og tromme får plass.
+  - Diskanten over 5 kHz dempes ca. 7 dB (der skuringen satt).
+  - Kompressoren griper nå inn når lyder hoper seg opp (terskel −30 dB, 4:1), så travle
+    øyeblikk blir tettere, ikke høyere.
+- **Tetthetskontroll:**
+  - Små feltlyder (knokk, skrape, token, klikk, sus og så videre) gir plass når mange allerede
+    lyder: over 5 i løpet av 0,4 s blir hver ny 1,5 dB svakere, og over 10 droppes de.
+  - Viktige lyder (treff, knus, rekord, bølge) kommer alltid gjennom.
+- **Minste avstand per lyd:**
+  - token 0,14 s, stemmer 0,25 s, «deny» 0,4 s, skrape og knirk 0,3 s, harpe 0,11 s,
+    kombotoner 0,06 s.
+  - Skrapelydene er også 4–5 dB ned.
+- **Resultat** (samme bot): ca. 12 lyder i sekundet (token 99, stemmer 142).

@@ -1010,7 +1010,7 @@ func _clear_wave() -> void:
 	fx.focus(_last_kill, 0.05 if calm else 0.1, 1.4)
 	fx.aberrate(2.0 if calm else 4.0)
 	fx.slowmo(0.4 if calm else 0.2, 0.5 if calm else 0.8)
-	Music.duck(6.0, 0.9)
+	Music.duck(4.0, 0.9)
 	Sfx.play("burst", 0.55, -2.0)
 	Sfx.play("clear")
 	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
@@ -1821,7 +1821,7 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.aberrate(5.0)
 		fx.flash(at, 80.0, Pal.GOLD_LIGHT)
 		backdrop.rescue()
-		Music.duck(5.0, 0.6)
+		Music.duck(3.5, 0.6)
 		Sfx.phrase([4, 5, 6, 7], 0.07, 0.0)
 		Sfx.haptic_pattern("record")
 	elif s == Skill.CLUTCH:
@@ -1832,7 +1832,7 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.slowmo(0.4, 0.3)
 		fx.focus(at, 0.045, 0.8)
 		fx.aberrate(4.0)
-		Music.duck(3.0, 0.3)
+		Music.duck(2.0, 0.3)
 	_charge(SKILL_CHARGE[s])
 
 
@@ -1873,7 +1873,7 @@ func _begin_overload() -> void:
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
-	Music.duck(6.0, 0.8)
+	Music.duck(4.0, 0.8)
 	hud.bar.hot = true
 	_show_mult()
 	Music.overload = true
@@ -1955,7 +1955,7 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 		fx.focus(t.pos, 0.09, 1.3)
 		fx.aberrate(6.0)
 		fx.slowmo(0.3, 0.6)
-		Music.duck(6.0, 0.7)
+		Music.duck(4.0, 0.7)
 		Sfx.haptic(80, 0.9)
 	if kind == Target.Kind.SPLIT:
 		_split(t)
