@@ -642,6 +642,7 @@ func _process(delta: float) -> void:
 	_update_tilt(delta)
 	_update_ammo(delta)
 	_update_eyes()
+	_update_ball_light()
 	# Menu: new players (and anyone idle for a while) see how to shoot.
 	slingshot.demo = state == State.MAIN_MENU and _touch == -1 and (Prefs.runs < 3 or _state_t > 6.0) and not hud.modal_open()
 	stage.look = slingshot.pouch
@@ -934,6 +935,58 @@ func _clear_wave() -> void:
 	fx.after(1.4, _grant_perk)
 
 
+## The balls in flight light what they pass (warm, fading as a spent ball
+## fades; brighter when burning in overload).
+var _lights: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO]
+func _update_ball_light() -> void:
+	var k := 0
+	for b in balls:
+		if k >= 3:
+			break
+		if b.active:
+			var gp := b.global_position
+			var glow := (1.0 if Ball.hot else 0.7) * b.modulate.a
+			_lights[k] = Vector4(gp.x, gp.y, 230.0 * layout.scale, glow)
+			k += 1
+	for i in range(k, 3):
+		_lights[i] = Vector4.ZERO
+	var lc: Color = Meta.skin_colors(Prefs.skin)[2]
+	Target.set_lights(_lights, lc)
+	slingshot.set_lights(_lights, lc)
+
+
+## Balls in flight knock into each other (a triple fan, or a fresh shot
+## meeting a bouncing one): equal masses, a lively bounce, friction spin.
+func _ball_contacts() -> void:
+	for i in balls.size():
+		var a := balls[i]
+		if not a.active or a.hit_rail:
+			continue
+		for j in range(i + 1, balls.size()):
+			var c := balls[j]
+			if not c.active or c.hit_rail:
+				continue
+			var d := c.pos - a.pos
+			var dist := d.length()
+			if dist >= Ball.RADIUS * 2.0 or dist < 0.001:
+				continue
+			var n := d / dist
+			var pen := Ball.RADIUS * 2.0 - dist
+			a.pos -= n * pen * 0.5
+			c.pos += n * pen * 0.5
+			var vn := (a.vel - c.vel).dot(n)
+			if vn <= 0.0:
+				continue
+			var jn := (1.0 + 0.85) * vn * 0.5
+			a.vel -= n * jn
+			c.vel += n * jn
+			a.friction(-n, c.vel, jn, 0.15, 1.0)
+			c.friction(n, a.vel, jn, 0.15, 1.0)
+			a.impact(-n)
+			c.impact(n)
+			Sfx.play("clank", randf_range(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0)
+
+
 ## Pupils follow the nearest ball in flight (or the pouch while aiming).
 ## Every target reads the predicted shot: how squarely the path crosses it,
 ## which side of the path it is on, and whether a ball already in flight
@@ -1159,6 +1212,7 @@ func _step(dt: float) -> void:
 	if state == State.PLAYING or state == State.STARTING:
 		_falling_contacts()
 	slingshot.step(dt)
+	_ball_contacts()
 	for b in balls:
 		if not b.active:
 			continue
@@ -1484,11 +1538,11 @@ func _resolve(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float, e: float, 
 		return [Vector2.ZERO, 0.0]
 	var inv := 1.0 + 1.0 / (t.mass() * K_MASS)
 	var j := -(1.0 + e) * vn / inv
-	var tang := rel - n * vn
-	var tl := tang.length()
-	var jt := minf(mu * j, tl / inv)
-	var imp := n * j - (tang / tl * jt if tl > 0.01 else Vector2.ZERO)
-	b.vel += imp
+	b.vel += n * j
+	# Friction at the contact, with the ball's spin in it: a glancing blow
+	# spins the ball (and a spinning ball kicks off at an angle).
+	var ft := b.friction(n, t.vel, j, mu, 1.0 / (t.mass() * K_MASS))
+	var imp := n * j + ft
 	# Never left sitting inside the body: a little separation speed.
 	if b.vel.dot(n) < 40.0:
 		b.vel += n * (40.0 - b.vel.dot(n))

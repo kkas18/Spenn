@@ -274,6 +274,8 @@ var _aimed_n := 0
 var _was_aimed := false
 var _alive_t := 0.0
 var _veteran_paid := false
+var _floor_hits := 0           # falling: bounces on the floor so far
+var _settle_t := 0.0
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -498,6 +500,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_was_aimed = false
 	_alive_t = 0.0
 	_veteran_paid = false
+	_floor_hits = 0
+	_settle_t = 0.0
 	_bob_off = 0.0
 	_bob_ph = randf() * TAU
 	_hopper_t = randf_range(1.5, 3.0)
@@ -784,6 +788,42 @@ func mass() -> float:
 ## Circle used for target-to-target contact (the rod uses its half span).
 func contact_radius() -> float:
 	return ROD_HALF + radius * 0.4 if kind == Kind.ROD else radius
+
+
+## A falling body meets the walls and the floor like a real object: it
+## bounces off with some of its speed (jelly less, shells more), picks up
+## spin from the scrape, and rolls along the floor as it settles.
+func _debris_bounce(screen_h: float) -> void:
+	var e := 0.3 if soft else 0.5
+	var r := shape_radius()
+	if pos.x < r and vel.x < 0.0:
+		pos.x = r
+		vel.x = -vel.x * e
+		spin = -spin * 0.6 + vel.y / maxf(r, 1.0) * 0.3
+	elif pos.x > field_w - r and vel.x > 0.0:
+		pos.x = field_w - r
+		vel.x = -vel.x * e
+		spin = -spin * 0.6 - vel.y / maxf(r, 1.0) * 0.3
+	var floor_y := screen_h * 0.965
+	if pos.y + r > floor_y and vel.y > 0.0:
+		pos.y = floor_y - r
+		var speed := vel.y
+		vel.y = -vel.y * (e * 0.75 if _floor_hits == 0 else e * 0.4)
+		vel.x *= 0.75
+		# Rolling: the spin matches the ground speed.
+		spin = vel.x / maxf(r, 1.0)
+		tilt = 0.0
+		_floor_hits += 1
+		squash_t = 0.0
+		squash_dir = Vector2.UP
+		if speed > 120.0 and _floor_hits <= 2:
+			var loud := linear_to_db(clampf(speed / 1400.0, 0.1, 0.55))
+			if soft:
+				Sfx.play("squish", randf_range(0.8, 0.95), loud - 6.0)
+			elif kind in [Kind.SHIELD, Kind.MIRROR, Kind.BOSS]:
+				Sfx.play("metal", randf_range(0.8, 0.95), loud - 6.0)
+			else:
+				Sfx.play("wood", randf_range(0.8, 0.95), loud - 6.0)
 
 
 ## Radius of the collision shape around `closest_point` (a rod's capsule
@@ -1082,15 +1122,19 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			fall_t += dt
 			vel.y += GRAVITY * dt
 			pos += vel * dt
+			_debris_bounce(screen_h)
 			if rescuable and fall_t < RESCUE_WINDOW and swing_host != null and _try_grab(swing_host):
 				rescued = true
 				return
 			body_rot += spin * dt
 			tilt += 4.5 * dt
 			_soft_step(dt)
-			# Burst jelly is gone; only its recoiling string remains.
-			if not soft:
-				modulate.a = clampf(1.0 - (fall_t - 0.6) / 0.5, 0.0, 1.0)
+			# Burst jelly is gone; only its recoiling string remains. A body
+			# that fell whole lands, bounces and rolls, then fades.
+			if not _gone:
+				if _floor_hits >= 2 or fall_t > 2.6:
+					_settle_t += dt
+				modulate.a = clampf(1.0 - _settle_t / 0.5, 0.0, 1.0)
 			_rope_step(dt)
 			if (pos.y - radius > screen_h + 40.0 or modulate.a <= 0.0 or _gone) and rope_alpha <= 0.0:
 				phase = Phase.OFF
@@ -2307,6 +2351,14 @@ enum Rope { CORD, BUNGEE, MONO, CABLE, CHAIN, WIRE }
 const ROPE_SUB := 2                 # smoothing steps per rope segment
 
 static var _lit: ShaderMaterial
+
+
+## Hands the balls' light (up to three, see shaders/lit.gdshader) to every
+## lit body.
+static func set_lights(lights: Array[Vector4], col: Color) -> void:
+	if _lit:
+		_lit.set_shader_parameter("lights", lights)
+		_lit.set_shader_parameter("light_col", Vector3(col.r, col.g, col.b))
 static var _dir_cache := {}
 
 

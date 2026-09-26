@@ -1950,3 +1950,20 @@ Rettet:
    - Mesteren kommer med to eskorter.
    - Tempo og aggressivitet øker med bølgenummeret, ikke bare med tiden.
 - Bot (6 frø): median overlevelse ca. 173 s, som før, men bølgene krever 30–50 drap. Rundene ender typisk ved bølge 3–4, der de før endte ved 4–5.
+
+## v7.35 – Realistisk fysikk og lys, helhetlig
+
+- **Kule:**
+  - Ekte spinn (vinkelhastighet) fra friksjon mot vegger, fiender og andre kuler.
+  - Spinnet gir en svak kurve i lufta (Magnus-effekt) og endrer neste sprett.
+  - Veggsprett har friksjon og en lyd som følger kraften.
+- **Kule mot kule:** kulene i en trippel, eller en ny kule mot en kule som spretter, kolliderer
+  med sprett, spinn og klikkelyd.
+- **Døde fiender:**
+  - Skall og hele gelékropper spretter mot veggene og mot gulvet (gelé mindre enn skall).
+  - De får spinn av skrapet, ruller litt og tones så ut.
+  - Lyden ved landing følger materialet.
+- **Dynamisk lys:** kulene i lufta lyser i skinnets farge på fiendene, tauene og spretterten
+  de passerer, på siden som vender mot kula (i lit-shaderen). I overbelastning lyser de
+  sterkere.
+- Bot (6 frø): median ca. 194 s, rundene ender ved bølge 3–5.

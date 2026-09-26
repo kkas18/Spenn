@@ -65,6 +65,13 @@ var _fork: Node2D               # static: redrawn only on layout change
 
 
 ## The fork's gloss follows the viewer's lean too (see Target.set_view).
+## The balls' light on the fork (shared lit shader).
+func set_lights(lights: Array[Vector4], col: Color) -> void:
+	if _fork and _fork.material:
+		(_fork.material as ShaderMaterial).set_shader_parameter("lights", lights)
+		(_fork.material as ShaderMaterial).set_shader_parameter("light_col", Vector3(col.r, col.g, col.b))
+
+
 func set_view(v: Vector2) -> void:
 	if _fork and _fork.material:
 		(_fork.material as ShaderMaterial).set_shader_parameter("view", v * 0.35)

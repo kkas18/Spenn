@@ -16,8 +16,31 @@ const vec3 SUN = vec3(-0.46, -0.62, 0.64);
 // Where the viewer is, relative to straight on (the phone's tilt): the
 // highlights slide across the surfaces as you lean, as on real gloss.
 uniform vec2 view = vec2(0.0);
+// Moving lights: the balls in flight glow warm and light what they pass,
+// on the side that faces them (xy: canvas position, z: reach, w: strength).
+uniform vec4 lights[3];
+uniform vec3 light_col = vec3(1.0, 0.78, 0.42);
+varying vec2 world;
+
+// Warm light from the balls on a surface with normal `n` at `world`.
+vec3 ball_light(vec3 n) {
+	vec3 g = vec3(0.0);
+	for (int i = 0; i < 3; i++) {
+		vec4 lt = lights[i];
+		if (lt.w <= 0.0) {
+			continue;
+		}
+		vec2 d = lt.xy - world;
+		float dl = length(d);
+		float att = lt.w * pow(max(0.0, 1.0 - dl / lt.z), 2.0);
+		vec3 ld = normalize(vec3(d / max(dl, 1.0), 0.55));
+		g += light_col * att * max(dot(n, ld), 0.0);
+	}
+	return g;
+}
 
 void vertex() {
+	world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 	float band = floor(UV.x * 0.25 + 0.5);
 	if (band != 2.0 && band != 3.0 && band != 7.0) {
 		// Carry the normal into world space (rotation and squash of the
@@ -63,6 +86,7 @@ void fragment() {
 			float h = fract(q.y * 0.42 + w * 0.45);
 			col *= 0.72 + 0.4 * smoothstep(0.0, 0.5, h) * (1.0 - smoothstep(0.5, 1.0, h));
 		}
+		col += c.rgb * ball_light(n) * 0.8;
 		COLOR = vec4(col, c.a * edge(abs(q.x)));
 	} else if (band == 5.0) {
 		// Recessed membrane: in its own shadow on the upper left rim,
@@ -92,6 +116,8 @@ void fragment() {
 				col += c.rgb * pow(1.0 - n.z, 3.0) * clamp(0.2 - ndl, 0.0, 1.0) * 0.8;
 			}
 		}
+		vec3 g = ball_light(n);
+		col += c.rgb * g * 0.85 + g * 0.08;
 		COLOR = vec4(col, c.a * edge(r));
 	}
 }

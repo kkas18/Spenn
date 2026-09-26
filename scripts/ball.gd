@@ -22,6 +22,12 @@ var kills := 0                 # ... and killed
 var banks := 0                 # side-wall bounces so far (bank shots)
 var skilled := 0               # bit per skill shot already paid for this ball
 var spin := 0.0                # visual rotation (rad)
+# Real spin (rad/s): set by friction at contacts (walls, bodies, other
+# balls), it bends the flight a touch (Magnus) and changes the next bounce.
+var w := 0.0
+const MU_WALL := 0.25
+const MAGNUS := 0.00055
+const INERTIA := 0.4            # solid ball: I = 0.4 m r²
 var _touched := {}             # target instance id -> cooldown (s)
 var _trail := PackedVector2Array()
 var _trail_t := 0.0
@@ -64,6 +70,7 @@ func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	banks = 0
 	skilled = 0
 	spin = 0.0
+	w = 0.0
 	_touched.clear()
 	_trail.resize(TRAIL + 1)
 	_trail.fill(p)
@@ -95,7 +102,10 @@ func step(dt: float, l: Layout) -> bool:
 	age += dt
 	vel.y += GRAVITY * dt
 	pos += vel * dt
-	spin += vel.length() / RADIUS * dt * (1.0 if vel.x >= 0.0 else -1.0) * 0.35
+	# Spin curls the flight a little and slowly dies in the air.
+	vel += Vector2(-vel.y, vel.x) * w * MAGNUS * dt
+	w *= exp(-0.5 * dt)
+	spin += w * dt
 	_trail_t += dt
 	if _trail_t >= 1.0 / 60.0:
 		_trail_t = 0.0
@@ -110,11 +120,13 @@ func step(dt: float, l: Layout) -> bool:
 		pos.x = RADIUS
 		if vel.x < -60.0:
 			banks += 1
+			_wall(Vector2.RIGHT)
 		vel.x = absf(vel.x) * WALL_BOUNCE
 	elif pos.x > l.size.x - RADIUS:
 		pos.x = l.size.x - RADIUS
 		if vel.x > 60.0:
 			banks += 1
+			_wall(Vector2.LEFT)
 		vel.x = -absf(vel.x) * WALL_BOUNCE
 	if pos.y < l.rail_y + RADIUS + 3.0 and vel.y < 0.0:
 		pos.y = l.rail_y + RADIUS + 3.0
@@ -128,6 +140,36 @@ func step(dt: float, l: Layout) -> bool:
 		if _spent >= SPENT_FADE:
 			return false
 	return age < MAX_AGE and pos.y < l.size.y + RADIUS * 2.0
+
+
+## Bounce off a side wall (normal `n`): friction along the wall grips the
+## ball's surface, trading some speed for spin (or spin for speed), and it
+## knocks against the wall, louder the harder it hits.
+func _wall(n: Vector2) -> void:
+	var jn := (1.0 + WALL_BOUNCE) * absf(vel.dot(n))
+	friction(n, Vector2.ZERO, jn, MU_WALL, 0.0)
+	impact(n)
+	Sfx.play("wood", clampf(1.5 - absf(vel.x) / 2400.0, 1.1, 1.5), linear_to_db(clampf(absf(vel.x) / 1400.0, 0.12, 0.6)) - 6.0)
+
+
+## Friction at a contact with normal `n` (pointing out of the other body
+## into the ball), against a surface moving at `other_vel`, for a normal
+## impulse `jn`. `other_inv_m` is the other body's inverse mass (0: fixed).
+## Returns the tangential impulse given to the ball.
+func friction(n: Vector2, other_vel: Vector2, jn: float, mu: float, other_inv_m: float) -> Vector2:
+	var r := -n * RADIUS
+	var surf := Vector2(-w * r.y, w * r.x)
+	var rel := vel + surf - other_vel
+	var tang := rel - n * rel.dot(n)
+	var tl := tang.length()
+	if tl < 0.5:
+		return Vector2.ZERO
+	var k := 1.0 + 1.0 / INERTIA + other_inv_m
+	var jt := minf(mu * jn, tl / k)
+	var imp := -tang / tl * jt
+	vel += imp
+	w += (r.x * imp.y - r.y * imp.x) / (INERTIA * RADIUS * RADIUS)
+	return imp
 
 
 func _process(delta: float) -> void:
