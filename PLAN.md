@@ -2122,3 +2122,41 @@ Rettet:
 - Spaken slår over med fjær og overslag, og klikker når den passerer midten. Siden den lener
   mot, lyser i gull.
 - Tegningen deles (Hud.lever), så menyspaken og innstillingene ser helt like ut.
+
+## v7.42 – Strengene som energinett, og en strengemotor i lyden
+
+- **Energi:**
+  - Et drap sender en lysperle i fiendens farge opp den nærmeste strengen. Den lyser opp
+    strekningen den har klatret, går i en bue langs skinnen og inn i spenningsstrengen.
+  - Først når perlen kommer fram, dirrer spenningsstrengen og klinger.
+  - Tonen stiger oppover skalaen etter hvor stram bølgen er, så en bølge klatrer en oktav før
+    den er full.
+- **Varsel:**
+  - 0,7 s før en fiende henges inn, løper en tråd i dens farge ned til der den skal henge, og en
+    stiplet ring i kroppens størrelse snurrer der.
+  - Rader og formasjoner varsles på samme måte.
+- **Harpe:**
+  - En kule som krysser en streng, får den til å dirre, blinke og klinge. Strengene er stemt i
+    C-moll pentaton, stigende fra venstre, og en oktav opp høyt i feltet.
+  - Tonene legges på musikkens sekstendelsnoter, så lange skudd og bankskudd blir melodier i
+    takt.
+- **Rekke:** hvert treff i rekka tenner en streng i gull, fra midten og utover. Mister du rekka,
+  slukkes de fra kantene og inn.
+- **Farer:**
+  - Før vindkast lener strengene seg mot vinden, og glimt løper langs toppene.
+  - Før mørklegging tømmes lyset ovenfra og ned.
+  - Før en gyllen fiende blinker strengene i gull.
+  - Under mørklegging dør lyset ut ovenfra.
+- **Finale:** strengene trekkes stramme (slutter å svaie) og brenner ravgult på takten.
+- **Lysdråpe:** fra bølge 2 samler det seg en gulldråpe på en streng hvert 22.–36. sekund.
+  - Den henger i 5 s og faller så av.
+  - Skyter du den, gir den overbelastningsladning og 120 × multiplikator poeng, med et
+    harpe-arpeggio.
+- **Lydmotor** (Godots eget lydsystem, uten eksterne biblioteker):
+  - Plukkede strenger lages med Karplus-Strong-syntese (tools/import_assets.py, stemt innenfor
+    ±10 cent).
+  - Egen «Strings»-buss med romklang, slik at strengene ligger bak handlingen.
+  - Harpetoner, akkordslag og spenningsstrengen legges på takten.
+  - Bølge fullført gir et akkordslag, og ny rekord et arpeggio oppover.
+  - Musikken åpner seg og løftes i finalen, og sendes inn i et stort, mørkt rom under
+    mørklegging.

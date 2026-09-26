@@ -58,6 +58,8 @@ const CHARM_BREAK := 30
 const DEFENSIVE := [Target.Charm.BUBBLE, Target.Charm.SPRING, Target.Charm.GHOST]
 # Moods (from MOOD_WAVE): grumpy and cute enemies, the mix set by the wave.
 const MOOD_WAVE := 2
+const FORESHADOW := 0.7        # s a fibre shows where an enemy is about to drop in
+const GOLD_DROP_WAVE := 2
 const SHOVE_WAVE := 3          # from here, moody ones shove their neighbours
 const SHOVE_AIM := 0.3         # s the aim must hold before one reacts
 const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
@@ -146,6 +148,7 @@ var _charm_pass_cd := 0.0
 var _charm_gift_t := 4.0
 var _charm_copy_t := 3.0
 var _calm_t := 0.5
+var _gold_drop_t := 20.0       # s until a gold drop gathers on a fibre
 var _shove_cd := 5.0           # s until the next shove may start (one at a time)
 var _shover: Target = null
 var _last_pulse := 0
@@ -283,6 +286,7 @@ func _ready() -> void:
 	hud.menu_pressed.connect(_to_menu)
 	hud.bar.record_broken.connect(_on_record_broken)
 	hud.bar.wave_record.connect(_on_wave_record)
+	backdrop.energy_arrived.connect(_on_energy)
 	get_viewport().size_changed.connect(_on_resize)
 	_apply_layout()
 	_boot()
@@ -443,6 +447,7 @@ func _start_run() -> void:
 	_next_life_at = EXTRA_LIFE_EVERY
 	_shove_cd = 5.0
 	_shover = null
+	_gold_drop_t = 20.0
 	_rush_left = 0
 	_spawn_t = 2.5
 	_last_tap = -10.0
@@ -482,9 +487,34 @@ func _on_record_broken() -> void:
 	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
 	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
 	Sfx.play("record")
+	Sfx.strum([5, 6, 7, 8, 9, 10], 0.04, -2.0)
 	Sfx.haptic_pattern("record")
 	if not Prefs.reduced_motion:
 		fx.slowmo(0.4, 0.3)
+
+
+## A kill's energy has run up its fibre and into the tension string: the
+## string takes it (a pluck on the bar) and sounds, tuned to how tight the
+## wave has pulled it.
+func _on_energy(_col: Color) -> void:
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	hud.bar.energy()
+	Sfx.taut(director.wave_progress(), -3.0)
+
+
+## A gold drop shot off its fibre: a burst of tension toward overload and
+## points, and a run up the harp.
+func _catch_gold(at: Vector2) -> void:
+	if at == Vector2.INF:
+		return
+	_charge(0.3)
+	_add_score(120 * _mult(), at)
+	fx.sparks(at, Pal.GOLD_LIGHT, 14)
+	fx.ring(at, Pal.GOLD_LIGHT, 50.0)
+	fx.popup(Loc.t("gold.drop") + "  +" + Hud._group(120 * _mult()), at + Vector2(0, -34.0), Pal.GOLD_LIGHT, 18, true)
+	Sfx.strum([4, 6, 8, 10], 0.05)
+	Sfx.haptic_pattern("light")
 
 
 ## Past the best wave ever reached: a smaller moment at the medallion.
@@ -553,7 +583,11 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	var frac := len_frac if len_frac >= 0.0 else _rng.randf_range(0.05, 0.3)
 	# Aggression first: the temperament is rolled from it at spawn.
 	t.aggression = director.aggression()
-	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
+	# A fibre shows where it will hang a moment before it drops in.
+	var wait := FORESHADOW if state == State.PLAYING else 0.0
+	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, wait)
+	if wait > 0.0:
+		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * frac), Pal.kind_color(kind), wait)
 	_roll_variant(t)
 	_maybe_intro(t)
 	_roll_mood(t)
@@ -577,6 +611,7 @@ func _spawn_formation(kind: Target.Kind, n: int) -> void:
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
 		t.aggression = director.aggression()
 		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
+		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * (0.2 - 0.1 * v)), Pal.kind_color(kind), 0.15 + i * 0.09)
 		_maybe_intro(t)
 		row.append(t)
 	director.count_spawn(row.size())
@@ -846,6 +881,18 @@ func _pace(delta: float) -> void:
 	hud.bar.progress = director.wave_progress()
 	hud.bar.remaining = maxi(0, director.wave_quota() - director.wave_killed)
 	hud.bar.finale_at = Director.FINALE_AT
+	backdrop.progress = director.wave_progress()
+	backdrop.string_y = layout.safe_top + (layout.top_bar_h - layout.safe_top) * 0.86
+	backdrop.streak_lit = mini(streak, 9)
+	var in_finale := director.wave_progress() >= Director.FINALE_AT and director.wave_state != Director.Wave.BREAK
+	backdrop.finale = in_finale
+	Music.finale = in_finale
+	# Now and then a gold drop gathers on a fibre.
+	if director.wave >= GOLD_DROP_WAVE and state == State.PLAYING:
+		_gold_drop_t -= delta
+		if _gold_drop_t <= 0.0:
+			_gold_drop_t = _rng.randf_range(22.0, 36.0)
+			backdrop.spawn_gold()
 	_mission_t -= delta
 	if _mission_t <= 0.0:
 		_mission_t = 0.5
@@ -948,6 +995,7 @@ func _clear_wave() -> void:
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.46)
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
+	Sfx.strum([0, 2, 4, 5, 7], 0.05, -2.0)
 	fx.shock(mid, 8.0, 380.0, 0.6)
 	# Final-kill camera: the camera leans in on the last one and time all
 	# but stops; a gold ring runs out through the light fibres from the kill
@@ -1256,9 +1304,19 @@ func _step(dt: float) -> void:
 		b.vel.x += gust * GUST_BALL * dt
 		if perk("magnet") > 0:
 			_magnet(b, dt)
+		var before := b.pos
 		if not b.step(dt, layout):
 			_finish_ball(b)
 			continue
+		# Across a fibre: it is plucked, a harp string in the track's key
+		# (left to right climbs the scale; high in the field, an octave up).
+		var fi := backdrop.cross(before, b.pos)
+		if fi >= 0:
+			var hi := 2 if b.pos.y < layout.rail_y + layout.play_h * 0.3 else 0
+			Sfx.harp(fi + hi, -2.0 if b.hits > 0 else 0.0)
+		var gp := backdrop.gold_pos()
+		if gp != Vector2.INF and b.pos.distance_to(gp) < Ball.RADIUS + 14.0:
+			_catch_gold(backdrop.catch_gold())
 		if stage.visible:
 			stage.flinch(b.pos)
 		if title.active and title.knock(b.pos, b.vel, Ball.RADIUS) and _knock_sfx_cd <= 0.0:
@@ -1983,6 +2041,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain += 1
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
+	backdrop.send_energy(t.pos, t.color())
 	run_kills += 1
 	# The neighbours follow the fall with their eyes; the closest flinch.
 	for n in targets:
@@ -2220,6 +2279,7 @@ func _schedule_hazard() -> void:
 	_hazard = pool[_rng.randi() % pool.size()]
 	_last_hazard = _hazard
 	_hazard_in = _rng.randf_range(6.0, 15.0)
+	_gust_dir = 1.0 if _rng.randf() < 0.5 else -1.0
 
 
 func _hazard_tick(delta: float) -> void:
@@ -2237,6 +2297,11 @@ func _hazard_tick(delta: float) -> void:
 		if director.breather > 0.0 or overload_t > 0.0:
 			return
 		_hazard_in -= delta
+		# The fibres warn just before it comes.
+		if _hazard_in < 1.4:
+			backdrop.warn = clampf(1.0 - _hazard_in / 1.4, 0.0, 1.0)
+			backdrop.warn_kind = [0, 1, 2, 3][_hazard]
+			backdrop.warn_dir = _gust_dir
 		if _hazard_in <= 0.0:
 			_begin_hazard()
 		return
@@ -2271,10 +2336,10 @@ func _hazard_tick(delta: float) -> void:
 
 func _begin_hazard() -> void:
 	_hazard_on = true
+	backdrop.warn = 0.0
 	_hazard_t = 0.0
 	match _hazard:
 		Hazard.GUST:
-			_gust_dir = 1.0 if _rng.randf() < 0.5 else -1.0
 			_gust_whoosh = 0.0
 			hud.card(Loc.t("hazard.gust"), Loc.t("hazard.gustSub"), 1.4)
 		Hazard.BLACKOUT:
@@ -2294,6 +2359,7 @@ func _end_hazard() -> void:
 	_hazard_in = -1.0
 	gust = 0.0
 	backdrop.gust = 0.0
+	backdrop.warn = 0.0
 	_set_dark(0.0)
 
 
@@ -2301,6 +2367,7 @@ func _set_dark(v: float) -> void:
 	_dark = v
 	Target.dark = v
 	backdrop.dark = v
+	Music.dark = v
 	rail.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), v)
 
 
@@ -2350,6 +2417,7 @@ func _acro_tick(delta: float) -> void:
 		if t.slipped:
 			t.slipped = false
 			director.count_kill()
+			backdrop.send_energy(t.pos, t.color())
 			run_kills += 1
 			var pts := t.points() * _mult() * _surge()
 			_add_score(pts, t.pos)

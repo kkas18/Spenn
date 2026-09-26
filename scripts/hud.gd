@@ -1743,6 +1743,11 @@ class TopBar extends Control:
 		_wave_crown = false
 		_wave_new_t = 9.0
 
+	## A kill's energy arrived (see Backdrop): the string takes it, quivers.
+	func energy() -> void:
+		_pluck = minf(3.0, _pluck * exp(-_pluck_t * 4.5) + 1.6)
+		_pluck_t = 0.0
+
 	## Where the string's colour sits for progress `pr`.
 	func tension_col(pr: float) -> Color:
 		if pr >= 1.0:
@@ -1859,9 +1864,7 @@ class TopBar extends Control:
 				_pluck = 4.5
 				_shimmer = 0.0
 				Sfx.play("twang", 1.6, -8.0)
-			else:
-				_pluck = minf(3.0, _pluck * exp(-_pluck_t * 4.5) + 1.4)
-			_pluck_t = 0.0
+			_pluck_t = 0.0 if progress >= 1.0 else _pluck_t
 		elif progress < _last_progress - 0.2:
 			_slack = 1.0
 			_pluck = 3.0

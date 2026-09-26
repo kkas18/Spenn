@@ -27,6 +27,10 @@ var intensity := 0.0           # 0..1, set by the game while playing
 var overload := false          # overload: the mix goes warm and close
 var flow := false              # flow: the mix opens up and lifts
 var danger := 0.0              # 0..1, the closest target to the line
+var finale := false            # the wave's finale: the band opens and lifts
+var dark := 0.0                # blackout, 0..1: the music moves into a big dark room
+var _room: AudioEffectReverb
+var _dark := 0.0
 var _duck := 0.0               # dB taken off (eases back)
 var _duck_hold := 0.0
 
@@ -54,9 +58,16 @@ func _ready() -> void:
 	_lp = AudioEffectLowPassFilter.new()
 	_lp.cutoff_hz = 800.0
 	AudioServer.add_bus_effect(_bus, _lp)
+	# A room the music is sent into when the lights go out.
+	_room = AudioEffectReverb.new()
+	_room.room_size = 0.9
+	_room.damping = 0.6
+	_room.dry = 1.0
+	_room.wet = 0.0
+	AudioServer.add_bus_effect(_bus, _room)
 	# Read by the menu, whose light breathes with the music.
 	AudioServer.add_bus_effect(_bus, AudioEffectSpectrumAnalyzer.new())
-	_spec = AudioServer.get_bus_effect_instance(_bus, 1) as AudioEffectSpectrumAnalyzerInstance
+	_spec = AudioServer.get_bus_effect_instance(_bus, 2) as AudioEffectSpectrumAnalyzerInstance
 	_menu = _player("res://assets/music/menu.ogg")
 	_play = _player("res://assets/music/play.ogg")
 	Prefs.changed.connect(_apply_volume)
@@ -129,6 +140,9 @@ func _process(delta: float) -> void:
 			Mode.PLAY:
 				play_t = lerpf(-3.0, 0.0, intensity)
 				cut_t = lerpf(20000.0, 3200.0, smoothstep(0.55, 1.0, danger))
+				if finale:
+					play_t += 1.0
+					cut_t = maxf(cut_t, 12000.0)
 				if flow:
 					play_t += 1.5
 					cut_t = 20000.0
@@ -153,6 +167,9 @@ func _process(delta: float) -> void:
 	_play_db = _approach(_play_db, play_t, rd, 0.25 if play_t > _play_db else out_tc)
 	_cut = exp(lerpf(log(_cut), log(cut_t), 1.0 - exp(-rd / 0.25)))
 	_lp.cutoff_hz = _cut
+	_dark = lerpf(_dark, dark if mode == Mode.PLAY else 0.0, 1.0 - exp(-rd / 0.5))
+	_room.wet = 0.35 * _dark
+	_room.dry = 1.0 - 0.3 * _dark
 	_drive(_menu, _menu_db, menu_t)
 	_drive(_play, _play_db, play_t)
 	if _spec:

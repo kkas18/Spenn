@@ -78,6 +78,19 @@ const VOICE_GAP := 0.09
 const NOTE_COUNT := 9
 const NOTE_DB := -14.0
 
+# Strings: the background fibres are a harp and the top bar's tension
+# string a low steel string (plucked-string samples, tools/import_assets.py),
+# on their own bus with a longer room so they sit behind the action.
+const HARP_COUNT := 11          # C minor pentatonic, C4..C6
+const HARP_POOL := 6
+const HARP_DB := -13.0
+const TAUT_STEPS := [0, 3, 5, 7, 10, 12]   # the string's tuning as it tightens
+const BPM := 124.0
+var _harp: Array[AudioStream] = []
+var _taut: Array[AudioStream] = []
+var _hplayers: Array[AudioStreamPlayer] = []
+var _hnext := 0
+var _hbus := 0
 var _takes := {}
 var _notes: Array[AudioStream] = []
 var _voice_last := -1.0
@@ -139,6 +152,27 @@ func _ready() -> void:
 			_takes[name] = list
 	for i in NOTE_COUNT:
 		_notes.append(load("%snote_%d.ogg" % [DIR, i]))
+	_hbus = AudioServer.bus_count
+	AudioServer.add_bus(_hbus)
+	AudioServer.set_bus_name(_hbus, "Strings")
+	AudioServer.set_bus_send(_hbus, &"Master")
+	var hall := AudioEffectReverb.new()
+	hall.room_size = 0.78
+	hall.damping = 0.45
+	hall.spread = 0.9
+	hall.hipass = 0.2
+	hall.dry = 0.85
+	hall.wet = 0.32
+	AudioServer.add_bus_effect(_hbus, hall)
+	for i in HARP_COUNT:
+		_harp.append(load("%sharp_%d.ogg" % [DIR, i]))
+	for i in 2:
+		_taut.append(load("%staut_%d.ogg" % [DIR, i]))
+	for i in HARP_POOL:
+		var hp := AudioStreamPlayer.new()
+		hp.bus = &"Strings"
+		add_child(hp)
+		_hplayers.append(hp)
 	apply_volume()
 	Prefs.changed.connect(apply_volume)
 
@@ -147,13 +181,21 @@ func _exit_tree() -> void:
 	for p in _players:
 		p.stop()
 		p.stream = null
+	for p in _hplayers:
+		p.stop()
+		p.stream = null
 	_takes.clear()
 	_notes.clear()
+	_harp.clear()
+	_taut.clear()
 
 
 func apply_volume() -> void:
 	AudioServer.set_bus_volume_db(_bus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
 	AudioServer.set_bus_mute(_bus, Prefs.sfx_volume == 0)
+	if _hbus > 0:
+		AudioServer.set_bus_volume_db(_hbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
+		AudioServer.set_bus_mute(_hbus, Prefs.sfx_volume == 0)
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
@@ -202,6 +244,64 @@ func phrase(steps: Array, gap := 0.07, volume_db := 0.0) -> void:
 			note(i, volume_db)
 		else:
 			Motion.after(gap * k, func() -> void: note(i, volume_db - 1.5 * k))
+
+
+## How long until the next sixteenth of the play track (s), or 0 when it
+## is not playing: string notes land on the music's grid.
+func to_grid() -> float:
+	var b := Music.beat()
+	if b < 0.0:
+		return 0.0
+	var next := (floorf(b * 4.0) + 1.0) / 4.0
+	var wait := (next - b) * 60.0 / BPM
+	return wait if wait > 0.025 else 0.0
+
+
+func _string(stream: AudioStream, pitch: float, volume_db: float) -> void:
+	if _headless or Prefs.sfx_volume == 0 or stream == null:
+		return
+	var p := _hplayers[_hnext]
+	_hnext = (_hnext + 1) % HARP_POOL
+	p.stream = stream
+	p.pitch_scale = pitch
+	p.volume_db = volume_db
+	p.play()
+
+
+## A harp string: step `i` of the pentatonic (clamped), on the grid.
+func harp(i: int, volume_db := 0.0, on_grid := true) -> void:
+	if _harp.is_empty():
+		return
+	var st := _harp[clampi(i, 0, HARP_COUNT - 1)]
+	var db := HARP_DB + minf(volume_db, 0.0)
+	var wait := to_grid() if on_grid else 0.0
+	if wait <= 0.0:
+		_string(st, 1.0, db)
+	else:
+		get_tree().create_timer(wait, true, false, true).timeout.connect(func() -> void: _string(st, 1.0, db))
+
+
+## Several harp strings swept in turn: a strum (or a run), starting on
+## the grid.
+func strum(steps: Array, gap := 0.045, volume_db := 0.0) -> void:
+	var wait := to_grid()
+	for k in steps.size():
+		var i: int = steps[k]
+		var d := wait + gap * k
+		var db := volume_db - 1.0 * k
+		if d <= 0.0:
+			harp(i, db, false)
+		else:
+			get_tree().create_timer(d, true, false, true).timeout.connect(func() -> void: harp(i, db, false))
+
+
+## The tension string, plucked: tuned up the scale as it tightens (`tight`
+## 0..1 is the wave's progress), so a wave climbs an octave as it fills.
+func taut(tight: float, volume_db := 0.0) -> void:
+	if _taut.is_empty():
+		return
+	var step: int = TAUT_STEPS[clampi(int(round(clampf(tight, 0.0, 1.0) * (TAUT_STEPS.size() - 1))), 0, TAUT_STEPS.size() - 1)]
+	_string(_taut[_rng.randi() % _taut.size()], pow(2.0, step / 12.0), -11.0 + minf(volume_db, 0.0))
 
 
 ## A creature's syllable: `shape` is up (startle), taunt or down (death);

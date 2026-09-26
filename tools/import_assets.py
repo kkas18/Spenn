@@ -217,6 +217,73 @@ def build_notes():
         sf.write(os.path.join(OUT, "sfx", "note_%d.ogg" % i), m, sr, format="OGG", subtype="VORBIS")
 
 
+# The background fibres are a harp: plucked strings (Karplus-Strong) on the
+# C minor pentatonic, two octaves, so any run of them sits in the play
+# track's key. HARP_TAUT is the tension string across the top bar: one low,
+# brighter steel string the game retunes (pitch) as the wave pulls it tight.
+HARP = [60, 63, 65, 67, 70, 72, 75, 77, 79, 82, 84]
+HARP_TAUT = 48
+
+
+def _pluck(f0, sr, dur, bright, decay, seed):
+    """Karplus-Strong: a burst of filtered noise in a delay line one period
+    long, averaged on every pass, so it rings like a plucked string and
+    darkens as it fades. `bright` (0..1) keeps more of the pick's edge;
+    `decay` is the loss per pass (closer to 1 rings longer)."""
+    n = int(dur * sr)
+    # The two-tap average and the interpolation add a fraction of a sample
+    # of delay: take it off the line (measured: within a few cents).
+    period = sr / f0 - 0.2
+    p = int(period)
+    frac = period - p
+    rng = np.random.default_rng(seed)
+    burst = rng.uniform(-1.0, 1.0, p)
+    # Soften the pick: a one-pole low-pass over the burst.
+    a = 0.25 + 0.7 * bright
+    for i in range(1, p):
+        burst[i] = burst[i - 1] + a * (burst[i] - burst[i - 1])
+    burst -= burst.mean()
+    buf = np.zeros(n + p + 2)
+    buf[:p] = burst
+    for i in range(p, n + p):
+        # Averaging the two taps (with the fractional part for tuning) is
+        # the string's loss and its low-pass.
+        x0 = buf[i - p]
+        x1 = buf[i - p - 1] if i - p - 1 >= 0 else 0.0
+        buf[i] = decay * ((1.0 - frac) * (0.5 * (x0 + x1)) + frac * x1)
+    y = buf[p:p + n].copy()
+    t = np.arange(n) / sr
+    # A little body: the soundboard's low resonance and a soft attack.
+    body = np.sin(2 * np.pi * f0 * 0.5 * t) * np.exp(-t / 0.12) * 0.08
+    y = y + body
+    # Take out any DC the loop keeps (a one-pole high-pass near 25 Hz).
+    k = np.exp(-2 * np.pi * 25.0 / sr)
+    out = np.zeros(n)
+    px = py = 0.0
+    for i in range(n):
+        py = k * (py + y[i] - px)
+        px = y[i]
+        out[i] = py
+    y = out
+    atk = int(0.002 * sr)
+    y[:atk] *= np.linspace(0.0, 1.0, atk)
+    fo = int(0.12 * sr)
+    y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
+    return y
+
+
+def build_harp():
+    sr = 44100
+    for i, midi in enumerate(HARP):
+        f0 = 440.0 * 2 ** ((midi - 69) / 12.0)
+        m = _level(_pluck(f0, sr, 1.7, 0.35, 0.996, 100 + i), sr) * 0.8
+        sf.write(os.path.join(OUT, "sfx", "harp_%d.ogg" % i), m.astype(np.float32), sr, format="OGG", subtype="VORBIS")
+    f0 = 440.0 * 2 ** ((HARP_TAUT - 69) / 12.0)
+    for v in range(2):
+        m = _level(_pluck(f0, sr, 2.2, 0.75, 0.998, 200 + v), sr)
+        sf.write(os.path.join(OUT, "sfx", "taut_%d.ogg" % v), m.astype(np.float32), sr, format="OGG", subtype="VORBIS")
+
+
 def build_surge():
     """Overload: a C minor chord swelling out of a rising band of air, then
     ringing off; and its release, the same chord falling away."""
@@ -345,6 +412,7 @@ if __name__ == "__main__":
     build_sfx()
     build_whoosh()
     build_notes()
+    build_harp()
     build_surge()
     build_voices()
     build_music()

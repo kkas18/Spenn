@@ -14,6 +14,18 @@ extends Node2D
 ##   through the strings around it, overload turns them gold, and as a
 ##   target nears the line their lower ends warm to coral.
 ## They dim where a target hangs in front, so the field always reads first.
+##
+## They are also the game's energy net:
+## - a kill sends a bead of its colour up the nearest fibre, along the rail
+##   and into the tension string (which it tightens: `energy_arrived`);
+## - where an enemy is about to drop in, a thread of its colour runs down
+##   first (`foreshadow`);
+## - a ball crossing a fibre plucks it: it quivers and sounds (`cross`);
+## - the streak lights them one by one from the middle out;
+## - they warn of a hazard just before it: they lean into a gust, go dark
+##   from the top before a blackout, flicker gold before a golden one;
+## - in the finale they pull straight and burn amber on the beat;
+## - now and then a gold drop gathers on one; shoot it (`gold_pos`).
 
 const FAR_SCALE := 0.4
 const FAR_ALPHA := 0.08
@@ -38,6 +50,23 @@ var _flow := 0.0
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
 var _heat := 0.0
+signal energy_arrived(col: Color)
+const ENERGY_UP := 0.3         # s up the fibre
+const ENERGY_ALONG := 0.3      # s along the rail into the string
+const T_WARM := Color("EC9A3C")
+var progress := 0.0            # the wave's progress: where the string's tip is
+var string_y := 0.0            # the tension string's height (set by the game)
+var streak_lit := 0            # fibres lit by the streak (0..FAR_COUNT)
+var finale := false
+var warn := 0.0                # a hazard is coming, 0..1
+var warn_kind := 0             # 1 gust, 2 blackout, 3 golden
+var warn_dir := 1.0
+var _energy: Array[Dictionary] = []
+var _fore: Array[Dictionary] = []
+var _lit: Array[float] = []
+var _finale := 0.0
+var _gold := {}                # the shootable drop: {i, t, st} (st 0 forming, 1 hanging, 2 falling)
+const RANK := [4, 3, 5, 2, 6, 1, 7, 0, 8]
 var _bokeh: Array[Dictionary] = []
 const SOFT := preload("res://assets/particles/soft.png")
 
@@ -90,7 +119,10 @@ func _ready() -> void:
 			"rate": _rng.randf_range(0.18, 0.32),
 			"beads": 1 + _rng.randi() % 3,
 			"flash": 0.0,
+			"vib": 0.0,
+			"cd": 0.0,
 		})
+		_lit.append(0.0)
 	for i in 6:
 		_bokeh.append({"x": _rng.randf(), "y": _rng.randf(), "r": _rng.randf_range(40.0, 90.0),
 			"vx": _rng.randf_range(-4.0, 4.0), "vy": _rng.randf_range(-6.0, -2.0), "ph": _rng.randf() * TAU})
@@ -168,8 +200,17 @@ func _step_fibres(rd: float) -> void:
 	for r in _ripples:
 		r.t += rd
 	_ripples = _ripples.filter(func(r: Dictionary) -> bool: return r.t < RIPPLE_LIFE)
-	for f in _far:
+	for i in _far.size():
+		var f: Dictionary = _far[i]
 		f.flash = maxf(0.0, f.flash - rd * 2.2)
+		f.vib = maxf(0.0, f.vib - rd * 1.4)
+		f.cd = maxf(0.0, f.cd - rd)
+		var rank: int = RANK.find(i)
+		var want := 1.0 if rank < streak_lit else 0.0
+		# Lit from the middle out; put out from the edges in.
+		_lit[i] = move_toward(_lit[i], want, rd * (4.0 if want > _lit[i] else 1.2 + (8 - rank) * 0.5))
+	_finale = move_toward(_finale, 1.0 if finale else 0.0, rd / 0.8)
+	_step_energy(rd)
 	for d in _drops:
 		d.t += rd
 		if d.t >= d.dur and not d.landed:
@@ -192,6 +233,144 @@ func _step_fibres(rd: float) -> void:
 		if _drop_t <= 0.0:
 			_drop_t = _rng.randf_range(1.6, 3.4)
 			_spawn_drop()
+
+
+# ---------------------------------------------------------------- energy net
+
+## A kill at `at` (screen space): its energy runs up the nearest fibre.
+func send_energy(at: Vector2, col: Color) -> void:
+	if l == null or _far.is_empty() or not _far[0].has("pts"):
+		energy_arrived.emit(col)
+		return
+	var lx := at.x - view.x * 0.4
+	var best := 0
+	for i in _far.size():
+		if absf(_far[i].x - lx) < absf(_far[best].x - lx):
+			best = i
+	var f: Dictionary = _far[best]
+	var len := maxf(1.0, f.pts[SEG - 1].y - f.pts[0].y)
+	var s0 := clampf((at.y - view.y * 0.4 - f.pts[0].y) / len, 0.0, 1.0)
+	if _energy.size() >= 8:
+		# Too many at once: the oldest arrives now.
+		var e: Dictionary = _energy.pop_front()
+		energy_arrived.emit(e.col)
+	_energy.append({"i": best, "s0": s0, "col": col.lerp(Pal.INK, 0.1), "t": 0.0, "up": ENERGY_UP * (0.4 + 0.6 * s0)})
+	f.flash = maxf(f.flash, 0.6)
+
+
+func _step_energy(rd: float) -> void:
+	for e in _energy:
+		e.t += rd
+	var keep: Array[Dictionary] = []
+	for e in _energy:
+		if e.t >= e.up + ENERGY_ALONG:
+			energy_arrived.emit(e.col)
+		else:
+			keep.append(e)
+	_energy = keep
+	for fo in _fore:
+		fo.t += rd
+	_fore = _fore.filter(func(fo: Dictionary) -> bool: return fo.t < fo.dur + 0.35)
+	if not _gold.is_empty():
+		_gold.t += rd
+		match int(_gold.st):
+			0:
+				if _gold.t >= 0.8:
+					_gold.st = 1
+					_gold.t = 0.0
+			1:
+				if _gold.t >= 5.0:
+					_gold.st = 2
+					_gold.t = 0.0
+			2:
+				if _gold.t >= 1.0:
+					_gold = {}
+
+
+## Where an energy bead is now (layer space): up the fibre, then an arc
+## along the rail into the string at its tip.
+func _energy_pos(e: Dictionary) -> Vector2:
+	var f: Dictionary = _far[e.i]
+	if not f.has("pts"):
+		return Vector2.INF
+	if e.t < e.up:
+		var k: float = e.t / e.up
+		var s: float = lerpf(e.s0, 0.0, k * k)
+		return _fibre_at(f, s)
+	var a: Vector2 = f.pts[0]
+	var tip := Vector2(24.0 + progress * (l.size.x - 48.0), string_y) - view * 0.4
+	var ctrl := Vector2(lerpf(a.x, tip.x, 0.55), l.rail_y - 4.0)
+	var u := Motion.ease_value(Motion.Ease.STANDARD, clampf((e.t - e.up) / ENERGY_ALONG, 0.0, 1.0))
+	return a.lerp(ctrl, u).lerp(ctrl.lerp(tip, u), u)
+
+
+func _fibre_at(f: Dictionary, s: float) -> Vector2:
+	var x := clampf(s, 0.0, 1.0) * (SEG - 1)
+	var i := mini(int(x), SEG - 2)
+	return (f.pts[i] as Vector2).lerp(f.pts[i + 1], x - i)
+
+
+## An enemy will drop in at `at` (screen space, where it will hang) in
+## `dur` s: a thread of its colour runs down from the rail to there.
+func foreshadow(at: Vector2, col: Color, dur: float) -> void:
+	if _fore.size() >= 8:
+		_fore.pop_front()
+	_fore.append({"at": at, "col": col.lerp(Pal.INK, 0.1), "t": 0.0, "dur": maxf(0.25, dur)})
+
+
+## A ball moved from `p0` to `p1` (screen space): the first fibre it
+## crossed is plucked (it quivers and flashes) and returned, else -1.
+func cross(p0: Vector2, p1: Vector2) -> int:
+	if l == null or _far.is_empty() or not _far[0].has("pts"):
+		return -1
+	var o := view * 0.4
+	var a := p0 - o
+	var b := p1 - o
+	for i in _far.size():
+		var f: Dictionary = _far[i]
+		var x: float = f.pts[SEG / 2].x
+		if (a.x - x) * (b.x - x) > 0.0 or a.x == b.x or f.cd > 0.0:
+			continue
+		var y := lerpf(a.y, b.y, (x - a.x) / (b.x - a.x))
+		if y < f.pts[0].y or y > f.pts[SEG - 1].y + 8.0:
+			continue
+		f.vib = 1.0
+		f.cd = 0.15
+		f.flash = maxf(f.flash, 0.5)
+		return i
+	return -1
+
+
+## A gold drop gathers on a fibre (one at a time).
+func spawn_gold() -> void:
+	if not _gold.is_empty() or _far.is_empty():
+		return
+	_gold = {"i": _rng.randi() % _far.size(), "t": 0.0, "st": 0}
+
+
+## The gold drop's position (screen space) while it can be shot, else INF.
+func gold_pos() -> Vector2:
+	if _gold.is_empty() or int(_gold.st) == 0 or not _far[_gold.i].has("bead"):
+		return Vector2.INF
+	return _gold_local() + view * 0.4
+
+
+func catch_gold() -> Vector2:
+	var p := gold_pos()
+	_gold = {}
+	return p
+
+
+func _gold_local() -> Vector2:
+	var f: Dictionary = _far[_gold.i]
+	var p: Vector2 = f.bead + Vector2(0, 16.0)
+	match int(_gold.st):
+		1:
+			p.y += sin(_clock * 2.2) * 2.0
+		2:
+			var k: float = _gold.t
+			p.y += 60.0 * k * k * 3.0
+	return p
 
 
 func _spawn_drop() -> void:
@@ -273,7 +452,12 @@ func _draw_far() -> void:
 		pulse = _flow * (pow(1.0 - fposmod(b, 1.0), 4.0) if b >= 0.0 else 0.5 + 0.5 * sin(_clock * 13.0))
 	for i in _far.size():
 		var f: Dictionary = _far[i]
-		var sway := sin(_clock * f.rate + f.phase) * 6.0 + gust * 0.12
+		var sway := (sin(_clock * f.rate + f.phase) * 6.0) * (1.0 - 0.85 * _finale) + gust * 0.12
+		if warn_kind == 1:
+			# A gust is coming: they lean into it first.
+			sway += warn_dir * warn * 16.0
+		var vib: float = f.vib * f.vib * 5.0
+		var lit: float = _lit[i]
 		var top := Vector2(f.x, l.rail_y + 10.0)
 		var length: float = l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE
 		# Only the targets hanging near this string can dim it.
@@ -288,7 +472,7 @@ func _draw_far() -> void:
 				drop_s = k * k * _bead_s(f)
 		for v in SEG:
 			var s := float(v) / (SEG - 1)
-			var p := top + Vector2(sway * pow(s, 1.5), length * s)
+			var p := top + Vector2(sway * pow(s, 1.5) + vib * sin(PI * s) * sin(_clock * 42.0 + i), length * s)
 			_pts[v] = p
 			# Colour flowing down the string through the palette.
 			var col := _palette(flow + i * 0.11 - s * 0.35)
@@ -300,6 +484,21 @@ func _draw_far() -> void:
 			if _heat > 0.0:
 				col = col.lerp(Pal.GOLD_LIGHT, _heat * 0.85)
 				bright += 0.1 * _heat
+			if lit > 0.0:
+				col = col.lerp(Pal.GOLD_LIGHT, 0.55 * lit)
+				bright += 0.45 * lit
+			if f.vib > 0.0:
+				bright += 0.5 * f.vib * sin(PI * s)
+			if _finale > 0.0:
+				col = col.lerp(T_WARM, 0.6 * _finale)
+				bright += _finale * (0.1 + 0.2 * _beat())
+			if warn_kind == 2 and warn > 0.0 and s < warn:
+				# A blackout is coming: the light drains from the top down.
+				bright *= 0.25
+			elif warn_kind == 3 and warn > 0.0:
+				col = col.lerp(Pal.GOLD_LIGHT, 0.6 * warn * (0.5 + 0.5 * sin(_clock * 20.0 + i)))
+			if dark > 0.0:
+				bright *= 1.0 - 0.7 * dark * smoothstep(0.0, 0.6, 1.0 - s + dark * 0.6)
 			if dk > 0.0:
 				var low := pow(s, 1.3) * smoothstep(0.35, 1.0, dk)
 				col = col.lerp(Pal.CORAL, low)
@@ -332,6 +531,11 @@ func _draw_far() -> void:
 		f.bead = top + Vector2(sway, length * _bead_s(f))
 		f.drop = top + Vector2(sway * pow(drop_s, 1.5), length * drop_s) if drop_s >= 0.0 else Vector2.INF
 		f.col = _cols[SEG - 1]
+
+
+func _beat() -> float:
+	var b := Music.beat()
+	return pow(1.0 - fposmod(b, 1.0), 3.0) if b >= 0.0 else 0.5 + 0.5 * sin(_clock * 6.0)
 
 
 ## A saved target: the wire it nearly crossed flashes gold.
@@ -383,6 +587,71 @@ func _draw_glow() -> void:
 		if f.flash > 0.0:
 			var r: float = 10.0 + 16.0 * (1.0 - f.flash)
 			_glow.draw_texture_rect(SOFT, Rect2(f.bead - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.5 * f.flash))
+	# Energy beads, each with a tail, and the stretch of fibre it has
+	# climbed still glowing behind it.
+	for e in _energy:
+		var f: Dictionary = _far[e.i]
+		if f.has("pts") and e.t < e.up + 0.15:
+			var k0: float = clampf(e.t / e.up, 0.0, 1.0)
+			var s_now: float = lerpf(e.s0, 0.0, k0 * k0)
+			var fade: float = 1.0 - clampf((e.t - e.up) / 0.15, 0.0, 1.0)
+			var trail := PackedVector2Array()
+			for k in 9:
+				trail.append(_fibre_at(f, lerpf(s_now, e.s0, k / 8.0)))
+			_glow.draw_polyline(trail, Color(e.col, 0.55 * fade), 3.0, true)
+		for k in 6:
+			var ek := e.duplicate()
+			ek.t = maxf(0.0, e.t - k * 0.02)
+			var p := _energy_pos(ek)
+			if p == Vector2.INF:
+				continue
+			var r := 22.0 - k * 3.0
+			_glow.draw_texture_rect(SOFT, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(e.col, 0.9 - k * 0.13))
+		var hp := _energy_pos(e)
+		if hp != Vector2.INF:
+			_glow.draw_circle(hp, 3.6, Color(1, 1, 1, 0.9), true, -1.0, true)
+	# Foreshadows: a thread running down to where an enemy will hang.
+	var o := view * 0.4
+	for fo in _fore:
+		var k: float = clampf(fo.t / (fo.dur * 0.85), 0.0, 1.0)
+		var top := Vector2(fo.at.x, l.rail_y + 4.0) - o
+		var end := Vector2(fo.at.x, lerpf(l.rail_y + 4.0, fo.at.y, Motion.ease_value(Motion.Ease.STANDARD, k))) - o
+		var fade: float = 1.0 - clampf((fo.t - fo.dur) / 0.35, 0.0, 1.0)
+		_glow.draw_line(top, end, Color(fo.col, 0.6 * fade), 3.0, true)
+		_glow.draw_texture_rect(SOFT, Rect2(end - Vector2(16, 16), Vector2(32, 32)), false, Color(fo.col, 0.9 * fade))
+		# Where it will hang: a dashed ring the size of a body, turning.
+		var ring_at := Vector2(fo.at.x, fo.at.y) - o
+		var rk: float = Motion.ease_value(Motion.Ease.EMPHASIZED, clampf((fo.t - fo.dur * 0.5) / (fo.dur * 0.5), 0.0, 1.0))
+		if rk > 0.0:
+			for d in 10:
+				var a0: float = _clock * 1.5 + d * TAU / 10.0
+				_glow.draw_arc(ring_at, 26.0 * rk, a0, a0 + 0.35, 5, Color(fo.col, 0.7 * fade), 2.0, true)
+		if fo.t >= fo.dur:
+			var fr: float = 14.0 + 30.0 * (fo.t - fo.dur) / 0.35
+			_glow.draw_texture_rect(SOFT, Rect2(end - Vector2(fr, fr), Vector2(fr, fr) * 2.0), false, Color(fo.col, 0.5 * fade))
+	# Gust warning: glints running along the fibre tops the way it will blow.
+	if warn_kind == 1 and warn > 0.0:
+		for f in _far:
+			var gx: float = f.pts[0].x + fposmod(_clock * 260.0 * warn_dir + f.phase * 40.0, 60.0) * warn_dir
+			_glow.draw_circle(Vector2(gx, f.pts[0].y + 20.0), 2.0, Color(Pal.INK, 0.5 * warn), true, -1.0, true)
+	# The gold drop.
+	if not _gold.is_empty():
+		var gp := _gold_local()
+		var ga := 1.0
+		var gr := 11.0
+		match int(_gold.st):
+			0:
+				gr = 11.0 * Motion.ease_value(Motion.Ease.EMPHASIZED, _gold.t / 0.8)
+			2:
+				ga = 1.0 - clampf(_gold.t, 0.0, 1.0)
+		var pulse := 0.7 + 0.3 * sin(_clock * 5.0)
+		_glow.draw_texture_rect(SOFT, Rect2(gp - Vector2(44, 44), Vector2(88, 88)), false, Color(Pal.GOLD_LIGHT, 0.5 * ga * pulse))
+		# Glints turning round it, so it reads as a prize, not a bead.
+		for k in 4:
+			var d := Vector2.from_angle(_clock * 1.8 + k * TAU / 4.0)
+			_glow.draw_line(gp + d * (gr + 5.0), gp + d * (gr + 12.0), Color(Pal.GOLD_LIGHT, 0.7 * ga), 1.6, true)
+		_glow.draw_circle(gp, gr, Color(Pal.GOLD, 0.95 * ga), true, -1.0, true)
+		_glow.draw_circle(gp + Vector2(-3.0, -3.5), gr * 0.35, Color(1, 1, 1, 0.75 * ga), true, -1.0, true)
 
 
 ## The danger line is a real wire, strung taut from wall to wall between
