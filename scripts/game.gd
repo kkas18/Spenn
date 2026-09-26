@@ -56,6 +56,10 @@ const CHARM_GIFT := 6.0
 const CHARM_COPY := 5.0
 const CHARM_BREAK := 30
 const DEFENSIVE := [Target.Charm.BUBBLE, Target.Charm.SPRING, Target.Charm.GHOST]
+# Moods (from MOOD_WAVE): grumpy and cute enemies, the mix set by the wave.
+const MOOD_WAVE := 2
+const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
+const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 5
@@ -139,6 +143,8 @@ var _charm_swap_t := 8.0
 var _charm_pass_cd := 0.0
 var _charm_gift_t := 4.0
 var _charm_copy_t := 3.0
+var _calm_t := 0.5
+var _last_pulse := 0
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
@@ -515,6 +521,7 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	t.aggression = director.aggression()
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
 	_maybe_intro(t)
+	_roll_mood(t)
 	if director.wave >= CHARM_WAVE and kind != Target.Kind.BOSS and kind != Target.Kind.PAKKIS and _rng.randf() < clampf(0.12 + 0.03 * (director.wave - CHARM_WAVE), 0.0, 0.35):
 		_give_charm(t, 1 + _rng.randi() % 5)
 	director.count_spawn()
@@ -648,11 +655,12 @@ func _process(delta: float) -> void:
 		_nemesis_tick(delta)
 		_cunning_tick(delta)
 		_charm_tick(delta)
+		_mood_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
 		_boss_stages()
-		Music.intensity = clampf(director.intensity() / 5.0, 0.0, 1.0)
+		Music.intensity = clampf(director.intensity() / 5.0 + (0.3 if director.pulse == Director.Pulse.PEAK else 0.0), 0.0, 1.0)
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
@@ -876,7 +884,8 @@ func _wave_tick(delta: float) -> void:
 				_spawn_t = 0.3
 				# A new wave, a new colour theme, eased in.
 				Pal.next_theme()
-				hud.wave_intro(director.wave)
+				var wm := director.roll_mood()
+				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
 				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
 				Sfx.play("streak", 0.85)
 				Sfx.play("whoosh", 0.6, -4.0)
@@ -969,7 +978,7 @@ func _update_eyes() -> void:
 		t.covered = false
 		if t.guard_of != null and (not is_instance_valid(t.guard_of) or not t.guard_of.is_hittable() or not t.guard_of.aimed):
 			t.guard_of = null
-		if t.aimed and t.kind == Target.Kind.RING:
+		if t.aimed and (t.kind == Target.Kind.RING or t.mood == Target.Mood.CUTE):
 			_find_cover(t, o)
 		_slide_room(t)
 		var nearest := INF
@@ -1410,6 +1419,7 @@ func _collide(b: Ball) -> void:
 			# Near miss: the target flinches and its eye pops wide.
 			if dist < rr + 34.0 and b.vel.length() > 500.0:
 				t.startle(b.pos)
+				t.annoy(0.25)
 			continue
 		var n := d / dist if dist > 0.001 else -b.vel.normalized()
 		if t.kind == Target.Kind.MIRROR and not b.special and b.banks == 0 and b.hits == 0:
@@ -1838,6 +1848,13 @@ func _kill_bonus(t: Target, gained: int) -> int:
 					n.startle(t.pos)
 				if d < 220.0 * layout.scale:
 					n.scatter(t.pos)
+					# A fallen friend: grumpy ones seethe, cute ones cry (and
+					# now and then turn sour).
+					n.annoy(0.35)
+					if n.mood == Target.Mood.CUTE:
+						n.cry()
+						if _rng.randf() < 0.25:
+							n.set_mood(Target.Mood.GRUMPY)
 	_last_kill = t.pos
 	_flow_add(FLOW_KILL)
 	if t.charm != Target.Charm.NONE:
@@ -2393,7 +2410,7 @@ func _cunning_tick(delta: float) -> void:
 				continue
 			if t.pos.distance_to(aimed.pos) < 220.0 * layout.scale:
 				continue
-			if best == null or t.danger > best.danger:
+			if best == null or t.danger + (0.35 if t.mood == Target.Mood.CUTE else 0.0) > best.danger + (0.35 if best.mood == Target.Mood.CUTE else 0.0):
 				best = t
 		if best:
 			_sneak_cd = SNEAK_EVERY * _rng.randf_range(0.8, 1.3)
@@ -2580,6 +2597,64 @@ func _vine_escape(t: Target) -> void:
 			best = h
 	if best:
 		t.start_swing(best)
+
+
+# ---------------------------------------------------------------- moods
+
+func _roll_mood(t: Target) -> void:
+	if director.wave < MOOD_WAVE or t.kind == Target.Kind.BOSS or t.golden:
+		return
+	var odds := director.mood_odds()
+	var r := _rng.randf()
+	if r < odds.x:
+		t.set_mood(Target.Mood.GRUMPY)
+	elif r < odds.x + odds.y:
+		t.set_mood(Target.Mood.CUTE)
+
+
+## Rages are named, cries are answered (a friend throws its trick, or a
+## grumpy friend moves in to shield), and cute company calms the grumpy.
+func _mood_tick(delta: float) -> void:
+	# The wave's pulse: its peak brings a flurry; the fibres feel it.
+	if director.pulse != _last_pulse:
+		_last_pulse = director.pulse
+		if director.pulse == Director.Pulse.PEAK and director.wave_state == Director.Wave.SPAWNING:
+			backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.INK, 1.0)
+			Sfx.play("rise", 1.5, -12.0)
+	for t in targets:
+		if t.raged:
+			t.raged = false
+			fx.puff(t.pos + Vector2(0, -t.radius), Pal.INK, 3, 14.0, 0.2)
+			_name_trick("mood.rage", t.pos)
+		if t.wants_help:
+			t.wants_help = false
+			if t.is_hittable():
+				_answer_cry(t)
+	_calm_t -= delta
+	if _calm_t > 0.0:
+		return
+	_calm_t = 0.5
+	for g in targets:
+		if g.mood != Target.Mood.GRUMPY or g.anger <= 0.0 or not g.is_hittable():
+			continue
+		for c in targets:
+			if c.mood == Target.Mood.CUTE and c.is_hittable() and c.pos.distance_to(g.pos) < 150.0 * layout.scale:
+				g.anger = maxf(0.0, g.anger - 0.08)
+				break
+
+
+func _answer_cry(t: Target) -> void:
+	var giver := _nearest(t, func(o: Target) -> bool: return o.charm in DEFENSIVE and not o.aimed, 240.0) if t.charm == Target.Charm.NONE else null
+	if giver:
+		_toss_charm(giver.charm_pos(), t, giver.take_charm())
+		_name_trick("mood.help", t.pos)
+		return
+	var guard := _nearest(t, func(o: Target) -> bool: return o.mood == Target.Mood.GRUMPY and _free_mover(o) and o.pos.y > t.pos.y + 30.0, 240.0)
+	if guard:
+		guard.annoy(0.4)
+		guard.slide_now(t.anchor.x + (guard.anchor.x - t.anchor.x) * 0.15, 360.0 * layout.scale)
+		guard.voice("taunt", -4.0)
+		_name_trick("mood.help", t.pos)
 
 
 # ---------------------------------------------------------------- flow

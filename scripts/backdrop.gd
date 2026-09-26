@@ -276,6 +276,11 @@ func _draw_far() -> void:
 		var sway := sin(_clock * f.rate + f.phase) * 6.0 + gust * 0.12
 		var top := Vector2(f.x, l.rail_y + 10.0)
 		var length: float = l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE
+		# Only the targets hanging near this string can dim it.
+		var near_t: Array[Target] = []
+		for t in hittable:
+			if absf(t.pos.x - view.x * 0.4 - f.x) < t.radius * 3.0 + 16.0:
+				near_t.append(t)
 		var drop_s := -1.0
 		for d in _drops:
 			if d.i == i and not d.landed:
@@ -310,7 +315,7 @@ func _draw_far() -> void:
 				# The drop's short tail of light.
 				bright += 0.45 * clampf(1.0 - (drop_s - s) / 0.14, 0.0, 1.0)
 			# Dim behind targets so the play field stays clear.
-			for t in hittable:
+			for t in near_t:
 				var near := p.distance_to(t.pos - view * 0.4) / (t.radius * 3.0)
 				if near < 1.0:
 					bright *= lerpf(0.3, 1.0, near * near)

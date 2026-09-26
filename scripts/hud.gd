@@ -293,8 +293,10 @@ func hide_game_over() -> void:
 
 ## Big centred card: an event name and a line under it.
 ## A new wave opens: its number comes in large while light sweeps the field.
-func wave_intro(n: int) -> void:
+func wave_intro(n: int, sub := "", col := Tok.PRIMARY) -> void:
 	overlay.wave_n = n
+	overlay.wave_sub = sub
+	overlay.wave_col = col
 	overlay.wave_t = 0.0
 
 
@@ -847,6 +849,8 @@ class Overlay extends Control:
 		return card_title != "" and card_t < Motion.NORMAL + card_hold + Motion.SLOW
 	var wave_t := 99.0
 	var wave_n := 1
+	var wave_sub := ""
+	var wave_col := Tok.PRIMARY
 	var toast_t := 99.0
 	var toast_id := ""
 	var _toast_box: StyleBoxFlat
@@ -898,6 +902,10 @@ class Overlay extends Control:
 		var span := w * 0.3 * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.1) / 0.6, 0.0, 1.0))
 		for yy in [y - 96.0 - 6.0, y + 30.0]:
 			draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.5 * a), 1.0, true)
+		if wave_sub != "":
+			# The wave's mood, in its own colour, under the rule.
+			var sa := a * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.25) / 0.4, 0.0, 1.0))
+			draw_string(caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(wave_col, sa))
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:

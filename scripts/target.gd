@@ -230,6 +230,18 @@ var wants_vine := false
 var _charm_cd := 0.0
 var _ghost_t := 0.0
 var _pipp_hop := 1.5
+# Mood, on top of kind and temper, rolled at spawn: grumpy ones glare, steam
+# and get angrier (nearby misses, fallen friends) until they fly into a
+# rage and drop; cute ones blush and sparkle, hide behind others when aimed
+# at and cry for help, which their friends answer. Both are cunning.
+enum Mood { NEUTRAL, GRUMPY, CUTE }
+const RAGE_DROP := 55.0
+var mood := Mood.NEUTRAL
+var anger := 0.0                # grumpy: 0..1, a rage at 1
+var raged := false              # flew into a rage this frame (the game names it)
+var crying := 0.0               # cute: tears (s)
+var wants_help := false         # cute: asks the game for a friend's help
+var _help_cd := 0.0
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -441,6 +453,12 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	surprised = false
 	charm = Charm.NONE
 	charm_flash = 0.0
+	mood = Mood.NEUTRAL
+	anger = 0.0
+	raged = false
+	crying = 0.0
+	wants_help = false
+	_help_cd = 0.0
 	wants_vine = false
 	_charm_cd = 0.0
 	_ghost_t = 0.0
@@ -559,7 +577,8 @@ func _on_entry() -> void:
 
 ## Sings one syllable on a note of the key, in this kind's register.
 func voice(shape: String, db := 0.0) -> void:
-	Sfx.voice(shape, VOICE_REG[kind], randi() % 4, db)
+	var reg: float = VOICE_REG[kind] * (0.82 if mood == Mood.GRUMPY else (1.22 if mood == Mood.CUTE else 1.0))
+	Sfx.voice(shape, reg, randi() % 4, db)
 
 
 ## Looks at a neighbour for a moment (it fell, or just arrived).
@@ -813,6 +832,9 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 	struck_t = 0.45
 	hp -= 1
 	if hp > 0:
+		annoy(0.5)
+		if mood == Mood.CUTE:
+			cry()
 		if play_dead_on and kind in PLAY_DEAD_KINDS and playdead <= 0.0 and leader == null and not is_leader and randf() < 0.45:
 			_play_dead()
 			return false
@@ -922,7 +944,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * dt
+					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -940,6 +962,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			else:
 				_brain(dt)
 			_charm_step(dt)
+			_mood_step(dt)
 			_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
@@ -997,6 +1020,16 @@ func _brain(dt: float) -> void:
 		leader = null
 	_guard_step(dt)
 	_wander(dt)
+	if mood == Mood.CUTE and aimed and has_cover and kind != Kind.RING and a > 0.1 and _dodge_cd <= 0.0:
+		# Cute: slips behind a bigger friend when you aim at it.
+		_aim_t += dt
+		if _aim_t > lerpf(0.55, 0.25, a):
+			var prof: Array = EVADE.get(kind, [0.0, 0.0, 300.0])
+			_slide(anchor.x + (cover_x - pos.x), float(prof[2]) * 0.8)
+			_dodge_cd = lerpf(2.4, 1.2, a)
+			_aim_t = 0.0
+			startle_t = 0.3
+		return
 	if kind == Kind.MEDIC:
 		_heal_t -= dt
 		if _heal_t <= 0.0:
@@ -1332,6 +1365,54 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	startle_t = 0.25
 	Sfx.play("slide", randf_range(0.95, 1.1))
+
+
+## Sets the mood rolled at spawn (and when a cute one gets upset).
+func set_mood(m: int) -> void:
+	mood = m as Mood
+	match mood:
+		Mood.GRUMPY:
+			_smile = randf_range(-0.9, -0.5)
+			_val_shift -= 0.06
+		Mood.CUTE:
+			_smile = randf_range(0.7, 1.0)
+			_eye_scale *= 1.1
+			_pupil_scale *= 1.15
+			_val_shift += 0.04
+
+
+## Grumpy ones take things badly: anger rises (a rage at 1).
+func annoy(v: float) -> void:
+	if mood != Mood.GRUMPY or phase != Phase.HANGING:
+		return
+	anger = minf(1.0, anger + v)
+
+
+## Cute ones cry when hurt or in trouble, and ask for help.
+func cry() -> void:
+	if mood != Mood.CUTE or _help_cd > 0.0:
+		return
+	crying = 2.2
+	_help_cd = 7.0
+	wants_help = true
+	voice("down", -4.0)
+
+
+func _mood_step(dt: float) -> void:
+	_help_cd = maxf(0.0, _help_cd - dt)
+	crying = maxf(0.0, crying - dt)
+	match mood:
+		Mood.GRUMPY:
+			anger = maxf(0.0, anger - 0.05 * dt)
+			if anger >= 1.0 and tele_t <= 0.0 and kind != Kind.DROP and kind != Kind.BOSS:
+				# The rage: steam, a tremble, then it throws itself down.
+				order_plunge(RAGE_DROP, 0.55)
+				anger = 0.3
+				raged = true
+				voice("taunt")
+		Mood.CUTE:
+			if danger > 0.65:
+				cry()
 
 
 ## Takes on a trick charm (it flashes as it lands).
@@ -2529,6 +2610,20 @@ func _draw_face() -> void:
 	_eye()
 	if nemesis > 0:
 		_scar(col.a)
+	if crying > 0.0 and phase == Phase.HANGING:
+		_tears(col.a)
+
+
+## Cute and crying: tears roll from both sides of the eye, over the face.
+func _tears(a: float) -> void:
+	var er := _eye_r()
+	var eo := Vector2(0.0, -er * 0.35)
+	for sx: float in [-1.0, 1.0]:
+		var k := fposmod(_clock * 1.3 + (0.5 if sx > 0.0 else 0.0), 1.0)
+		var p := eo + Vector2(sx * er * 0.95, er * 0.2 + k * radius * 0.55)
+		var c := Color(Pal.DROP.lightened(0.35), 0.9 * (1.0 - k * 0.7) * a)
+		Pal.disc(_face, p, 2.4, c)
+		_face.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.0, -0.6), p + Vector2(0, -5.0), p + Vector2(2.0, -0.6)]), c)
 
 
 ## Nemesis: a stitched scar slashed across the eye (one more per level).
@@ -2562,6 +2657,13 @@ func _hole() -> float:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _face
+	if mood == Mood.GRUMPY and anger > 0.35 and phase == Phase.HANGING:
+		# Steam from the top: two wisps rising and fading, faster when angrier.
+		for sx: float in [-1.0, 1.0]:
+			var k := fposmod(_clock * lerpf(0.8, 1.8, anger) + (0.5 if sx > 0.0 else 0.0), 1.0)
+			var p := Vector2(sx * radius * 0.55, -radius - 4.0 - k * 16.0)
+			Pal.disc(f, p + Vector2(sin(k * 6.0) * 2.0 * sx, 0), 3.5 + k * 4.0, Color(Pal.INK.lightened(0.2), minf(1.0, (anger - 0.35) * 1.4) * 0.85 * (1.0 - k) * col.a))
+
 	if kind == Kind.PIPP:
 		# A tiny beak under the eye and a tuft of down on top.
 		var bk := Color("F2A65A", col.a)
@@ -2767,6 +2869,9 @@ func _eye_parts() -> void:
 	# How far the lids are closed (0 open .. 1 shut).
 	var upper := 1.0 - clampf(_open, 0.0, 1.0)
 	upper = maxf(upper, smug * 0.5)
+	if mood == Mood.GRUMPY and startle_t <= 0.0:
+		# A glare: the lids never quite lift.
+		upper = maxf(upper, 0.24 + 0.1 * anger)
 	if trait_kind == Trait.SLEEPY and startle_t <= 0.0 and not panicked():
 		upper = maxf(upper, 0.32)
 	var lower := 0.0
@@ -2795,6 +2900,11 @@ func _eye_parts() -> void:
 		_lid(f, er, upper, true, skin, lash)
 	if lower > 0.02:
 		_lid(f, er, lower, false, skin, lash)
+	if mood == Mood.CUTE:
+		var cheek := minf(er * 1.3, radius * 0.6)
+		for sx: float in [-1.0, 1.0]:
+			Pal.disc(f, Vector2(sx * cheek, er * 0.95), minf(er * 0.3, radius * 0.18), Color(Pal.SHADE, 0.35))
+		Pal.disc(f, pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
 	if trait_kind == Trait.SHY and aimed and soft:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
@@ -2804,9 +2914,11 @@ func _eye_parts() -> void:
 	# Brows: fine arcs, set by mood (and by personality at rest).
 	var bc := Color(Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 0.75)
 	var worried := (aimed or panicked() or hurry or morale > 0.6) and not enraged and smug < 0.3 and _taunt < 0.0
-	if enraged:
-		_brow(f, er, -1.0, -1.2, -0.85, bc)
-		_brow(f, er, 1.0, -1.2, -0.85, bc)
+	if enraged or mood == Mood.GRUMPY:
+		# A frown: the brows dip toward the middle (lower still when angrier).
+		var k := 0.85 if enraged else lerpf(1.02, 0.86, anger)
+		_brow(f, er, -1.0, -k, -1.42, bc)
+		_brow(f, er, 1.0, -k, -1.42, bc)
 	elif worried:
 		_brow(f, er, -1.0, -1.25, -1.55, bc)
 		_brow(f, er, 1.0, -1.25, -1.55, bc)
@@ -2817,6 +2929,10 @@ func _eye_parts() -> void:
 	elif trait_kind == Trait.PROUD:
 		_brow(f, er, -1.0, -1.45, -1.5, Color(bc, 0.45))
 		_brow(f, er, 1.0, -1.45, -1.5, Color(bc, 0.45))
+	elif mood == Mood.CUTE:
+		# Soft, raised brows: all innocence.
+		_brow(f, er, -1.0, -1.6, -1.45, Color(bc, 0.4))
+		_brow(f, er, 1.0, -1.6, -1.45, Color(bc, 0.4))
 
 
 ## A lid over the round eye: filled in the skin colour from the top (or the

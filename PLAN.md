@@ -1855,3 +1855,37 @@ Rettet:
   Nå avsluttes alt ved døden.
 - Kort som kom samtidig (for eksempel Nemesis og en hendelse), overskrev hverandre, så meldinger
   kunne forsvinne. Nå står de i kø (maks 3) og tømmes når runden slutter.
+
+## v7.32 – Humør (sure og søte), stemningsbølger, spenningsrytme og ytelse
+
+- **Humør per fiende (fra bølge 2):** hver fiende trekker et humør når den dukker opp.
+  - **Grinete:**
+    - Utseende: V-formede bryn, et glorende øyelokk, sur munn, litt mørkere farge og
+      damp fra toppen når den er sint.
+    - Stemme: dyp.
+    - Sinnet øker ved nesten-treff (+0,25), når den selv blir truffet (+0,5) og når en
+      venn dør (+0,35). Sinne gir opptil 35 % raskere synking.
+    - Ved fullt sinne blir den SINNA: dirrer i 0,55 sek og stuper 55 px.
+  - **Søt:**
+    - Utseende: store, glitrende øyne, rosa kinn og myke bryn.
+    - Stemme: lys.
+    - Når du sikter på den, gjemmer den seg bak en større venn.
+    - Den gråter når den blir truffet, er i fare eller mister en venn, og roper HJELP:
+      nærmeste venn kaster et forsvarstriks til den, eller en grinete venn flytter seg
+      inn for å skjerme.
+    - Den foretrekkes når noen skal snike seg ned.
+    - Mister den en venn, kan den (25 %) bli grinete selv.
+  - **Søte roer ned sure:** grinete fiender i nærheten av en søt mister sinne raskere.
+- **Stemningsbølger (fra bølge 3):** hver bølge trekker en stemning, aldri to spesielle på rad.
+  Stemningen vises under tallet i bølge-introen, i sin egen farge.
+  - *Rolig:* færre fiender, men smartere.
+  - *Kaos:* en sverm av Pipp og Dykkere, raskere tempo.
+  - *Sur:* tunge fiender og Vokter, 70 % grinete.
+  - *Søt:* Pipp og Pakkis, 70 % søte.
+- **Spenningsrytme i bølgen:**
+  - Oppbygging (10–16 sek, tempoet øker).
+  - Topp (4–6 sek med tett tempo, musikken løfter seg og fibrene får en bølge).
+  - Pusterom (4–7 sek).
+- **Ytelse:** fibrene sjekker bare fiender som henger i nærheten. Ren skripttid gikk ned fra
+  ca. 9 til ca. 7 ms per bilde.
+- Bot (6 frø): median ca. 183 s, som før.
