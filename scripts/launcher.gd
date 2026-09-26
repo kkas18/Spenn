@@ -4,9 +4,9 @@ class_name SpennLauncher
 signal fired(projectile)
 
 const Projectile = preload("res://scripts/projectile.gd")
-var dragging := false
-var pull := Vector2.ZERO
-var max_pull := 125.0
+var dragging: bool = false
+var pull: Vector2 = Vector2.ZERO
+var max_pull: float = 125.0
 
 func _ready() -> void:
 	z_index = 20
