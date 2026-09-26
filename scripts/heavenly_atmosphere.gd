@@ -22,7 +22,7 @@ func _draw() -> void:
 	_draw_motes()
 
 func _draw_light_shafts() -> void:
-	var shafts := [
+	var shafts: Array = [
 		PackedVector2Array([Vector2(500,0),Vector2(610,0),Vector2(410,900),Vector2(285,900)]),
 		PackedVector2Array([Vector2(625,0),Vector2(690,0),Vector2(610,760),Vector2(515,760)])
 	]
@@ -32,7 +32,7 @@ func _draw_light_shafts() -> void:
 func _draw_motes() -> void:
 	for i in range(motes.size()):
 		var p: Vector2 = motes[i]
-		var y := fmod(p.y - t * (3.0 + float(i % 4)) + 1280.0, 1280.0)
-		var x := p.x + sin(t * 0.35 + float(i)) * 7.0
-		var pulse := 0.10 + 0.08 * (sin(t * 0.8 + i * 1.7) * 0.5 + 0.5)
+		var y: float = fmod(p.y - t * (3.0 + float(i % 4)) + 1280.0, 1280.0)
+		var x: float = p.x + sin(t * 0.35 + float(i)) * 7.0
+		var pulse: float = 0.10 + 0.08 * (sin(t * 0.8 + i * 1.7) * 0.5 + 0.5)
 		draw_circle(Vector2(x,y), 1.2 + float(i % 3) * 0.55, Color(1.0,0.92,0.72,pulse))
