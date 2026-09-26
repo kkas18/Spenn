@@ -20,6 +20,14 @@ const HURRY_AT := 2            # this many left of a spent wave: they hurry
 # where the shots go). Spawns lean the other way, and past HABIT_TELL the
 # game says the enemies have noticed.
 const HABIT_TELL := 0.45
+# Tactics: what the enemies have learned, unlocked wave by wave and
+# announced when it arrives.
+enum Tactic { NAIVE, DODGE, FEINT, RHYTHM, TEAM }
+const TACTIC_WAVE := [1, 2, 4, 6, 8]
+# Rhythm: the player's hold time (EMA and spread) and where shots cross
+# the field (columns, slowly forgotten).
+const COLS := 6
+const RHYTHM_MIN_SHOTS := 6
 
 var elapsed := 0.0
 var accuracy := 0.55            # EMA of shots that hit something
@@ -34,6 +42,10 @@ var wave_spawned := 0
 var wave_killed := 0
 var wave_break := 0.0
 var side_bias := 0.0
+var hold_avg := 0.0
+var hold_dev := 0.0
+var hold_n := 0
+var cols := PackedFloat32Array()
 
 
 func reset() -> void:
@@ -50,6 +62,11 @@ func reset() -> void:
 	wave_killed = 0
 	wave_break = 0.0
 	side_bias = 0.0
+	hold_avg = 0.0
+	hold_dev = 0.0
+	hold_n = 0
+	cols.resize(COLS)
+	cols.fill(0.0)
 
 
 func tick(dt: float) -> void:
@@ -66,6 +83,61 @@ func record_shot(hit: bool) -> void:
 ## Aim direction of a shot (x of the unit launch direction).
 func record_aim(dir_x: float) -> void:
 	side_bias = lerpf(side_bias, clampf(dir_x * 2.0, -1.0, 1.0), 0.06)
+
+
+## How long the band was held before a shot (s).
+func record_hold(s: float) -> void:
+	hold_n += 1
+	if hold_n == 1:
+		hold_avg = s
+		hold_dev = s * 0.5
+	else:
+		hold_dev = lerpf(hold_dev, absf(s - hold_avg), 0.2)
+		hold_avg = lerpf(hold_avg, s, 0.2)
+
+
+## Where a shot crossed the field, 0..1 across.
+func record_column(u: float) -> void:
+	if cols.size() != COLS:
+		cols.resize(COLS)
+		cols.fill(0.0)
+	for i in COLS:
+		cols[i] *= 0.93
+	cols[clampi(int(u * COLS), 0, COLS - 1)] += 1.0
+
+
+## True once the player shoots to a steady beat the enemies can read.
+func rhythm_known() -> bool:
+	return hold_n >= RHYTHM_MIN_SHOTS and hold_dev < maxf(0.08, hold_avg * 0.3)
+
+
+## 0..1: how much the player shoots at column position `u` (0..1 across).
+func heat_at(u: float) -> float:
+	if cols.size() != COLS:
+		return 0.0
+	var top := 0.0
+	for c in cols:
+		top = maxf(top, c)
+	return cols[clampi(int(u * COLS), 0, COLS - 1)] / top if top > 0.5 else 0.0
+
+
+## Centre (0..1 across) of the column the player shoots at least.
+func cold_u() -> float:
+	if cols.size() != COLS:
+		return 0.5
+	var best := 0
+	for i in COLS:
+		if cols[i] < cols[best]:
+			best = i
+	return (best + 0.5) / COLS
+
+
+func tactic() -> Tactic:
+	var t := 0
+	for i in TACTIC_WAVE.size():
+		if wave >= TACTIC_WAVE[i]:
+			t = i
+	return t as Tactic
 
 
 func wave_quota() -> int:

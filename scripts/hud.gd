@@ -55,6 +55,8 @@ var _m_stats: UIButton
 var _m_skins: UIButton
 var _m_daily: UIButton
 var daily := false             # the menu's mode: the next run is the daily challenge
+var flow := 0.0                # the flow meter, 0..1 (set by the game)
+var flow_hot := false          # flow is on
 var _stats: Control
 var _stats_box: VBoxContainer
 var _skins: Control
@@ -288,9 +290,10 @@ func hide_game_over() -> void:
 
 
 ## Big centred card: an event name and a line under it.
-func card(title: String, sub: String) -> void:
+func card(title: String, sub: String, hold := 1.0) -> void:
 	overlay.card_title = title
 	overlay.card_sub = sub
+	overlay.card_hold = hold
 	overlay.card_t = 0.0
 
 
@@ -809,6 +812,7 @@ class Overlay extends Control:
 	var card_title := ""
 	var card_sub := ""
 	var card_t := 99.0
+	var card_hold := 1.0
 	var menu_a := 0.0
 	var intro_name := ""
 	var intro_desc := ""
@@ -819,6 +823,30 @@ class Overlay extends Control:
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var _flow_a := 0.0
+
+	## The flow meter: a fine bar on the floor just under the danger line.
+	## Hot, it fills white-cyan, glows and beats with the music.
+	func _draw_flow(l: Layout, caps: Font) -> void:
+		var want := 1.0 if (hud.flow > 0.02 or hud.flow_hot) and menu_a <= 0.0 else 0.0
+		_flow_a = move_toward(_flow_a, want, get_process_delta_time() / 0.3)
+		if _flow_a <= 0.0:
+			return
+		var a := _flow_a
+		var w := 176.0
+		var y := l.danger_y + 26.0
+		var x0 := l.center_x - w * 0.5
+		var b := Music.beat()
+		var beat := pow(1.0 - fposmod(b, 1.0), 3.0) if b >= 0.0 else 0.0
+		draw_rect(Rect2(x0, y, w, 4.0), Color(Pal.INK, 0.08 * a))
+		var fw := w * clampf(hud.flow, 0.0, 1.0)
+		if hud.flow_hot:
+			for g in 3:
+				var grow := 3.0 + g * 3.0 + beat * 3.0
+				draw_rect(Rect2(x0 - grow, y - grow, fw + grow * 2.0, 4.0 + grow * 2.0), Color(Pal.FLOW, (0.1 - g * 0.03) * a))
+			draw_string(caps, Vector2(0, y - 10.0), Loc.t("flow.badge"), HORIZONTAL_ALIGNMENT_CENTER, l.size.x, 11, Color(Pal.FLOW, (0.7 + 0.3 * beat) * a))
+		draw_rect(Rect2(x0, y, fw, 4.0), Color(Pal.FLOW, (0.55 + 0.45 * (1.0 if hud.flow_hot else hud.flow)) * a))
 
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
@@ -859,6 +887,7 @@ class Overlay extends Control:
 			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Tok.PRIMARY, p))
 		if hud.modal_open():
 			return
+		_draw_flow(l, caps)
 		if intro_t < Hud.INTRO_TIME and intro_name != "":
 			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))
 			var iy := l.danger_y - 150.0 + (1.0 - k) * 10.0
@@ -866,13 +895,13 @@ class Overlay extends Control:
 			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Tok.TEXT_PRIMARY, k))
 			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Tok.TEXT_SECONDARY, k))
-		var total := Motion.NORMAL + 1.0 + Motion.SLOW
+		var total := Motion.NORMAL + card_hold + Motion.SLOW
 		if card_t < total and card_title != "":
 			var k := 1.0
 			if card_t < Motion.NORMAL:
 				k = Motion.ease_value(Motion.Ease.ENTER, card_t / Motion.NORMAL)
-			elif card_t > Motion.NORMAL + 1.0:
-				k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (card_t - Motion.NORMAL - 1.0) / Motion.SLOW)
+			elif card_t > Motion.NORMAL + card_hold:
+				k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (card_t - Motion.NORMAL - card_hold) / Motion.SLOW)
 			var cy := l.rail_y + l.play_h * 0.46 + (1.0 - k) * 12.0
 			# A soft dark band behind the card so it reads over the field,
 			# framed by two fine hairlines that draw outward from the centre.

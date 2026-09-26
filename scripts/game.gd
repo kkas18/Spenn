@@ -35,6 +35,13 @@ const OVERLOAD_TIME := 5.0
 const OVERLOAD_SCALE := 0.7
 const OVERLOAD_RELOAD := 0.3   # reload time factor while it lasts
 const CHARGE_KILL := 0.03
+# Flow: quick hits fill a meter; full, the run speeds up for a while.
+const FLOW_TIME := 7.0          # real seconds
+const FLOW_HIT := 0.12
+const FLOW_KILL := 0.2
+const FLOW_MISS := 0.3
+const FLOW_DECAY := 0.1         # per second while not flowing
+const FLOW_RELOAD := 1.4        # reload speed factor while it lasts
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
@@ -59,6 +66,14 @@ var best_streak := 0
 var cuts := 0
 var charge := 0.0               # 0..1 tension toward overload
 var overload_t := 0.0           # real seconds of overload left
+var flow := 0.0                 # 0..1: the meter, or what is left of flow
+var flow_t := 0.0               # real seconds of flow left
+var flows := 0                  # flow streaks this run
+var _aim_start := -1.0          # game time the current pull began
+var _release_hold := -1.0       # how long the last pull was held
+var _tactic_told := 0
+var _rhythm_told := false
+var _plunge_t := 12.0
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
@@ -239,6 +254,8 @@ func _clear_field() -> void:
 	_touch = -1
 	_tension = 0.0
 	_end_overload(true)
+	_end_flow(true)
+	flow = 0.0
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
@@ -318,6 +335,10 @@ func _start_run() -> void:
 	skill_counts = [0, 0, 0, 0, 0, 0, 0]
 	waves_cleared = 0
 	_habit_told = false
+	_tactic_told = 0
+	flows = 0
+	_rhythm_told = false
+	_plunge_t = 12.0
 	_chain = 0
 	_chain_t = 0.0
 	_next_life_at = EXTRA_LIFE_EVERY
@@ -496,6 +517,9 @@ func _best_slot(used: Array[float], slots: int) -> float:
 		# They have learned your habits: the side you favour gets fewer.
 		var side := (x - layout.center_x) / (usable * 0.5)
 		d = minf(d, 1000.0) * (1.0 - 0.5 * clampf(director.side_bias * side, 0.0, 1.0))
+		# ... and once they know your rhythm, they come where you rarely shoot.
+		if director.tactic() >= Director.Tactic.RHYTHM:
+			d *= 1.0 - 0.5 * director.heat_at(x / layout.size.x)
 		if d > best_d:
 			best_d = d
 			best_x = x
@@ -528,6 +552,8 @@ func _process(delta: float) -> void:
 	if state == State.PLAYING or state == State.STARTING:
 		_run_intros()
 		_overload_tick(delta)
+		_flow_tick(delta)
+		_learn_tick()
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -758,6 +784,10 @@ func _wave_tick(delta: float) -> void:
 				Pal.next_theme()
 				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
 				Sfx.play("streak", 0.85)
+				var tac := director.tactic()
+				if tac > _tactic_told:
+					_tactic_told = tac
+					fx.after(0.9, func() -> void: _announce_tactic(tac))
 
 
 func _clear_wave() -> void:
@@ -1643,7 +1673,10 @@ func _kill_bonus(t: Target, gained: int) -> int:
 				n.watch(t, 0.9)
 				if d < 120.0 * layout.scale:
 					n.startle(t.pos)
+				if d < 220.0 * layout.scale:
+					n.scatter(t.pos)
 	_last_kill = t.pos
+	_flow_add(FLOW_KILL)
 	if t.is_leader:
 		_break_formation(t, true)
 	_kill_note()
@@ -1743,10 +1776,127 @@ func _show_results() -> void:
 	Motion.after(0.6, func() -> void: hud.locked = false)
 
 
+# ---------------------------------------------------------------- learning
+
+## Tells the team what it knows: its tactic tier, the player's rhythm and
+## the column shot at least. Says it once when the rhythm is learned.
+func _learn_tick() -> void:
+	var tac := director.tactic()
+	Target.tactic = tac
+	Target.rhythm = director.rhythm_known()
+	Target.hold_avg = director.hold_avg
+	Target.aim_hold = (_time - _aim_start) if _aim_start >= 0.0 and slingshot.is_aiming() else -1.0
+	Target.cold_x = director.cold_u() * layout.size.x if tac >= Director.Tactic.RHYTHM else NAN
+	if tac >= Director.Tactic.RHYTHM and Target.rhythm and not _rhythm_told:
+		_rhythm_told = true
+		fx.popup(Loc.t("habit.rhythm"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
+		Sfx.play("tease", 0.9, -4.0)
+	# Teamwork: now and then the whole field plunges together on a signal.
+	if tac >= Director.Tactic.TEAM and director.wave_state == Director.Wave.SPAWNING and director.breather <= 0.0 and overload_t <= 0.0:
+		_plunge_t -= get_process_delta_time()
+		if _plunge_t <= 0.0:
+			_plunge_t = _rng.randf_range(12.0, 17.0)
+			_team_plunge()
+
+
+## A new tactic arrives with the wave: a card names it and says how to beat it.
+func _announce_tactic(tac: int) -> void:
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	hud.card(Loc.t("tactic.%d" % tac), Loc.t("tactic.%d.sub" % tac), 2.2)
+	Sfx.play("tease", 0.8, -2.0)
+	Sfx.voice("taunt", 0.8, 2, -4.0)
+
+
+func _team_plunge() -> void:
+	var n := 0
+	var drop := lerpf(40.0, 60.0, director.aggression())
+	for t in targets:
+		if t.is_hittable() and t.phase == Target.Phase.HANGING:
+			t.order_plunge(drop, 0.75)
+			n += 1
+	if n >= 3:
+		fx.popup(Loc.t("team.plunge"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.36), Pal.CORAL, 18)
+		Sfx.voice("taunt", 0.7, 0, -2.0)
+		Sfx.haptic(14, 0.3)
+
+
+## Where a shot will cross the middle of the field, 0..1 across (walls
+## fold it back, as they bounce the ball).
+func _cross_u(p: Vector2, v: Vector2) -> float:
+	var y := layout.rail_y + layout.play_h * 0.45
+	var dy := y - p.y
+	var g := Ball.GRAVITY
+	var disc := v.y * v.y + 2.0 * g * dy
+	var t := 0.6
+	if disc >= 0.0:
+		t = (-v.y - sqrt(disc)) / g
+		if t <= 0.0:
+			t = (-v.y + sqrt(disc)) / g
+	var x := p.x + v.x * maxf(t, 0.0)
+	var w := layout.size.x
+	x = pingpong(x, w)
+	return clampf(x / w, 0.0, 0.999)
+
+
+# ---------------------------------------------------------------- flow
+
+func _flow_add(v: float) -> void:
+	if flow_t > 0.0 or (state != State.PLAYING and state != State.STARTING):
+		return
+	flow = minf(1.0, flow + v)
+	if flow >= 1.0:
+		_begin_flow()
+
+
+func _begin_flow() -> void:
+	flow_t = FLOW_TIME
+	flow = 1.0
+	flows += 1
+	hud.flow_hot = true
+	backdrop.flow = true
+	Music.flow = true
+	var mid := Vector2(layout.center_x, layout.danger_y - 60.0)
+	hud.card(Loc.t("flow.title"), Loc.t("flow.sub"))
+	fx.shock(mid, 6.0, 420.0, 0.5)
+	fx.punch(0.02)
+	fx.aberrate(3.0)
+	Sfx.phrase([0, 2, 3, 4, 7], 0.05, -3.0)
+	Sfx.play("rise", 1.3)
+	Sfx.haptic_pattern("record")
+	_show_mult()
+
+
+## Real time, so slow motion doesn't stretch it.
+func _flow_tick(delta: float) -> void:
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	if flow_t > 0.0:
+		flow_t -= rd
+		flow = maxf(0.0, flow_t / FLOW_TIME)
+		if flow_t <= 0.0:
+			_end_flow(false)
+	else:
+		flow = maxf(0.0, flow - FLOW_DECAY * rd)
+	hud.flow = flow
+
+
+func _end_flow(quiet: bool) -> void:
+	var was := flow_t > 0.0 or hud.flow_hot
+	flow_t = 0.0
+	hud.flow_hot = false
+	backdrop.flow = false
+	Music.flow = false
+	if was:
+		flow = 0.0
+		_show_mult()
+		if not quiet:
+			Sfx.play("fall", 1.3)
+
+
 # ---------------------------------------------------------------- scoring
 
 func _mult() -> int:
-	return 1 + mini(streak / 3, 3)
+	return 1 + mini(streak / 3, 3) + (1 if flow_t > 0.0 else 0)
 
 
 ## The pill shows what a hit is worth: the streak multiplier, doubled in
@@ -1796,6 +1946,7 @@ func _finish_ball(b: Ball) -> void:
 		return
 	director.record_shot(s.hit)
 	if s.hit:
+		_flow_add(FLOW_HIT)
 		streak += 1
 		best_streak = maxi(best_streak, streak)
 		if streak % 5 == 0:
@@ -1805,6 +1956,8 @@ func _finish_ball(b: Ball) -> void:
 			Sfx.haptic(16, 0.4)
 	else:
 		streak = 0
+		if flow_t <= 0.0:
+			flow = maxf(0.0, flow - FLOW_MISS)
 		if overload_t <= 0.0:
 			charge = maxf(0.0, charge - CHARGE_MISS)
 			rail.charge = charge
@@ -1823,7 +1976,7 @@ func _grant(kind: int) -> void:
 
 func _update_ammo(delta: float) -> void:
 	if ammo.size() < AMMO_CAP and state != State.DEATH and state != State.GAME_OVER:
-		reload_t += delta / (OVERLOAD_RELOAD if overload_t > 0.0 else 1.0)
+		reload_t += delta / (OVERLOAD_RELOAD if overload_t > 0.0 else 1.0) * (FLOW_RELOAD if flow_t > 0.0 else 1.0)
 		if reload_t >= director.reload_time():
 			reload_t = 0.0
 			ammo.append(Ammo.NORMAL)
@@ -1839,6 +1992,11 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 	_shot_seq += 1
 	if state == State.PLAYING or state == State.STARTING:
 		director.record_aim(vel.normalized().x)
+		if _release_hold >= 0.0:
+			director.record_hold(_release_hold)
+		director.record_column(_cross_u(pos, vel))
+	_aim_start = -1.0
+	_release_hold = -1.0
 	var dirs: Array[float] = [0.0]
 	if kind == Ammo.TRIPLE:
 		dirs = [-TRIPLE_SPREAD, 0.0, TRIPLE_SPREAD]
@@ -1932,6 +2090,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if slingshot.begin_aim():
 				_touch = e.index
 				_origin = e.position
+				_aim_start = _time
 			elif _deny_cd <= _time:
 				# No ball loaded: a short "not yet" instead of silence.
 				_deny_cd = _time + 0.5
@@ -1939,6 +2098,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				Sfx.haptic_pattern("error")
 		elif not e.pressed and e.index == _touch:
 			_touch = -1
+			_release_hold = _time - _aim_start if _aim_start >= 0.0 else -1.0
+			_aim_start = -1.0
 			slingshot.release()
 		elif e.pressed and not in_aim_zone and e.position.y > layout.top_bar_h and state != State.MAIN_MENU:
 			# Double-tap on the open field pauses. Taps there never aim, so

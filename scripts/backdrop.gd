@@ -30,6 +30,8 @@ var l: Layout
 var danger := 0.0              # max target danger, 0..1
 var descent := 0.0             # foreground descent speed (px/s)
 var heat := 0.0                # overload (0/1): the room warms to gold
+var flow := false              # flow: the fibres pulse on every beat
+var _flow := 0.0
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
 var _heat := 0.0
@@ -136,6 +138,7 @@ func _process(delta: float) -> void:
 	mat.set_shader_parameter("danger", clampf(danger, 0.0, 1.0))
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = move_toward(_heat, heat, rd / 0.6)
+	_flow = move_toward(_flow, 1.0 if flow else 0.0, rd / 0.4)
 	mat.set_shader_parameter("heat", _heat)
 	_dust.color = Color(Pal.INK.lerp(Pal.GOLD_LIGHT, _heat), 0.07 + 0.08 * _heat)
 	if l:
@@ -173,10 +176,10 @@ func _step_fibres(rd: float) -> void:
 	# unhurried random pace.
 	var b := Music.beat()
 	if b >= 0.0:
-		var n := int(b) / DROP_EVERY
+		var n := int(b) / (1 if flow else DROP_EVERY)
 		if n != _last_beat:
 			_last_beat = n
-			if _rng.randf() < 0.6:
+			if flow or _rng.randf() < 0.6:
 				_spawn_drop()
 	else:
 		_drop_t -= rd
@@ -186,7 +189,7 @@ func _step_fibres(rd: float) -> void:
 
 
 func _spawn_drop() -> void:
-	if _drops.size() >= 4:
+	if _drops.size() >= (7 if flow else 4):
 		return
 	var i := _rng.randi() % _far.size()
 	_drops.append({"i": i, "t": 0.0, "dur": 0.55 + float(_far[i].len) * 0.9, "landed": false})
@@ -256,6 +259,11 @@ func _draw_far() -> void:
 		if t.is_hittable():
 			hittable.append(t)
 	var dk := clampf(danger, 0.0, 1.0)
+	# Flow: every fibre flashes on the beat, tinted electric.
+	var pulse := 0.0
+	if _flow > 0.0:
+		var b := Music.beat()
+		pulse = _flow * (pow(1.0 - fposmod(b, 1.0), 4.0) if b >= 0.0 else 0.5 + 0.5 * sin(_clock * 13.0))
 	for i in _far.size():
 		var f: Dictionary = _far[i]
 		var sway := sin(_clock * f.rate + f.phase) * 6.0
@@ -274,6 +282,9 @@ func _draw_far() -> void:
 			var col := _palette(flow + i * 0.11 - s * 0.35)
 			# A slow swell of light travelling down.
 			var bright := 0.2 + 0.1 * sin(_clock * 0.45 + i * 1.9 - s * 5.0)
+			if _flow > 0.0:
+				col = col.lerp(Pal.FLOW, 0.55 * _flow)
+				bright += 0.1 * _flow + 0.35 * pulse
 			if _heat > 0.0:
 				col = col.lerp(Pal.GOLD_LIGHT, _heat * 0.85)
 				bright += 0.1 * _heat

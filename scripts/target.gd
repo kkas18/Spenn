@@ -160,6 +160,16 @@ static var push_z := 0.0
 # the player is doing: nervous ones sweat, blink more and dilate; cocky
 # ones turn smug even far from the line.
 static var morale := 0.0
+# What the team has learned (Director.Tactic), and what it knows of the
+# player's rhythm: the usual hold before a release, how long the band has
+# been held right now (<0: not aiming), and the column shot at least.
+static var tactic := 0
+static var rhythm := false
+static var hold_avg := 0.0
+static var aim_hold := -1.0
+static var cold_x := NAN
+var _rhythm_used := false       # one early dodge per aim
+var _order_drop := 0.0          # a team plunge, waiting on its telegraph
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -347,6 +357,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_brain_t = randf_range(2.5, 5.0)
 	_minion_t = 4.0
 	_lunge_left = 0.0
+	_order_drop = 0.0
+	_rhythm_used = false
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -819,6 +831,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			if panicked():
 				tele_t = 0.0
 				_lunge_left = 0.0
+				_order_drop = 0.0
 				_dodge_cd = maxf(_dodge_cd, 0.5)
 			else:
 				_brain(dt)
@@ -862,6 +875,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 func _brain(dt: float) -> void:
 	var a := aggression
 	_dodge_cd = maxf(0.0, _dodge_cd - dt)
+	_order_step(dt)
 	if leader != null:
 		if is_instance_valid(leader) and leader.is_hittable():
 			# In formation: keep station on the leader's hook, no own moves.
@@ -975,6 +989,8 @@ func _evade(dt: float) -> void:
 	if guard_of != null:
 		# On guard duty: standing in the line of fire is the point.
 		return
+	if aim_hold < 0.0:
+		_rhythm_used = false
 	if not threatened:
 		_aim_t = maxf(0.0, _aim_t - dt * 2.0)
 		return
@@ -989,17 +1005,28 @@ func _evade(dt: float) -> void:
 		if a < 0.4:
 			return
 		react *= 0.35
-	if _aim_t < react:
+	if tactic == 0:
+		# Wave one: they have not learned to read you yet.
+		react *= 1.6
+	# They know your rhythm: the moment you usually let go, they go.
+	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03
+	if on_beat:
+		_rhythm_used = true
+	elif _aim_t < react:
 		return
-	if temper == Temper.BOLD and randf() < 0.35:
+	if temper == Temper.BOLD and not on_beat and randf() < 0.35:
 		# Stands its ground: a defiant flinch, no move (a chance for you).
 		ang_vel -= dodge_dir * 1.5
 		_dodge_cd = lerpf(2.0, 1.0, a)
 		_aim_t = 0.0
 		return
 	var sc := _screen_h / 1280.0
-	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0) * [1.0, 1.25, 0.8, 1.0][temper]
+	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0) * [1.0, 1.25, 0.8, 1.0][temper] * (0.8 if tactic == 0 else 1.0)
 	var speed: float = prof[2] * lerpf(1.0, 1.4, a) * sc
+	if on_beat:
+		# Timed to your release: a sharper, longer move.
+		reach *= 1.25
+		speed *= 1.25
 	var room_fwd := (slide_hi - anchor.x) if dodge_dir > 0.0 else (anchor.x - slide_lo)
 	var room_back := (anchor.x - slide_lo) if dodge_dir > 0.0 else (slide_hi - anchor.x)
 	var moved := false
@@ -1024,9 +1051,15 @@ func _slide(x: float, speed: float, quiet := false) -> void:
 	x = clampf(x, minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
 	if absf(x - anchor.x) < 4.0:
 		return
-	if temper == Temper.ERRATIC and not quiet and randf() < 0.6:
-		# Feint: a quick jink the wrong way, then the real move.
-		var fake := clampf(anchor.x - signf(x - anchor.x) * 26.0 * (_screen_h / 1280.0), minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
+	var feint := 0.0
+	if tactic >= 1 and temper == Temper.ERRATIC:
+		feint = 0.6
+	elif tactic >= 2:
+		feint = 0.2 + 0.3 * aggression
+	if not quiet and randf() < feint:
+		# Feint: a quick jink the wrong way, then the real move. The eye
+		# gives it away: it looks where it is really going.
+		var fake := clampf(anchor.x - signf(x - anchor.x) * 30.0 * (_screen_h / 1280.0), minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
 		_queued_x = x
 		_queued_speed = speed
 		x = fake
@@ -1059,7 +1092,10 @@ func _wander(dt: float) -> void:
 			_slide(anchor.x + randf_range(-35.0, 35.0) * sc, 160.0 * sc, true)
 		_:
 			_wander_t = randf_range(3.5, 6.5)
-			if aggression > 0.2:
+			if tactic >= 3 and not is_nan(cold_x) and randf() < 0.6:
+				# Drifts toward where you rarely shoot.
+				_slide(anchor.x + clampf(cold_x - anchor.x, -90.0 * sc, 90.0 * sc), 60.0 * sc, true)
+			elif aggression > 0.2:
 				_slide(anchor.x + randf_range(-45.0, 45.0) * sc, 55.0 * sc, true)
 
 
@@ -1090,6 +1126,36 @@ func _move_anchor(dt: float) -> void:
 		length += back
 		goal_length = length
 		_hopped -= back
+
+
+## Teamwork: a neighbour was destroyed at `from`; scatter away from it.
+func scatter(from: Vector2) -> void:
+	if tactic < 4 or leader != null or guard_of != null or kind == Kind.BOSS or _dodge_cd > 0.6:
+		return
+	var sc := _screen_h / 1280.0
+	var dir := signf(pos.x - from.x) if absf(pos.x - from.x) > 2.0 else (1.0 if randf() < 0.5 else -1.0)
+	_slide(anchor.x + dir * randf_range(55.0, 90.0) * sc, 300.0 * sc, true)
+	startle_t = 0.35
+	_dodge_cd = maxf(_dodge_cd, 0.6)
+
+
+## Teamwork: the team plunges together on a signal. Telegraphed (tremble
+## and squint) for `wait` seconds, then drops `drop` px.
+func order_plunge(drop: float, wait: float) -> void:
+	if kind == Kind.DROP or kind == Kind.BOSS or tele_t > 0.0:
+		return
+	_order_drop = drop
+	tele_t = wait
+
+
+func _order_step(dt: float) -> void:
+	if _order_drop <= 0.0:
+		return
+	tele_t -= dt
+	if tele_t <= 0.0:
+		tele_t = 0.0
+		_lunge_left += _order_drop * (_screen_h / 1280.0)
+		_order_drop = 0.0
 
 
 ## Tremble and squint for 0.45 s, then drop by `drop` px (scaled).
@@ -1424,7 +1490,12 @@ func _update_eye(delta: float) -> void:
 	if _admire_t > 0.0:
 		# Up and to the left, at the glint on its own face.
 		goal = Vector2(-0.75, -0.65)
-	_pupil = _pupil.lerp(goal, Pal.damp(0.15, delta))
+	var quick := 0.15
+	if not is_nan(_queued_x):
+		# Mid-feint: the eye darts to where it is really going (the tell).
+		goal = Vector2(signf(_queued_x - anchor.x), -0.15).rotated(-body_rot)
+		quick = 0.45
+	_pupil = _pupil.lerp(goal, Pal.damp(quick, delta))
 
 
 func color() -> Color:

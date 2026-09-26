@@ -25,6 +25,7 @@ const SILENT_DB := -80.0
 var mode := Mode.SILENT
 var intensity := 0.0           # 0..1, set by the game while playing
 var overload := false          # overload: the mix goes warm and close
+var flow := false              # flow: the mix opens up and lifts
 var danger := 0.0              # 0..1, the closest target to the line
 var _duck := 0.0               # dB taken off (eases back)
 var _duck_hold := 0.0
@@ -128,6 +129,9 @@ func _process(delta: float) -> void:
 			Mode.PLAY:
 				play_t = lerpf(-3.0, 0.0, intensity)
 				cut_t = lerpf(20000.0, 3200.0, smoothstep(0.55, 1.0, danger))
+				if flow:
+					play_t += 1.5
+					cut_t = 20000.0
 				if overload:
 					# Slowed time: the band goes muffled, as if heard through
 					# the rush of it, so the bright note ladder rides on top.

@@ -33,6 +33,7 @@ const BLUE := Color("4F8BFF")   # 220°, luma .55 – ring, azure
 const TEAL := Color("33D1C6")   # 175°, luma .66 – splitter (hexagon), turquoise
 const DROP := Color("8FE3FF")   # 195°, luma .82 – fast drop, sky
 const CORAL := Color("E98462")   # 15° – danger only
+const FLOW := Color("BDF4FF")    # icy white-cyan – flow (a hot streak) only
 const ARMOR := Color("7E9CC9")   # 215°, luma .60 – Vokter body (ring + plate), steel blue
 const BOSS := Color("D05BE0")   # 290°, luma .52 – Spinneren (filled hexagon), orchid
 const REEL := Color("9FD85A")   # 90°, luma .73 – Snelle (spoked reel), lime

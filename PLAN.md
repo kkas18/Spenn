@@ -1693,3 +1693,24 @@ Strengene i bakgrunnen er nå lysfibre (alle tre forslagene):
   gjør alle strengene gylne, og når en fiende nærmer seg linjen, gløder nedre del av strengene korallrødt.
 - Reduserte animasjoner: fargene flyter halvt så fort og det kommer ingen dråper. Svake telefoner
   tegner fibrene uten glød.
+
+## v7.24 – Smartere fiender og mer energi (runde 1: F + A + G + J)
+
+- **F. Taktikk-nivåer:** fiendene lærer nye triks bølge for bølge, og et kort sier ifra:
+  - bølge 1: naive (reagerer tregt og kort);
+  - bølge 2: UNNVIKELSE (dagens unnamanøvre);
+  - bølge 4: FINTER;
+  - bølge 6: RYTMEN DIN;
+  - bølge 8: SAMARBEID (sprer seg når en nabo dør, samlet stup på signal).
+- **A. Finter:** alle temperamenter kan finte (sjansen øker med aggresjon). Øynene røper den ekte
+  retningen mens de finter, så det er rettferdig for den som følger med.
+- **G. Lærer rytmen din:** Director måler hvor lenge du spenner og hvor skuddene dine krysser feltet
+  (6 kolonner).
+  - Har du en fast rytme, viker de *akkurat* når du pleier å slippe.
+  - Nye fiender og vandrende fiender søker mot de «kalde» kolonnene der du sjelden skyter.
+  - En popup sier ifra én gang.
+- **J. FLYT:** treff raskt etter hverandre for å fylle en måler under farelinjen.
+  - Full måler gir FLYT i 7 sekunder: raskere lading og +1 multiplikator.
+  - Musikken åpner seg, og lysfibrene pulserer i takt og skifter mot en elektrisk farge.
+  - Bom tapper måleren.
+- Balansen kontrolleres med spill-boten, med fast og variert rytme, før og etter.
