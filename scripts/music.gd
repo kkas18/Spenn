@@ -98,6 +98,14 @@ func level() -> float:
 	return _level
 
 
+## Beats played so far on the play track (124 BPM), or -1 when it is
+## silent: the background's drops of light fall on the beat.
+func beat() -> float:
+	if _play == null or not _play.playing or _play_db <= -40.0:
+		return -1.0
+	return _play.get_playback_position() * 124.0 / 60.0
+
+
 func set_mode(m: Mode) -> void:
 	mode = m
 

@@ -1363,6 +1363,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var loud := linear_to_db(clampf(closing / 1300.0, 0.3, 1.0))
 	var kind := t.kind
 	var col := t.color()
+	backdrop.ripple(contact, col, clampf(closing / 1100.0, 0.35, 1.0) * (1.4 if t.hp <= 1 else 1.0))
 	var was_close := t.danger > CLOSE_CALL
 	var hit_at := t.pos
 	var killed := t.hit(impulse, contact)

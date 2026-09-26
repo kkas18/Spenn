@@ -1,13 +1,30 @@
 class_name Backdrop
 extends Node2D
 ## Static layer behind the play field: the lit, grained backdrop shader, a
-## distant parallax layer of bare strings (40% scale, 8% opacity, slower than
-## the foreground), the danger line, slow dust and a few large out-of-focus
-## motes drifting through the lamp light. Nothing here shakes.
+## distant parallax layer of strings (40% scale, slower than the foreground),
+## the danger line, slow dust and a few large out-of-focus motes drifting
+## through the lamp light. Nothing here shakes.
+##
+## The far strings are fibres of light:
+## - colour flows slowly down each one through the wave's enemy palette
+##   (softened toward ink), each string a little behind its neighbour, so
+##   the colours drift across the room like an aurora and follow the theme;
+## - drops of light slide down them on the beat and light the bead below;
+## - they answer the game: a hit sends a ripple of the target's colour
+##   through the strings around it, overload turns them gold, and as a
+##   target nears the line their lower ends warm to coral.
+## They dim where a target hangs in front, so the field always reads first.
 
 const FAR_SCALE := 0.4
 const FAR_ALPHA := 0.08
 const FAR_COUNT := 9
+const SEG := 18                # vertices per fibre
+const FLOW := 1.0 / 44.0       # palette cycles per second
+const RIPPLE_SPEED := 700.0
+const RIPPLE_LIFE := 1.1
+const DROP_EVERY := 2          # beats between drops
+# Kinds whose theme colours the fibres flow through.
+const FIBRE_KINDS := [0, 2, 3, 4, 1]
 
 var l: Layout
 var danger := 0.0              # max target danger, 0..1
@@ -28,6 +45,15 @@ var _layer: Node2D
 var _rng := RandomNumberGenerator.new()
 var _wire := PackedVector2Array()
 var _far_lines := PackedVector2Array()
+var _glow: Node2D              # additive: the fibres' halo and the drops
+var _pts := PackedVector2Array()
+var _cols := PackedColorArray()
+var _halo := PackedColorArray()
+var _pal: Array[Color] = []
+var _ripples: Array[Dictionary] = []
+var _drops: Array[Dictionary] = []
+var _last_beat := -1
+var _drop_t := 2.0
 const MIST := preload("res://assets/particles/smoke_b.png")
 
 
@@ -42,6 +68,15 @@ func _ready() -> void:
 	_layer = Node2D.new()
 	add_child(_layer)
 	_layer.draw.connect(_draw_layer)
+	_glow = Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_glow.material = add
+	add_child(_glow)
+	_glow.draw.connect(_draw_glow)
+	_pts.resize(SEG)
+	_cols.resize(SEG)
+	_halo.resize(SEG)
 	for i in FAR_COUNT:
 		_far.append({
 			"x": 0.0,
@@ -49,6 +84,7 @@ func _ready() -> void:
 			"phase": _rng.randf() * TAU,
 			"rate": _rng.randf_range(0.18, 0.32),
 			"beads": 1 + _rng.randi() % 3,
+			"flash": 0.0,
 		})
 	for i in 6:
 		_bokeh.append({"x": _rng.randf(), "y": _rng.randf(), "r": _rng.randf_range(40.0, 90.0),
@@ -107,7 +143,53 @@ func _process(delta: float) -> void:
 			b.x = fposmod(b.x + b.vx * delta / l.size.x, 1.0)
 			b.y = fposmod(b.y + b.vy * delta / l.size.y, 1.0)
 	_far_drop = fmod(_far_drop + descent * FAR_SCALE * delta, l.play_h * 0.3) if l else 0.0
+	_step_fibres(rd)
 	_layer.queue_redraw()
+	_glow.queue_redraw()
+
+
+## A hit at `at`: a ring of the target's colour runs out through the strings.
+func ripple(at: Vector2, col: Color, strength := 1.0) -> void:
+	if _ripples.size() >= 6:
+		_ripples.pop_front()
+	_ripples.append({"at": at - view * 0.4, "col": col.lerp(Pal.INK, 0.15), "s": strength, "t": 0.0})
+
+
+func _step_fibres(rd: float) -> void:
+	for r in _ripples:
+		r.t += rd
+	_ripples = _ripples.filter(func(r: Dictionary) -> bool: return r.t < RIPPLE_LIFE)
+	for f in _far:
+		f.flash = maxf(0.0, f.flash - rd * 2.2)
+	for d in _drops:
+		d.t += rd
+		if d.t >= d.dur and not d.landed:
+			d.landed = true
+			_far[d.i].flash = 1.0
+	_drops = _drops.filter(func(d: Dictionary) -> bool: return d.t < d.dur + 0.1)
+	if Prefs.reduced_motion or l == null:
+		return
+	# Drops fall on the beat while the play track runs; in the menu, at an
+	# unhurried random pace.
+	var b := Music.beat()
+	if b >= 0.0:
+		var n := int(b) / DROP_EVERY
+		if n != _last_beat:
+			_last_beat = n
+			if _rng.randf() < 0.6:
+				_spawn_drop()
+	else:
+		_drop_t -= rd
+		if _drop_t <= 0.0:
+			_drop_t = _rng.randf_range(1.6, 3.4)
+			_spawn_drop()
+
+
+func _spawn_drop() -> void:
+	if _drops.size() >= 4:
+		return
+	var i := _rng.randi() % _far.size()
+	_drops.append({"i": i, "t": 0.0, "dur": 0.55 + float(_far[i].len) * 0.9, "landed": false})
 
 
 func _draw_layer() -> void:
@@ -160,23 +242,102 @@ func _draw_bokeh() -> void:
 		_layer.draw_texture_rect(SOFT, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(c, a))
 
 
-## Bare distant strings with a few beads: depth without silhouettes that
-## could be mistaken for targets.
+## The fibres: each string a polyline with a colour per vertex, drawn thin
+## on the normal layer (with its beads) and again wide and faint on the
+## additive layer as its halo.
 func _draw_far() -> void:
-	var col := Color(Pal.INK, FAR_ALPHA)
-	# All strings in one multiline, then all beads (batched discs).
-	_far_lines.resize(_far.size() * 2)
+	var calm := Prefs.reduced_motion
+	var flow := _clock * FLOW * (0.5 if calm else 1.0)
+	_pal.clear()
+	for k in FIBRE_KINDS:
+		_pal.append(Pal.kind_color(k).lerp(Pal.INK, 0.12))
+	var hittable: Array[Target] = []
+	for t in targets:
+		if t.is_hittable():
+			hittable.append(t)
+	var dk := clampf(danger, 0.0, 1.0)
 	for i in _far.size():
 		var f: Dictionary = _far[i]
 		var sway := sin(_clock * f.rate + f.phase) * 6.0
 		var top := Vector2(f.x, l.rail_y + 10.0)
-		_far_lines[i * 2] = top
-		_far_lines[i * 2 + 1] = top + Vector2(sway, l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE)
-	_layer.draw_multiline(_far_lines, col, 1.0, true)
-	for i in _far.size():
-		var f: Dictionary = _far[i]
+		var length: float = l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE
+		var drop_s := -1.0
+		for d in _drops:
+			if d.i == i and not d.landed:
+				var k: float = d.t / d.dur
+				drop_s = k * k * _bead_s(f)
+		for v in SEG:
+			var s := float(v) / (SEG - 1)
+			var p := top + Vector2(sway * pow(s, 1.5), length * s)
+			_pts[v] = p
+			# Colour flowing down the string through the palette.
+			var col := _palette(flow + i * 0.11 - s * 0.35)
+			# A slow swell of light travelling down.
+			var bright := 0.2 + 0.1 * sin(_clock * 0.45 + i * 1.9 - s * 5.0)
+			if _heat > 0.0:
+				col = col.lerp(Pal.GOLD_LIGHT, _heat * 0.85)
+				bright += 0.1 * _heat
+			if dk > 0.0:
+				var low := pow(s, 1.3) * smoothstep(0.35, 1.0, dk)
+				col = col.lerp(Pal.CORAL, low)
+				bright += 0.2 * low
+			for r in _ripples:
+				var front: float = r.t * RIPPLE_SPEED
+				var e: float = (p.distance_to(r.at) - front) / 110.0
+				var w: float = exp(-e * e) * r.s * pow(1.0 - r.t / RIPPLE_LIFE, 2.0)
+				if w > 0.01:
+					col = col.lerp(r.col, minf(1.0, w * 1.3))
+					bright += 0.7 * w
+			if drop_s >= 0.0 and s <= drop_s + 0.02:
+				# The drop's short tail of light.
+				bright += 0.45 * clampf(1.0 - (drop_s - s) / 0.14, 0.0, 1.0)
+			# Dim behind targets so the play field stays clear.
+			for t in hittable:
+				var near := p.distance_to(t.pos - view * 0.4) / (t.radius * 3.0)
+				if near < 1.0:
+					bright *= lerpf(0.3, 1.0, near * near)
+			_cols[v] = Color(col, minf(bright, 0.8))
+			_halo[v] = Color(col, minf(bright, 0.8) * 0.4)
+		_layer.draw_polyline_colors(_pts, _cols, 1.2, true)
 		for b in f.beads:
-			Pal.disc(_layer, _far_lines[i * 2].lerp(_far_lines[i * 2 + 1], 1.0 - float(b) * 0.09), 2.2, col)
+			var bs := 1.0 - float(b) * 0.09
+			var bp := top + Vector2(sway * pow(bs, 1.5), length * bs)
+			var bc: Color = _cols[SEG - 1]
+			Pal.disc(_layer, bp, 2.4, Color(bc, minf(1.0, bc.a * 1.6 + 0.5 * f.flash)))
+		f.pts = _pts.duplicate()
+		f.halo = _halo.duplicate()
+		f.bead = top + Vector2(sway, length * _bead_s(f))
+		f.drop = top + Vector2(sway * pow(drop_s, 1.5), length * drop_s) if drop_s >= 0.0 else Vector2.INF
+		f.col = _cols[SEG - 1]
+
+
+## Where a string's lowest bead sits (0..1 down it).
+func _bead_s(f: Dictionary) -> float:
+	return 1.0 - float(f.beads) * 0.09
+
+
+## A soft, looping blend through the fibre palette.
+func _palette(u: float) -> Color:
+	var n := _pal.size()
+	var x := fposmod(u, 1.0) * n
+	var i := int(x)
+	return _pal[i % n].lerp(_pal[(i + 1) % n], smoothstep(0.0, 1.0, x - i))
+
+
+## Additive: the fibres' halo, the drops and a bead's flash as a drop lands.
+func _draw_glow() -> void:
+	if l == null or _far.is_empty() or not _far[0].has("pts"):
+		return
+	_glow.position = view * 0.4
+	var hi := Device.tier != Device.Tier.LOW
+	for f in _far:
+		if hi:
+			_glow.draw_polyline_colors(f.pts, f.halo, 7.0, true)
+		if f.drop != Vector2.INF:
+			_glow.draw_texture_rect(SOFT, Rect2(f.drop - Vector2(9, 9), Vector2(18, 18)), false, Color(Pal.INK.lerp(f.col, 0.5), 0.55))
+		if f.flash > 0.0:
+			var r: float = 10.0 + 16.0 * (1.0 - f.flash)
+			_glow.draw_texture_rect(SOFT, Rect2(f.bead - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.5 * f.flash))
 
 
 ## The danger line is a real wire, strung taut from wall to wall between

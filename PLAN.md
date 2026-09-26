@@ -1679,3 +1679,17 @@ menyen tregere å bruke. Alt følger «Reduserte animasjoner» og enhetsnivået.
    musikkbussen).
 6. **Starten.** Når du skyter, suser øynene mot kameraet og forsvinner, strålene slukkes, og
    et lysglimt løper langs skinnen før de første fiendene henges opp.
+
+## v7.23 – Lysfibre i bakgrunnen
+
+Strengene i bakgrunnen er nå lysfibre (alle tre forslagene):
+- **A. Farger som flyter:** fargene glir sakte nedover hver streng gjennom fiendenes fargetema,
+  litt dempet mot hvitt. Hver streng ligger litt etter naboen, så fargene vandrer gjennom rommet
+  som nordlys og følger temaet når det skifter mellom bølgene. En svak glød ligger rundt hver
+  fiber. Fibrene dempes der en fiende henger foran, så spillet alltid er lettest å se.
+- **B. Lysdråper:** små lysperler glir ned strengene i takt med spillmusikken (hvert andre slag, 124 BPM)
+  og får kulen nederst til å blusse opp. I menyen faller de i et rolig, tilfeldig tempo.
+- **C. Reaksjoner:** et treff sender en bølge i fiendens farge gjennom strengene rundt, overbelastning
+  gjør alle strengene gylne, og når en fiende nærmer seg linjen, gløder nedre del av strengene korallrødt.
+- Reduserte animasjoner: fargene flyter halvt så fort og det kommer ingen dråper. Svake telefoner
+  tegner fibrene uten glød.
