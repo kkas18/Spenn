@@ -438,8 +438,10 @@ func _draw_far() -> void:
 	var calm := Prefs.reduced_motion
 	var flow := _clock * FLOW * (0.5 if calm else 1.0)
 	_pal.clear()
+	# Cooled toward slate and kept faint: the fibres are the room's light,
+	# and must never be mistaken for the creatures' strings in front.
 	for k in FIBRE_KINDS:
-		_pal.append(Pal.kind_color(k).lerp(Pal.INK, 0.12))
+		_pal.append(Pal.kind_color(k).lerp(Color("5E7896"), 0.45).lerp(Pal.INK, 0.08))
 	var hittable: Array[Target] = []
 	for t in targets:
 		if t.is_hittable():
@@ -477,7 +479,7 @@ func _draw_far() -> void:
 			# Colour flowing down the string through the palette.
 			var col := _palette(flow + i * 0.11 - s * 0.35)
 			# A slow swell of light travelling down.
-			var bright := 0.2 + 0.1 * sin(_clock * 0.45 + i * 1.9 - s * 5.0)
+			var bright := 0.13 + 0.07 * sin(_clock * 0.45 + i * 1.9 - s * 5.0)
 			if _flow > 0.0:
 				col = col.lerp(Pal.FLOW, 0.55 * _flow)
 				bright += 0.1 * _flow + 0.35 * pulse
@@ -519,8 +521,8 @@ func _draw_far() -> void:
 				if near < 1.0:
 					bright *= lerpf(0.3, 1.0, near * near)
 			_cols[v] = Color(col, minf(bright, 0.8))
-			_halo[v] = Color(col, minf(bright, 0.8) * 0.4)
-		_layer.draw_polyline_colors(_pts, _cols, 1.2, true)
+			_halo[v] = Color(col, minf(bright, 0.8) * 0.32)
+		_layer.draw_polyline_colors(_pts, _cols, 1.0, true)
 		for b in f.beads:
 			var bs := 1.0 - float(b) * 0.09
 			var bp := top + Vector2(sway * pow(bs, 1.5), length * bs)

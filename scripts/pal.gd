@@ -23,27 +23,30 @@ const BAND := Color("B8793C")       # amber latex
 const BAND_DARK := Color("4A2C14")
 const POUCH := Color("6A4630")      # leather
 const STRING := Color("59616D")
+const HEMP := Color("A88A62")      # the creatures' cords: undyed hemp
 
 # Target hues: silhouettes carry identity, hue + lightness second. Hues sit
 # ≥40° apart (spec hues nudged ≤15° so blue/teal/green clear 40°), and
 # luma steps of ~0.11 keep every type apart in greyscale.
-const GREEN := Color("2FA66A")   # 145°, luma .45 – heavy (double ring), emerald
-const PURPLE := Color("9A6BFF")   # 260°, luma .50 – rod, violet
-const BLUE := Color("4F8BFF")   # 220°, luma .55 – ring, azure
-const TEAL := Color("33D1C6")   # 175°, luma .66 – splitter (hexagon), turquoise
-const DROP := Color("8FE3FF")   # 195°, luma .82 – fast drop, sky
+const GREEN := Color("2F7D5A")   # 153°, luma .40 – heavy (double ring), verdigris
+const PURPLE := Color("8A68C9")   # 261°, luma .46 – rod, violet enamel
+const BLUE := Color("5486D8")   # 218°, luma .50 – ring, cobalt
+const TEAL := Color("4BB4C4")   # 188°, luma .63 – splitter (hexagon), turquoise
+const DROP := Color("98D2E4")   # 194°, luma .78 – fast drop, pale sky
 const CORAL := Color("E98462")   # 15° – danger only
 const FLOW := Color("BDF4FF")    # icy white-cyan – flow (a hot streak) only
 const ARMOR := Color("7E9CC9")   # 215°, luma .60 – Vokter body (ring + plate), steel blue
-const BOSS := Color("D05BE0")   # 290°, luma .52 – Spinneren (filled hexagon), orchid
-const REEL := Color("9FD85A")   # 90°, luma .73 – Snelle (spoked reel), lime
-const SHADE := Color("FF7FB6")   # 335°, luma .64 – Skygge (crescent), rose
-const MEDIC := Color("E6ECEF")   # pearl, luma .92 – Legen (ring with a cross badge)
+const BOSS := Color("A8508F")   # 317°, luma .40 – Spinneren (filled hexagon), plum
+const REEL := Color("A9C46E")   # 79°, luma .72 – Snelle (spoked reel), sage
+const SHADE := Color("D98AA8")   # 337°, luma .62 – Skygge (crescent), dusty rose
+const MEDIC := Color("E9EAE4")   # pearl, luma .92 – Legen (ring with a cross badge)
 const MEDIC_BADGE := Color("4FC79A")   # mint: its badge and its bubbles
 const MIRROR := Color("B3C3D6")   # silver, luma .76 – Speilet (polished hexagon)
 const EYE := Color("E4E7EC")
 
-# Colour themes. Every wave the enemies change into another curated set,
+# Colour themes: enamels, fired and a little muted, so the creatures sit in
+# the same room as the brass, gunmetal and leather around them. Every wave
+# the enemies change into another curated set,
 # easing over two seconds. Each theme keeps the rules of the base one: the
 # kinds sit apart in hue and in lightness (they read in greyscale too),
 # nothing is gold (that is the ball's) or coral (that is danger), and the
@@ -51,16 +54,16 @@ const EYE := Color("E4E7EC")
 # Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS
 # (Pipp is a pastel lilac chick, Pakkis a pastel pink knot: soft, childlike tones)
 const THEMES := [
-	# Nordlys: the original, azure and emerald
-	[Color("4F8BFF"), Color("2FA66A"), Color("33D1C6"), Color("9A6BFF"), Color("8FE3FF"), Color("7E9CC9"), Color("D05BE0"), Color("9FD85A"), Color("FF7FB6"), Color("E6ECEF"), Color("B3C3D6"), Color("D9C8FF"), Color("F7B8CB")],
-	# Dyphav: deep sea, royal blue, deep teal, seafoam
-	[Color("3F7BE6"), Color("1F9A8A"), Color("4CC7EC"), Color("7468F0"), Color("A6ECF2"), Color("7E9CC9"), Color("B85AE0"), Color("7DD8A8"), Color("EE84B8"), Color("E6ECEF"), Color("B3C3D6"), Color("CFC6FF"), Color("F2B2C8")],
-	# Ametyst: periwinkle, lavender and orchid
-	[Color("7483FF"), Color("35A386"), Color("58CEDD"), Color("B27CFF"), Color("C7D6FF"), Color("7E9CC9"), Color("E466CF"), Color("B6DE78"), Color("FF8FC8"), Color("E6ECEF"), Color("B3C3D6"), Color("E2CCFF"), Color("FABFD2")],
-	# Skog: jade, mint and moss
-	[Color("4A96E4"), Color("33AD5E"), Color("5FD8B4"), Color("8B7AEA"), Color("A2EAD2"), Color("7E9CC9"), Color("C265DA"), Color("C6DC58"), Color("F28CAC"), Color("E6ECEF"), Color("B3C3D6"), Color("D6CFF7"), Color("F4BBCB")],
-	# Is: pale and luminous
-	[Color("78A6FF"), Color("4FBE86"), Color("6FE2DA"), Color("B39BFF"), Color("C6F2FF"), Color("7E9CC9"), Color("DA86EA"), Color("BEE68C"), Color("FFA3CA"), Color("E6ECEF"), Color("B3C3D6"), Color("E6DCFF"), Color("FCC8D8")],
+	# Emalje: cobalt, verdigris and plum, muted like fired enamel
+	[Color("5486D8"), Color("2F7D5A"), Color("4BB4C4"), Color("8A68C9"), Color("98D2E4"), Color("7E9CC9"), Color("A8508F"), Color("A9C46E"), Color("D98AA8"), Color("E9EAE4"), Color("B3C3D6"), Color("CDC0EE"), Color("EDB9C6")],
+	# Patina: greener, like old copper
+	[Color("5D9ED4"), Color("347A4F"), Color("53C0BC"), Color("7E6EC5"), Color("9BDBDF"), Color("7E9CC9"), Color("A5559B"), Color("B5C073"), Color("D58DB4"), Color("E9EAE4"), Color("B3C3D6"), Color("C5C0E9"), Color("E8B9CD")],
+	# Blekk: deeper and richer
+	[Color("4475C7"), Color("257350"), Color("3CA4B4"), Color("7A59B9"), Color("86C0D2"), Color("7E9CC9"), Color("9B4382"), Color("99B45F"), Color("C87997"), Color("E9EAE4"), Color("B3C3D6"), Color("BAADDB"), Color("DAA6B3")],
+	# Lyng: warmer, toward heather
+	[Color("546CD8"), Color("2F7D6A"), Color("4B9CC4"), Color("9D68C9"), Color("98C3E4"), Color("7E9CC9"), Color("A8507D"), Color("98C46E"), Color("D98A98"), Color("E9EAE4"), Color("B3C3D6"), Color("D6C0EE"), Color("EDB9BC")],
+	# Frost: paler and lighter
+	[Color("76A1E7"), Color("438668"), Color("6AC4D2"), Color("A184D7"), Color("B3E5F4"), Color("7E9CC9"), Color("B4689E"), Color("BBD288"), Color("E8A5BE"), Color("E9EAE4"), Color("B3C3D6"), Color("E2D7FF"), Color("FED1DC")],
 ]
 const THEME_TIME := 2.0
 

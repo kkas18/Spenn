@@ -13,7 +13,7 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0, Kind.PIPP: 19.0, Kind.PAKKIS: 26.0}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 22.0, Kind.SHIELD: 26.0, Kind.BOSS: 52.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0, Kind.PIPP: 22.0, Kind.PAKKIS: 26.0}
 const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1, Kind.PIPP: 1, Kind.PAKKIS: 1}
 const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35, Kind.PIPP: 15, Kind.PAKKIS: 35}
 const ROD_HALF := 30.0
@@ -372,6 +372,7 @@ var _c_sh := PackedVector2Array()
 var _c_idx := PackedInt32Array()  # string strip (world space)
 var _r_pts := PackedVector2Array()
 var _r_uv := PackedVector2Array()
+var _r_sh := PackedVector2Array()
 var _r_idx := PackedInt32Array()
 var _p_pts := PackedVector2Array()  # armour plates (world space)
 var _p_uv := PackedVector2Array()
@@ -2720,10 +2721,12 @@ func _draw_rope(ci: RID) -> void:
 			_r_idx[i * 6 + 3] = a
 			_r_idx[i * 6 + 4] = a + 3
 			_r_idx[i * 6 + 5] = a + 2
-	# Each string takes its target's colour: a dyed cord for jelly, a
-	# darker tinted wire for shells; near the line it pales under strain.
+	# The strings are materials, not light: undyed hemp for jelly, dark
+	# steel wire for shells, each only faintly tinted by what hangs from it,
+	# so they never read as the glowing fibres behind. Near the line they
+	# pale under strain.
 	var tint := _base_color()
-	var sc := (tint.darkened(0.2) if soft else tint.darkened(0.35).lerp(Pal.STRING, 0.3)).lerp(Pal.INK_DIM, danger * 0.5)
+	var sc := (Pal.HEMP.lerp(tint, 0.15) if soft else Pal.METAL_LIGHT.darkened(0.1).lerp(tint, 0.1)).lerp(Pal.INK_DIM, danger * 0.5)
 	match style:
 		Rope.CHAIN:
 			sc = Color(0.0, 0.0, 0.0, 0.6)
@@ -2731,9 +2734,19 @@ func _draw_rope(ci: RID) -> void:
 			# Bare steel, only faintly tinted by what hangs from it.
 			sc = Pal.METAL_LIGHT.lerp(tint, 0.12).lerp(Pal.INK_DIM, danger * 0.5)
 		Rope.MONO:
-			sc = Pal.INK.lerp(tint, 0.25)
+			sc = Pal.INK.lerp(tint, 0.15)
 		Rope.BUNGEE:
-			sc = tint.darkened(0.1)
+			# Latex: the slingshot's amber, darkened.
+			sc = Pal.BAND.darkened(0.15).lerp(tint, 0.15)
+	if style != Rope.CHAIN and style != Rope.MONO:
+		# A soft shadow on the wall behind, so the string stands off it.
+		_r_sh.resize(_r_uv.size())
+		for j in _r_uv.size():
+			_r_sh[j] = Vector2(B_SHADOW + (_r_uv[j].x - band), 0.0)
+		RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse() * Transform2D(0.0, Vector2(2.5, 3.5)))
+		_one_col[0] = Color(0.0, 0.0, 0.0, 0.45 * rope_alpha)
+		RenderingServer.canvas_item_add_triangle_array(ci, _r_idx, _r_pts, _one_col, _r_sh)
+		RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse())
 	_one_col[0] = Color(sc, rope_alpha)
 	RenderingServer.canvas_item_add_triangle_array(ci, _r_idx, _r_pts, _one_col, _r_uv)
 	if style == Rope.CHAIN:
@@ -3025,9 +3038,12 @@ func _draw_plates(ci: RID, keep: float) -> void:
 		Kind.SHIELD:
 			_plate(radius + 5.0, shield_ang, SHIELD_HALF, 4.0, metal, sh)
 		Kind.BOSS:
+			# Its orbiting plates are brass: the Spinneren is the one enemy
+			# built from the same metal as your instrument.
+			var brass := Color(Tok.PRIMARY, keep)
 			var st: Array = BOSS_STAGES[boss_stage]
 			for k in int(st[0]):
-				_plate(radius + 11.0, orbit + TAU * k / st[0], deg_to_rad(st[1]), 3.5, metal, sh)
+				_plate(radius + 11.0, orbit + TAU * k / st[0], deg_to_rad(st[1]), 4.5, brass, sh)
 	RenderingServer.canvas_item_add_triangle_array(ci, _p_idx, _p_pts, _p_col, _p_uv)
 
 
@@ -3100,10 +3116,23 @@ func _draw_face() -> void:
 	_draw_arm(f)
 	_draw_stance(f)
 	if kind == Kind.BOSS and phase == Phase.HANGING:
+		# A fine brass ring with ticks, turning slowly against the plates:
+		# the Spinneren's presence, drawn as a dial.
+		var rr := radius + 22.0
+		f.draw_arc(pos, rr, 0.0, TAU, 64, Color(Tok.PRIMARY, 0.22), 1.2, true)
+		for i in 24:
+			var d := Vector2.from_angle(-orbit * 0.35 + i * TAU / 24.0)
+			var long := i % 6 == 0
+			f.draw_line(pos + d * rr, pos + d * (rr + (5.0 if long else 2.5)), Color(Tok.PRIMARY, 0.5 if long else 0.28), 1.2, true)
+		# Health: brass studs, dark once spent.
 		var hp_max: int = HP[kind]
 		for i in hp_max:
-			var x := (i - (hp_max - 1) * 0.5) * 10.0
-			Pal.disc(f, pos + Vector2(x, radius + 26.0), 2.6, Color(Pal.INK, 0.85) if i < hp else Color(Pal.INK_FAINT, 0.6))
+			var x := (i - (hp_max - 1) * 0.5) * 11.0
+			var p := pos + Vector2(x, radius + 40.0)
+			Pal.disc(f, p + Vector2(0.8, 1.0), 3.4, Color(0, 0, 0, 0.4))
+			Pal.disc(f, p, 3.2, Color(Tok.PRIMARY_LO, 0.9))
+			if i < hp:
+				Pal.disc(f, p - Vector2(0.4, 0.4), 2.4, Tok.PRIMARY_HI)
 	f.draw_set_transform_matrix(Transform2D.IDENTITY)
 	var col := color()
 	col.a *= 1.0 - 0.9 * hidden_amt
@@ -3227,12 +3256,17 @@ func _details(col: Color) -> void:
 		f.draw_line(sp - Vector2(s, 0), sp + Vector2(s, 0), Color(1, 1, 1, 0.9 * col.a), 1.4, true)
 		f.draw_line(sp - Vector2(0, s), sp + Vector2(0, s), Color(1, 1, 1, 0.9 * col.a), 1.4, true)
 	if kind == Kind.MEDIC:
-		# A mint badge with a white cross on the rim.
-		var bp := Vector2(radius * 0.62, -radius * 0.62)
-		Pal.disc(f, bp + Vector2(1.0, 1.0), 7.5, Color(0, 0, 0, 0.35 * col.a))
-		Pal.disc(f, bp, 7.5, Color(Pal.MEDIC_BADGE, col.a))
-		f.draw_rect(Rect2(bp - Vector2(4.5, 1.4), Vector2(9.0, 2.8)), Color(Pal.EYE, col.a))
-		f.draw_rect(Rect2(bp - Vector2(1.4, 4.5), Vector2(2.8, 9.0)), Color(Pal.EYE, col.a))
+		# White enamel, a mint line round the inside, and the healer's
+		# cross set into the top of the rim like an inlay.
+		var h := _hole()
+		var c := Vector2(0.0, -(h + radius) * 0.5)
+		var arm := (radius - h) * 0.5 + 2.5
+		var mint := Color(Pal.MEDIC_BADGE, col.a)
+		f.draw_arc(Vector2.ZERO, h + 0.6, 0.0, TAU, 40, Color(Pal.MEDIC_BADGE, 0.8 * col.a), 1.6, true)
+		for q: Vector2 in [Vector2(0.8, 1.0), Vector2.ZERO]:
+			var cc := Color(0, 0, 0, 0.3 * col.a) if q != Vector2.ZERO else mint
+			f.draw_line(c + q - Vector2(arm, 0), c + q + Vector2(arm, 0), cc, 3.6, true)
+			f.draw_line(c + q - Vector2(0, arm), c + q + Vector2(0, arm), cc, 3.6, true)
 	elif kind == Kind.MIRROR:
 		# Two glints across the polished face.
 		# They slide across the face as the viewer leans (and it turns).
@@ -3240,6 +3274,16 @@ func _details(col: Color) -> void:
 		var sh := (view_dir.rotated(-body_rot) * radius * 0.35)
 		f.draw_line(Vector2(-radius * 0.7, radius * 0.1) + sh, Vector2(-radius * 0.1, -radius * 0.7) + sh, g, 3.0, true)
 		f.draw_line(Vector2(-radius * 0.35, radius * 0.45) + sh * 1.4, Vector2(radius * 0.2, -radius * 0.1) + sh * 1.4, Color(g, g.a * 0.6), 1.6, true)
+	if kind == Kind.SPLIT:
+		# Where it will come apart: a stitched seam across the top and the
+		# bottom of the rim.
+		var h := _hole()
+		for sy: float in [-1.0, 1.0]:
+			var pts := PackedVector2Array()
+			for k in 5:
+				var t := float(k) / 4.0
+				pts.append(Vector2((1.6 if k % 2 == 0 else -1.6), sy * lerpf(h + 0.5, radius - 1.5, t)))
+			f.draw_polyline(pts, Color(col.darkened(0.55), col.a), 1.6, true)
 	if soft:
 		var h := _hole()
 		if h > 0.0:
@@ -3256,18 +3300,36 @@ func _details(col: Color) -> void:
 	match kind:
 		Kind.HEAVY:
 			if hp > 1:
+				# Its armour: a riveted steel band round the ring (gone once
+				# it cracks).
+				var br := radius - 6.0
+				f.draw_arc(Vector2(0.8, 1.2), br, 0.0, TAU, 48, sh, 6.0, true)
+				f.draw_arc(Vector2.ZERO, br, 0.0, TAU, 48, Color(Pal.METAL_LIGHT, col.a), 5.0, true)
+				f.draw_arc(Vector2.ZERO, br - 1.6, PI * 1.05, PI * 1.7, 16, Color(Pal.INK, 0.35 * col.a), 1.0, true)
 				for i in 8:
-					var p := Vector2.from_angle(i * TAU / 8.0 + 0.2) * (radius - 3.0)
-					Pal.disc(f, p + Vector2(0.7, 0.7), 1.5, sh)
-					Pal.disc(f, p, 1.3, rv)
+					var p := Vector2.from_angle(i * TAU / 8.0 + 0.2) * br
+					Pal.disc(f, p + Vector2(0.7, 0.7), 1.7, sh)
+					Pal.disc(f, p, 1.5, Color(Pal.INK, 0.9 * col.a))
 		Kind.SHIELD:
 			for i in 4:
 				var p := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0) * (radius - 5.0)
 				Pal.disc(f, p + Vector2(0.7, 0.7), 2.0, sh)
 				Pal.disc(f, p, 1.8, rv)
 		Kind.REEL:
+			# A spool: line wound on the rim, three spokes to a hub, and a
+			# little crank handle.
+			var line := Color(Pal.INK.lerp(col, 0.3), 0.55 * col.a)
+			for k in 4:
+				f.draw_arc(Vector2.ZERO, radius - 2.0 - k * 1.5, PI * 0.15, PI * 0.85, 18, line, 0.9, true)
+			var hole := _hole()
+			for k in 3:
+				var d := Vector2.from_angle(k * TAU / 3.0 + PI * 0.5)
+				f.draw_line(d * 10.0, d * (hole + 1.0), Color(col.darkened(0.4), col.a), 2.4, true)
 			Pal.disc(f, Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
 			Pal.disc(f, Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
+			var hp0 := Vector2.from_angle(-PI * 0.2) * (radius + 1.0)
+			f.draw_line(hp0, hp0 + Vector2(6, -3), Color(Pal.METAL_LIGHT, col.a), 2.4, true)
+			Pal.disc(f, hp0 + Vector2(6, -3), 2.6, Color(col.darkened(0.3), col.a))
 		Kind.BOSS:
 			# Cracks spread across the shell stage by stage.
 			if boss_stage >= 1:
@@ -3290,18 +3352,22 @@ func _mouth(er: float) -> void:
 	var f := _face
 	var y := er * 1.25
 	var w := er * 0.85
+	# Pale on the dark recess of a ring body, dark on a filled one, and a
+	# little heavier than a hairline so it reads as a mouth on a phone.
 	var ink := Color(Pal.EYE, 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
+	if _hole() <= 0.0:
+		ink = Color(Pal.PUPIL.lerp(color(), 0.2), 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
 	var dark := Color(Pal.PUPIL, 0.95 * modulate.a)
 	var pts := PackedVector2Array()
 	w *= _mouth_w
 	if _closed_t > 0.0 or phase == Phase.FALLING:
 		# Clenched: a short tight line, pinched at the corners.
-		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 1.6, true)
-		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.2, true)
-		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.2, true)
+		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 2.1, true)
+		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.6, true)
+		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.6, true)
 	elif startle_t > 0.0 or panicked():
 		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
-		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.4, true)
+		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.8, true)
 	elif _taunt >= 0.0:
 		# Open grin with the tongue out.
 		var grin := PackedVector2Array()
@@ -3310,30 +3376,31 @@ func _mouth(er: float) -> void:
 			grin.append(Vector2(cos(a) * w * 0.55, y - 1.0 + sin(a) * w * 0.45))
 		f.draw_colored_polygon(grin, dark)
 		Pal.disc(f, Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
-		f.draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 1.5, true)
+		f.draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 2.0, true)
 	elif enraged:
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.5, y + 2.0 - (1.0 - t * t) * 3.0))
-		f.draw_polyline(pts, ink, 1.8, true)
+		f.draw_polyline(pts, ink, 2.3, true)
 	elif squint or aimed or tele_t > 0.0:
 		# Worried: a small downturned curve.
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.36, y + 1.6 - (1.0 - t * t) * 1.6))
-		f.draw_polyline(pts, ink, 1.4, true)
+		f.draw_polyline(pts, ink, 1.8, true)
 	elif smug > 0.35:
 		# Smirk: flat on one side, curled up on the other.
 		for i in 7:
 			var t := i / 6.0
 			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * smug))
-		f.draw_polyline(pts, ink, 1.7, true)
+		f.draw_polyline(pts, ink, 2.2, true)
 	else:
-		# At rest, each its own: from a pout to a broad smile.
-		for i in 7:
-			var t := lerpf(-1.0, 1.0, i / 6.0)
-			pts.append(Vector2(t * w * 0.4, y + (1.0 - t * t) * 2.2 * _smile))
-		f.draw_polyline(pts, ink, 1.5, true)
+		# At rest, each its own: from a pout to a broad smile, drawn wide
+		# and fine so it reads as a mouth, not a speck.
+		for i in 9:
+			var t := lerpf(-1.0, 1.0, i / 8.0)
+			pts.append(Vector2(t * w * 0.55, y + (1.0 - t * t) * 2.6 * _smile))
+		f.draw_polyline(pts, ink, 1.8, true)
 
 
 func _eye() -> void:
@@ -3350,11 +3417,16 @@ func _eye() -> void:
 
 ## Eye radius for this kind, and this one's own eye size.
 func _eye_r() -> float:
-	var er := 9.5
+	# About 0.4 of the body, so the face reads at arm's length; ring bodies
+	# keep it inside their hole.
+	var er := clampf(radius * 0.4, 9.5, 14.0)
+	var h := _hole()
+	if h > 0.0:
+		er = minf(er, h * 0.62)
 	if kind == Kind.DROP:
-		er = 7.0
+		er = 9.0
 	elif kind == Kind.BOSS:
-		er = 15.0
+		er = 13.0
 	return er * _eye_scale
 
 
@@ -3381,6 +3453,17 @@ func _eye_parts() -> void:
 	if mouthed:
 		# Eye sits a little high so there is room for a mouth below.
 		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
+	if kind == Kind.BOSS:
+		# The Spinneren looks at you with two.
+		for sx: float in [-1.0, 1.0]:
+			_eye_one(f, eo + Vector2(sx * er * 1.2, 0.0), er, sx)
+		return
+	_eye_one(f, eo, er, 0.0)
+
+
+## One eye at `eo` (body space) of radius `er`; `side` is -1/1 for one of a
+## pair (the Spinneren's), 0 for a single eye.
+func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
 	var bx := Transform2D(0.0, eo)
 	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
@@ -3404,6 +3487,16 @@ func _eye_parts() -> void:
 		upper = maxf(upper, 0.24 + 0.1 * anger)
 	if trait_kind == Trait.SLEEPY and startle_t <= 0.0 and not panicked():
 		upper = maxf(upper, 0.32)
+	# Each kind's own look: the Tungvekt heavy-lidded and unimpressed, the
+	# Skygge sly, the Spinneren's pair hooded and cold.
+	if startle_t <= 0.0 and not panicked():
+		match kind:
+			Kind.HEAVY:
+				upper = maxf(upper, 0.22)
+			Kind.SHADE:
+				upper = maxf(upper, 0.26)
+			Kind.BOSS:
+				upper = maxf(upper, 0.18)
 	var lower := 0.0
 	if squint or tele_t > 0.0:
 		lower = 0.22
@@ -3439,6 +3532,12 @@ func _eye_parts() -> void:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
 			Pal.disc(f, Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+	if kind == Kind.DROP and upper < 0.5:
+		# The Dråpe's lashes: three quick flicks over the eye.
+		for k in 3:
+			var a := -PI * 0.5 + (k - 1) * 0.42
+			var d := Vector2.from_angle(a)
+			f.draw_line(d * (er + 0.5), d * (er + 4.5) + Vector2((k - 1) * 0.8, 0), Color(Pal.PUPIL, 0.85), 1.6, true)
 	if kind == Kind.ROD:
 		return
 	# Brows: fine arcs, set by mood (and by personality at rest).
@@ -3463,6 +3562,11 @@ func _eye_parts() -> void:
 		# Soft, raised brows: all innocence.
 		_brow(f, er, -1.0, -1.6, -1.45, Color(bc, 0.4))
 		_brow(f, er, 1.0, -1.6, -1.45, Color(bc, 0.4))
+	elif kind == Kind.HEAVY or kind == Kind.BOSS:
+		# A low, level brow: the heavyweights are never impressed.
+		var inner := -1.12 if side == 0.0 else -1.02
+		_brow(f, er, -1.0, inner, -1.22, Color(bc, 0.8))
+		_brow(f, er, 1.0, inner, -1.22, Color(bc, 0.8))
 
 
 ## A lid over the round eye: filled in the skin colour from the top (or the

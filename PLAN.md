@@ -2279,3 +2279,38 @@ Rettet:
    - Taglinen står i blandet skrift under en kort messinglinje, og «Trykk for å hoppe over»
      har samme stil.
    - `Hud.brass_disc` har fått en valgfri alfa-parameter for inntoning.
+
+## v7.49 – Fiendene i samme verden (revisjon 4)
+
+1. **Emaljepalett:** alle fem fargetemaene er byttet fra godterifarger til emalje (kobolt,
+   verdigris, turkis, fiolett, plomme, salvie og støvrosa), litt dempet som brent emalje.
+   - Regelen er den samme som før: typene skiller seg i fargetone og lyshet og kan leses i
+     gråtoner. Ingen er gull (det er kulas) eller korall (det betyr fare).
+   - Temaene heter nå Emalje, Patina, Blekk, Lyng og Frost.
+2. **Tau mot bakgrunn:**
+   - Snorene er ufarget hamp. Skjell henger i mørk ståltråd, og Dråpen i en strikk i
+     slyngens rav. Alle er bare svakt farget av det som henger i dem, og har en myk skygge på
+     veggen.
+   - Bakgrunnsfibrene er kjølt mot skifer, tynnere (1,0 px) og svakere i hvile. Fibre som er
+     tent, krusninger og finalen lyser som før.
+3. **Ansikter:**
+   - Øyet er ca. 0,4 av kroppen (innenfor hullet på ringkropper).
+   - Munnen er mørk på fylte kropper og lys på ringkropper. Streken er tykkere, og hvilemunnen
+     er bredere, så den leses som en munn og ikke en prikk.
+   - Særtrekk per type:
+     - Tungvekt har tunge lokk og lave, rette bryn.
+     - Skyggen er lur og halvlukket.
+     - Dråpen har tre vipper.
+     - Spinneren ser på deg med to øyne.
+4. **Typer som lignet hverandre:**
+   - Legen har hvit emalje med en mintlinje på innsiden og et innlagt kors øverst.
+   - Tungvekt har et naglet stålbånd rundt ringen, som forsvinner når den sprekker.
+   - Snella har snøre viklet på kanten, tre eiker og en liten sveiv.
+   - Splitteren har en sydd søm øverst og nederst, der den deler seg.
+5. **Boss (Spinneren):**
+   - Radius 52 (før 46).
+   - Platene er i messing.
+   - En fin messingskive med merker dreier rundt den.
+   - Livet vises som messingknotter.
+6. **Små typer:** Dråpe og Pipp har radius 22 (før 20 og 19), og Dråpen har større øye
+   (9 mot 7).
