@@ -2,7 +2,7 @@ extends Node2D
 class_name SpennFX
 
 func burst(at:Vector2,color:Color=Color("#FFE49A"))->void:
- var ring:=ImpactRing.new()
+ var ring:ImpactRing=ImpactRing.new()
  ring.position=at
  ring.tint=color
  add_child(ring)
@@ -20,5 +20,5 @@ class ImpactRing:
   draw_arc(Vector2.ZERO,lerpf(10.0,54.0,k),0,TAU,30,Color(tint,1.0-k),lerpf(6.0,1.0,k),true)
   for i in range(8):
    var a:float=TAU*float(i)/8.0
-   var p:=Vector2(cos(a),sin(a))*lerpf(14.0,48.0,k)
+   var p:Vector2=Vector2(cos(a),sin(a))*lerpf(14.0,48.0,k)
    draw_circle(p,lerpf(4.0,1.0,k),Color(tint,1.0-k))
