@@ -57,6 +57,8 @@ const THEMES := [
 	[Color("7483FF"), Color("35A386"), Color("58CEDD"), Color("B27CFF"), Color("C7D6FF"), Color("7E9CC9"), Color("E466CF"), Color("B6DE78"), Color("FF8FC8"), Color("E6ECEF"), Color("B3C3D6")],
 	# Skog: jade, mint and moss
 	[Color("4A96E4"), Color("33AD5E"), Color("5FD8B4"), Color("8B7AEA"), Color("A2EAD2"), Color("7E9CC9"), Color("C265DA"), Color("C6DC58"), Color("F28CAC"), Color("E6ECEF"), Color("B3C3D6")],
+	# Skumring: dusk, soft and dreamy (lavender blue, sage, powder)
+	[Color("7C95EE"), Color("5FA88A"), Color("78CFCB"), Color("A08CEB"), Color("BFE3F0"), Color("7E9CC9"), Color("C77FD8"), Color("B5D38E"), Color("F09CBE"), Color("E6ECEF"), Color("B3C3D6")],
 	# Is: pale and luminous
 	[Color("78A6FF"), Color("4FBE86"), Color("6FE2DA"), Color("B39BFF"), Color("C6F2FF"), Color("7E9CC9"), Color("DA86EA"), Color("BEE68C"), Color("FFA3CA"), Color("E6ECEF"), Color("B3C3D6")],
 ]

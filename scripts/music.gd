@@ -87,6 +87,15 @@ func duck(db: float, hold := 0.5) -> void:
 	_duck_hold = maxf(_duck_hold, hold)
 
 
+## 1 on the beat of the play track (124 BPM), falling off before the next;
+## 0 when it is not playing. For lights that breathe with the music.
+func beat_pulse() -> float:
+	if mode != Mode.PLAY or _play == null or not _play.playing:
+		return 0.0
+	var ph := fposmod(_play.get_playback_position() * 124.0 / 60.0, 1.0)
+	return exp(-ph * 5.0) * db_to_linear(_play_db)
+
+
 func set_mode(m: Mode) -> void:
 	mode = m
 

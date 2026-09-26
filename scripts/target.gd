@@ -236,7 +236,11 @@ var _m_mem := 0                     # leading vertices: the membrane
 var _m_dim := Vector2i(-1, -1)      # vertex range at reduced alpha (cracked ring)
 var _m_key := -1
 var _one_col := PackedColorArray([Color.WHITE])
-var _r_mid := PackedVector2Array()  # string strip (world space)
+var _r_mid := PackedVector2Array()
+var _c_pts := PackedVector2Array()  # chain links (world space)
+var _c_uv := PackedVector2Array()
+var _c_sh := PackedVector2Array()
+var _c_idx := PackedInt32Array()  # string strip (world space)
 var _r_pts := PackedVector2Array()
 var _r_uv := PackedVector2Array()
 var _r_idx := PackedInt32Array()
@@ -1226,16 +1230,17 @@ func body_xform() -> Transform2D:
 
 
 ## Steel chain along the string: links every 7 px, alternately seen flat
-## (an open oval) and edge-on (a short bar), lit from the upper left, and
-## hidden where the body covers the end. World space.
-func _draw_chain(f: Node2D) -> void:
+## (an open oval) and edge-on (a short bar), hidden where the body covers
+## the end. Built as one tube mesh in the lit wire material (shaded and
+## antialiased by the shader) plus its soft shadow: two draw calls for the
+## whole chain. World space, drawn with the string.
+func _draw_chain(ci: RID) -> void:
 	const STEP := 7.0
-	var a := rope_alpha * modulate.a
-	var steel := Color(Pal.METAL_LIGHT.lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5), a)
-	var shine := Color(Pal.INK, 0.55 * a)
-	var shadow := Color(0.0, 0.0, 0.0, 0.45 * a)
+	const HW := 1.15
 	var hide := radius * depth_scale() * 0.85
-	var inv := _xf.affine_inverse()
+	_c_pts.clear()
+	_c_uv.clear()
+	_c_idx.clear()
 	var dist := 0.0
 	var next := STEP * 0.5
 	var k := 0
@@ -1249,20 +1254,43 @@ func _draw_chain(f: Node2D) -> void:
 			k += 1
 			if _attached and c.distance_to(pos) < hide:
 				continue
-			var ang := (p1 - p0).angle()
+			var d := (p1 - p0) / seg
+			var n := d.orthogonal()
+			var base := _c_pts.size()
 			if k % 2 == 0:
-				f.draw_set_transform_matrix(inv * Transform2D(ang, Vector2(1.0, 0.58), 0.0, c + Vector2(0.8, 0.8)))
-				f.draw_arc(Vector2.ZERO, 4.6, 0.0, TAU, 12, shadow, 1.8, true)
-				f.draw_set_transform_matrix(inv * Transform2D(ang, Vector2(1.0, 0.58), 0.0, c))
-				f.draw_arc(Vector2.ZERO, 4.6, 0.0, TAU, 12, steel, 1.6, true)
-				f.draw_arc(Vector2.ZERO, 4.6, PI * 1.05, PI * 1.55, 5, shine, 1.0, true)
+				# Flat link: a tube around an oval 4.6 along, 2.7 across.
+				for j in 13:
+					var ang := TAU * j / 12.0
+					var p := c + d * cos(ang) * 4.6 + n * sin(ang) * 2.67
+					var m := (d * cos(ang) / 4.6 + n * sin(ang) / 2.67).normalized()
+					_c_pts.append(p - m * HW)
+					_c_pts.append(p + m * HW)
+					_c_uv.append(Vector2(B_WIRE - 1.0, float(j)))
+					_c_uv.append(Vector2(B_WIRE + 1.0, float(j)))
+				for j in 12:
+					var q := base + j * 2
+					_c_idx.append_array([q, q + 1, q + 3, q, q + 3, q + 2])
 			else:
-				var d := Vector2.from_angle(ang) * 4.6
-				f.draw_set_transform_matrix(inv)
-				f.draw_line(c - d + Vector2(0.8, 0.8), c + d + Vector2(0.8, 0.8), shadow, 2.4, true)
-				f.draw_line(c - d, c + d, steel, 2.0, true)
+				# Edge-on link: a short bar.
+				var e := d * 4.6
+				var w := n * HW * 1.2
+				_c_pts.append_array([c - e - w, c - e + w, c + e - w, c + e + w])
+				_c_uv.append_array([Vector2(B_WIRE - 1.0, 0.0), Vector2(B_WIRE + 1.0, 0.0), Vector2(B_WIRE - 1.0, 1.0), Vector2(B_WIRE + 1.0, 1.0)])
+				_c_idx.append_array([base, base + 1, base + 3, base, base + 3, base + 2])
 		dist += seg
-	f.draw_set_transform_matrix(inv)
+	if _c_idx.is_empty():
+		return
+	var a := rope_alpha * modulate.a
+	# Shadow: the same links, pushed down-right, in the soft shadow band.
+	_c_sh.resize(_c_uv.size())
+	for j in _c_uv.size():
+		_c_sh[j] = Vector2(B_SHADOW + (_c_uv[j].x - B_WIRE), 0.0)
+	RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse() * Transform2D(0.0, Vector2(0.9, 0.9)))
+	_one_col[0] = Color(0.0, 0.0, 0.0, 0.5 * a)
+	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_sh)
+	RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse())
+	_one_col[0] = Color(Pal.METAL_LIGHT.lightened(0.35).lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5), a)
+	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_uv)
 
 
 func rope_style() -> Rope:
@@ -1595,6 +1623,8 @@ func _draw_rope(ci: RID) -> void:
 			sc = tint.darkened(0.1)
 	_one_col[0] = Color(sc, rope_alpha)
 	RenderingServer.canvas_item_add_triangle_array(ci, _r_idx, _r_pts, _one_col, _r_uv)
+	if style == Rope.CHAIN:
+		_draw_chain(ci)
 
 
 ## Rebuilds the mesh when the kind or health changed; jelly then moves its
@@ -1919,8 +1949,6 @@ func _draw_face() -> void:
 			var a := -0.9 + k * 0.9
 			f.draw_line(q, q + Vector2.from_angle(a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
 			f.draw_line(q, q + Vector2.from_angle(PI - a) * 6.0, Color(Pal.INK, 0.7 * blink * rope_alpha), 1.2, true)
-	if rope_style() == Rope.CHAIN and rope_alpha > 0.0 and _r_mid.size() > 1:
-		_draw_chain(f)
 	if _gone:
 		f.draw_set_transform_matrix(Transform2D.IDENTITY)
 		return

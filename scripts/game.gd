@@ -86,6 +86,7 @@ var _chain_t := 0.0
 var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
+var _grade: ShaderMaterial
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
@@ -155,6 +156,17 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
+	# The room's final look: bloom and a warm, dreamy grade (not the HUD).
+	var grade_layer := CanvasLayer.new()
+	grade_layer.layer = 3
+	add_child(grade_layer)
+	var grade := ColorRect.new()
+	grade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	grade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grade = ShaderMaterial.new()
+	_grade.shader = preload("res://shaders/grade.gdshader")
+	grade.material = _grade
+	grade_layer.add_child(grade)
 	# Shock rings refract the world (not the HUD); hidden while none are live.
 	var shock_layer := CanvasLayer.new()
 	shock_layer.layer = 4
@@ -480,6 +492,7 @@ func _process(delta: float) -> void:
 		_acc -= SUBSTEP
 		_step(SUBSTEP)
 	_state_t += delta
+	_grade_tick()
 	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
 	_update_tilt(delta)
 	_update_ammo(delta)
@@ -503,6 +516,22 @@ static func sensor_gravity() -> Vector3:
 	if g.length() < 2.0:
 		g = Input.get_accelerometer()
 	return g if g.length() >= 2.0 else Vector3.ZERO
+
+
+## Bloom quality by device tier (off on the weakest), the screen's pixel
+## scale, and time for the grain.
+func _grade_tick() -> void:
+	# The device's tier drops on its own if frames run long, and takes the
+	# bloom down with it.
+	var taps := 8
+	match Device.tier:
+		Device.Tier.LOW:
+			taps = 0
+		Device.Tier.MID:
+			taps = 4
+	_grade.set_shader_parameter("taps", taps)
+	_grade.set_shader_parameter("scale", float(DisplayServer.window_get_size().x) / layout.size.x)
+	_grade.set_shader_parameter("time", _time)
 
 
 ## Reads the gravity sensor. The reference follows the phone's resting
@@ -1592,6 +1621,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
 	run_kills += 1
+	rail.flare(0.8)
 	# The neighbours follow the fall with their eyes; the closest flinch.
 	for n in targets:
 		if n != t and n.is_hittable():

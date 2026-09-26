@@ -254,9 +254,15 @@ func _demo_step(delta: float) -> void:
 			_demo_ball = 0.0
 			power = 0.0
 			Sfx.play("release", 1.0, -10.0)
-		# Let go: the same damped spring as a real release.
-		pouch_vel += (-SPRING_K * (pouch - rest) - SPRING_C * pouch_vel) * delta
-		pouch += pouch_vel * delta
+		# Let go: the same damped spring as a real release, in fixed small
+		# steps like the real one. (One long frame, a hitch or a slow
+		# device, would otherwise make this stiff spring blow up.)
+		var left := minf(delta, 0.1)
+		while left > 0.0:
+			var h := minf(left, 1.0 / 120.0)
+			pouch_vel += (-SPRING_K * (pouch - rest) - SPRING_C * pouch_vel) * h
+			pouch += pouch_vel * h
+			left -= h
 		_demo_ball += delta
 
 

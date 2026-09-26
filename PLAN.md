@@ -1555,3 +1555,45 @@ Grafikken er gjennomgått i høy oppløsning (1080×2400 og 1440×3200).
 - **Sirkelteksturen for øyne, nagler og perler:** 128 → 256 px, og ringen
   64 → 128 px. Store sirkler på skjermer med høy tetthet beholder da en kant
   på én piksel.
+
+# v7.18 – Drømmende og koselig (A og B)
+
+## A. Lys og farger
+- **Fargegradering (`shaders/grade.gdshader`):**
+  - Et eget lag over rommet, men under HUD-en.
+  - Myk glød rundt lyse partier (ring av prøvepunkter, bare det lyse slipper gjennom).
+  - Skyggene løftes mot dyp plomme i stedet for nesten-svart.
+  - Høylysene varmes mot krem, metningen senkes 8 %, og det legges på fint filmkorn.
+  - Kula (gull) og faresignalet (korall) leses fortsatt tydelig.
+- **Rommet:**
+  - Veggen er plommemørk.
+  - Lampen er varm rav og litt sterkere.
+  - Gulvet har samme lune tone.
+- **Nytt tema «Skumring»:** myk lavendelblå, salvie og pudderfarger.
+
+## B. Atmosfære
+- **Måneskinn:** et høyt, skrått lysfelt fra et vindu utenfor bildet.
+  - Vindussprossene tegnes i lyset.
+  - Venstre kant ligger i skyggen av en gardin som svaier i trekken.
+- **Lysslynge under bjelken:** små kremfargede pærer i buer.
+  - Pærene blinker rolig og pulserer i takt med musikken (124 BPM, fra
+    avspillingsposisjonen).
+  - De blusser opp når noe knuses.
+  - Gløden tegnes additivt.
+- **Ildfluer:** gulgrønne glimt som driver sakte og blinker via fargerampen, tegnet
+  additivt og justert etter enhetsnivå.
+- **Dybdeskarphet:**
+  - Fjerne strenger er myke (bred, svak strek under en fin).
+  - Flere og større bokeh-fnugg: varme i lampelyset, måneblå ellers.
+
+## Rettet underveis
+- **Demo-sprettert:** i menyens demo-animasjon kunne fjæra «eksplodere» ut av skjermen
+  ved lange bilder (eksplisitt Euler med stiv fjær og bildetid). Den integreres nå
+  i faste småsteg (1/120 s), som ved ekte slipp.
+- **Kjetting:** leddene tegnes nå som ett lyssatt rørnett med skygge, altså to
+  tegnekall per kjetting i stedet for ett per ledd. Tegnekallene gikk fra ca. 1 250
+  tilbake til ca. 300.
+
+## Ytelse
+Gløden bruker 8 prøvepunkter på sterke enheter, 4 på middels og ingen på svake.
+Enhetsnivået senkes av seg selv hvis bildene tar for lang tid.
