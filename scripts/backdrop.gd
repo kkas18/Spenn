@@ -84,6 +84,8 @@ var _pts := PackedVector2Array()
 var _cols := PackedColorArray()
 var _halo := PackedColorArray()
 var _pal: Array[Color] = []
+var _ink_l := Ink.new()   # the layer's strokes and dots (one draw call)
+var _ink_g := Ink.new()   # the glow's
 var _ripples: Array[Dictionary] = []
 var _drops: Array[Dictionary] = []
 var _last_beat := -1
@@ -384,11 +386,15 @@ func _draw_layer() -> void:
 	if l == null:
 		return
 	_layer.position = view * 0.4
+	# Soft textured shapes draw directly; every line, bead and plate is
+	# collected in `_ink_l` and goes out as one draw call at the end.
+	_ink_l.clear()
 	_draw_wall_shadows()
 	_draw_bokeh()
 	_draw_gust()
 	_draw_far()
 	_draw_danger()
+	_ink_l.flush(_layer.get_canvas_item())
 
 
 ## Every hanging target throws a soft shadow onto the wall behind it, away
@@ -409,8 +415,7 @@ func _draw_wall_shadows() -> void:
 		var al := a * lerpf(0.6, 0.38, far)
 		if t.phase == Target.Phase.HANGING and t.rope_alpha > 0.0:
 			# World space: the body shadow below leaves its own transform set.
-			_layer.draw_set_transform(Vector2.ZERO)
-			_layer.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.1 * a), 2.0, true)
+			_ink_l.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.1 * a), 2.0)
 		var stretch := 1.0
 		if t.kind == Target.Kind.ROD:
 			stretch = (Target.ROD_HALF + t.radius) / t.radius
@@ -522,12 +527,12 @@ func _draw_far() -> void:
 					bright *= lerpf(0.3, 1.0, near * near)
 			_cols[v] = Color(col, minf(bright, 0.8))
 			_halo[v] = Color(col, minf(bright, 0.8) * 0.32)
-		_layer.draw_polyline_colors(_pts, _cols, 1.0, true)
+		_ink_l.draw_polyline_colors(_pts, _cols, 1.0)
 		for b in f.beads:
 			var bs := 1.0 - float(b) * 0.09
 			var bp := top + Vector2(sway * pow(bs, 1.5), length * bs)
 			var bc: Color = _cols[SEG - 1]
-			Pal.disc(_layer, bp, 2.4, Color(bc, minf(1.0, bc.a * 1.6 + 0.5 * f.flash)))
+			_ink_l.disc(bp, 2.4, Color(bc, minf(1.0, bc.a * 1.6 + 0.5 * f.flash)))
 		f.pts = _pts.duplicate()
 		f.halo = _halo.duplicate()
 		f.bead = top + Vector2(sway, length * _bead_s(f))
@@ -559,7 +564,7 @@ func _draw_gust() -> void:
 		var sp := 700.0 + 500.0 * fposmod(i * 0.71, 1.0)
 		var x := fposmod(i * 131.0 + _clock * sp * dir, w + len * 2.0) - len
 		var a := 0.07 * g * (0.5 + 0.5 * fposmod(i * 0.43, 1.0))
-		_layer.draw_line(Vector2(x, y), Vector2(x - dir * len, y + len * 0.04), Color(Pal.INK, a), 1.2, true)
+		_ink_l.draw_line(Vector2(x, y), Vector2(x - dir * len, y + len * 0.04), Color(Pal.INK, a), 1.2)
 
 
 ## Where a string's lowest bead sits (0..1 down it).
@@ -580,10 +585,13 @@ func _draw_glow() -> void:
 	if l == null or _far.is_empty() or not _far[0].has("pts"):
 		return
 	_glow.position = view * 0.4
+	# Additive, so order does not matter: the soft sprites draw directly,
+	# every stroke and dot goes out together in `_ink_g` at the end.
+	_ink_g.clear()
 	var hi := Device.tier != Device.Tier.LOW
 	for f in _far:
 		if hi:
-			_glow.draw_polyline_colors(f.pts, f.halo, 7.0, true)
+			_ink_g.draw_polyline_colors(f.pts, f.halo, 7.0)
 		if f.drop != Vector2.INF:
 			_glow.draw_texture_rect(SOFT, Rect2(f.drop - Vector2(9, 9), Vector2(18, 18)), false, Color(Pal.INK.lerp(f.col, 0.5), 0.55))
 		if f.flash > 0.0:
@@ -600,7 +608,7 @@ func _draw_glow() -> void:
 			var trail := PackedVector2Array()
 			for k in 9:
 				trail.append(_fibre_at(f, lerpf(s_now, e.s0, k / 8.0)))
-			_glow.draw_polyline(trail, Color(e.col, 0.55 * fade), 3.0, true)
+			_ink_g.draw_polyline(trail, Color(e.col, 0.55 * fade), 3.0, true)
 		for k in 6:
 			var ek := e.duplicate()
 			ek.t = maxf(0.0, e.t - k * 0.02)
@@ -611,7 +619,7 @@ func _draw_glow() -> void:
 			_glow.draw_texture_rect(SOFT, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(e.col, 0.9 - k * 0.13))
 		var hp := _energy_pos(e)
 		if hp != Vector2.INF:
-			_glow.draw_circle(hp, 3.6, Color(1, 1, 1, 0.9), true, -1.0, true)
+			_ink_g.draw_circle(hp, 3.6, Color(1, 1, 1, 0.9), true, -1.0, true)
 	# Foreshadows: a thread running down to where an enemy will hang.
 	var o := view * 0.4
 	for fo in _fore:
@@ -619,7 +627,7 @@ func _draw_glow() -> void:
 		var top := Vector2(fo.at.x, l.rail_y + 4.0) - o
 		var end := Vector2(fo.at.x, lerpf(l.rail_y + 4.0, fo.at.y, Motion.ease_value(Motion.Ease.STANDARD, k))) - o
 		var fade: float = 1.0 - clampf((fo.t - fo.dur) / 0.35, 0.0, 1.0)
-		_glow.draw_line(top, end, Color(fo.col, 0.6 * fade), 3.0, true)
+		_ink_g.draw_line(top, end, Color(fo.col, 0.6 * fade), 3.0, true)
 		_glow.draw_texture_rect(SOFT, Rect2(end - Vector2(16, 16), Vector2(32, 32)), false, Color(fo.col, 0.9 * fade))
 		# Where it will hang: a dashed ring the size of a body, turning.
 		var ring_at := Vector2(fo.at.x, fo.at.y) - o
@@ -627,7 +635,7 @@ func _draw_glow() -> void:
 		if rk > 0.0:
 			for d in 10:
 				var a0: float = _clock * 1.5 + d * TAU / 10.0
-				_glow.draw_arc(ring_at, 26.0 * rk, a0, a0 + 0.35, 5, Color(fo.col, 0.7 * fade), 2.0, true)
+				_ink_g.draw_arc(ring_at, 26.0 * rk, a0, a0 + 0.35, 5, Color(fo.col, 0.7 * fade), 2.0, true)
 		if fo.t >= fo.dur:
 			var fr: float = 14.0 + 30.0 * (fo.t - fo.dur) / 0.35
 			_glow.draw_texture_rect(SOFT, Rect2(end - Vector2(fr, fr), Vector2(fr, fr) * 2.0), false, Color(fo.col, 0.5 * fade))
@@ -635,7 +643,7 @@ func _draw_glow() -> void:
 	if warn_kind == 1 and warn > 0.0:
 		for f in _far:
 			var gx: float = f.pts[0].x + fposmod(_clock * 260.0 * warn_dir + f.phase * 40.0, 60.0) * warn_dir
-			_glow.draw_circle(Vector2(gx, f.pts[0].y + 20.0), 2.0, Color(Pal.INK, 0.5 * warn), true, -1.0, true)
+			_ink_g.draw_circle(Vector2(gx, f.pts[0].y + 20.0), 2.0, Color(Pal.INK, 0.5 * warn), true, -1.0, true)
 	# The gold drop.
 	if not _gold.is_empty():
 		var gp := _gold_local()
@@ -651,9 +659,10 @@ func _draw_glow() -> void:
 		# Glints turning round it, so it reads as a prize, not a bead.
 		for k in 4:
 			var d := Vector2.from_angle(_clock * 1.8 + k * TAU / 4.0)
-			_glow.draw_line(gp + d * (gr + 5.0), gp + d * (gr + 12.0), Color(Pal.GOLD_LIGHT, 0.7 * ga), 1.6, true)
-		_glow.draw_circle(gp, gr, Color(Pal.GOLD, 0.95 * ga), true, -1.0, true)
-		_glow.draw_circle(gp + Vector2(-3.0, -3.5), gr * 0.35, Color(1, 1, 1, 0.75 * ga), true, -1.0, true)
+			_ink_g.draw_line(gp + d * (gr + 5.0), gp + d * (gr + 12.0), Color(Pal.GOLD_LIGHT, 0.7 * ga), 1.6, true)
+		_ink_g.draw_circle(gp, gr, Color(Pal.GOLD, 0.95 * ga), true, -1.0, true)
+		_ink_g.draw_circle(gp + Vector2(-3.0, -3.5), gr * 0.35, Color(1, 1, 1, 0.75 * ga), true, -1.0, true)
+	_ink_g.flush(_glow.get_canvas_item())
 
 
 ## The danger line is a real wire, strung taut from wall to wall between
@@ -678,24 +687,25 @@ func _draw_danger() -> void:
 		var env := sin(PI * i / 40.0)
 		_wire.append(Vector2(x, y + sin(_clock * hz + i * 0.9) * amp * env))
 	var col := Pal.METAL.lerp(Pal.CORAL, k).lerp(Pal.GOLD_LIGHT, _rescue)
+	var ink := _ink_l
 	if k > 0.05:
 		# Warm halo around the wire when it is under strain.
-		_layer.draw_polyline(_wire, Color(Pal.CORAL, 0.12 * k), 9.0, true)
+		ink.draw_polyline(_wire, Color(Pal.CORAL, 0.12 * k), 9.0)
 	if _rescue > 0.0:
-		_layer.draw_polyline(_wire, Color(Pal.GOLD_LIGHT, 0.3 * _rescue), 12.0, true)
-	_layer.draw_set_transform(Vector2(0, 2))
-	_layer.draw_polyline(_wire, Color(Pal.SHADOW, 0.6), 2.0, true)
-	_layer.draw_set_transform(Vector2.ZERO)
-	_layer.draw_polyline(_wire, Color(col, lerpf(0.45, 0.95, k)), 1.6 + k * 0.8, true)
-	_layer.draw_set_transform(Vector2(0, -0.7))
-	_layer.draw_polyline(_wire, Color(Pal.INK, 0.12 + 0.2 * k), 0.6, true)
-	_layer.draw_set_transform(Vector2.ZERO)
+		ink.draw_polyline(_wire, Color(Pal.GOLD_LIGHT, 0.3 * _rescue), 12.0)
+	ink.draw_set_transform_matrix(Transform2D(0.0, Vector2(0, 2)))
+	ink.draw_polyline(_wire, Color(Pal.SHADOW, 0.6), 2.0)
+	ink.draw_set_transform_matrix(Transform2D.IDENTITY)
+	ink.draw_polyline(_wire, Color(col, lerpf(0.45, 0.95, k)), 1.6 + k * 0.8)
+	ink.draw_set_transform_matrix(Transform2D(0.0, Vector2(0, -0.7)))
+	ink.draw_polyline(_wire, Color(Pal.INK, 0.12 + 0.2 * k), 0.6)
+	ink.draw_set_transform_matrix(Transform2D.IDENTITY)
 	# Wall plates the wire is bolted to.
 	for side in [0.0, 1.0]:
 		var px: float = side * w
 		var r := Rect2(px - 7.0, y - 11.0, 14.0, 22.0)
-		_layer.draw_rect(Rect2(r.position + Vector2(2, 2), r.size), Pal.SHADOW)
-		_layer.draw_rect(r, Pal.METAL_DARK)
-		_layer.draw_rect(Rect2(r.position, Vector2(14.0, 2.0)), Color(Pal.METAL_LIGHT, 0.5))
-		Pal.disc(_layer, Vector2(px + (4.0 if side == 0.0 else -4.0), y - 6.0), 1.6, Pal.METAL_LIGHT)
+		ink.draw_rect(Rect2(r.position + Vector2(2, 2), r.size), Pal.SHADOW)
+		ink.draw_rect(r, Pal.METAL_DARK)
+		ink.draw_rect(Rect2(r.position, Vector2(14.0, 2.0)), Color(Pal.METAL_LIGHT, 0.5))
+		ink.disc(Vector2(px + (4.0 if side == 0.0 else -4.0), y - 6.0), 1.6, Pal.METAL_LIGHT)
 		Pal.disc(_layer, Vector2(px + (4.0 if side == 0.0 else -4.0), y + 6.0), 1.6, Pal.METAL_LIGHT)

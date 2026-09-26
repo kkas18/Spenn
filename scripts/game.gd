@@ -168,6 +168,9 @@ var fx: Fx
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
+var _hang: Array[Target] = []     # contact broad phase: hanging bodies,
+var _reach: Array[float] = []     # how far each one's shape reaches,
+var _pushers: Array[Target] = []  # and the bodies that push strings aside
 var balls: Array[Ball] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -297,6 +300,7 @@ func _apply_layout() -> void:
 	rail.setup(layout, targets)
 	backdrop.setup(layout)
 	backdrop.targets = targets
+	fx.targets = targets
 	fx.l = layout
 	(fx.shock_rect.material as ShaderMaterial).set_shader_parameter("size", layout.size)
 	slingshot.setup(layout)
@@ -709,7 +713,12 @@ func _process(delta: float) -> void:
 	_acc += minf(delta, 0.05)
 	while _acc >= SUBSTEP:
 		_acc -= SUBSTEP
+		for t in targets:
+			t.prev_pos = t.pos
+		for b in balls:
+			b.prev_pos = b.pos
 		_step(SUBSTEP)
+	_interpolate(_acc / SUBSTEP)
 	_state_t += delta
 	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
 	_update_tilt(delta)
@@ -1033,7 +1042,9 @@ func _update_ball_light() -> void:
 		if k >= 3:
 			break
 		if b.active:
-			var gp := b.global_position
+			# Where the ball is drawn (its node carries the shake and the
+			# render interpolation; `pos` is in the node's space).
+			var gp := b.get_global_transform() * b.pos
 			var glow := (1.0 if Ball.hot else 0.7) * b.modulate.a
 			_lights[k] = Vector4(gp.x, gp.y, 230.0 * layout.scale, glow)
 			k += 1
@@ -1335,6 +1346,22 @@ func _step(dt: float) -> void:
 					break
 
 
+## The physics runs in fixed 1/120 s steps, which a 90 or 144 Hz screen
+## does not divide evenly; drawing each body where it was a fraction `k` of
+## the way through the current step keeps motion even at any refresh rate
+## (it lags the simulation by under one step). Only the drawing moves:
+## bodies' `pos` stays the simulation's. A jump (a spawn, a snap) is not
+## smoothed.
+func _interpolate(k: float) -> void:
+	var back := 1.0 - clampf(k, 0.0, 1.0)
+	for t in targets:
+		var off := (t.prev_pos - t.pos) * back
+		t.render_off = off if off.length_squared() < 400.0 else Vector2.ZERO
+	for b in balls:
+		var off := (b.prev_pos - b.pos) * back
+		b.position = off if b.active and off.length_squared() < 400.0 else Vector2.ZERO
+
+
 ## Slow layered breeze: a few px/s² of sideways push that drifts across
 ## the field, enough for hanging targets to sway at rest.
 func _breeze(x: float) -> float:
@@ -1345,15 +1372,26 @@ func _breeze(x: float) -> float:
 ## inverse mass and the closing speed is exchanged with low restitution,
 ## so a struck target can nudge its neighbours.
 func _target_contacts() -> void:
-	var n := targets.size()
 	var sc := layout.scale
+	# Broad phase: the hanging bodies once, each with how far its shape can
+	# reach from its centre, so far-apart pairs are dropped on two
+	# subtractions before any closest-point work.
+	_hang.clear()
+	_reach.clear()
+	for t in targets:
+		if t.phase != Target.Phase.OFF:
+			t.update_rope_box()
+		if t.is_hittable():
+			_hang.append(t)
+			_reach.append(t.shape_radius() + (Target.ROD_HALF if t.kind == Target.Kind.ROD else 0.0))
+	var n := _hang.size()
 	for i in n:
-		var a := targets[i]
-		if not a.is_hittable():
-			continue
+		var a := _hang[i]
+		var ra: float = _reach[i]
 		for j in range(i + 1, n):
-			var c := targets[j]
-			if not c.is_hittable():
+			var c := _hang[j]
+			var rsum: float = ra + _reach[j]
+			if absf(a.pos.x - c.pos.x) >= rsum or absf(a.pos.y - c.pos.y) >= rsum:
 				continue
 			# Shapes: circles, and a capsule for the Pendel (closest points on
 			# its segment), so a rod is struck along its whole length.
@@ -1414,19 +1452,27 @@ func _target_contacts() -> void:
 				Sfx.haptic(6, 0.2)
 	# Ropes slide around the bodies they meet instead of passing through,
 	# and bodies keep inside the walls.
-	for t in targets:
-		if t.phase == Target.Phase.OFF:
-			continue
-		if t.is_hittable():
-			t.keep_in(layout.size.x)
-			for o in targets:
-				if o == t or absf(o.pos.x - t.pos.x) >= o.radius + 160.0 * sc:
-					continue
-				# Hanging bodies and falling ones alike push strings aside.
-				if o.is_solid() or o.is_crushing(0.0):
-					t.rope_avoid(o)
-				if o.is_hittable() and o.get_instance_id() > t.get_instance_id():
-					t.rope_rope(o)
+	# Only bodies inside a string's bounding box can touch it.
+	_pushers.clear()
+	for o in targets:
+		if o.is_solid() or o.is_crushing(0.0):
+			_pushers.append(o)
+	for i in n:
+		var t := _hang[i]
+		t.keep_in(layout.size.x)
+		var box := t.rope_box
+		for o in _pushers:
+			if o == t:
+				continue
+			var r := o.shape_radius() + (Target.ROD_HALF if o.kind == Target.Kind.ROD else 0.0) + 2.0
+			if o.pos.x + r < box.position.x or o.pos.x - r > box.end.x or o.pos.y + r < box.position.y or o.pos.y - r > box.end.y:
+				continue
+			# Hanging bodies and falling ones alike push strings aside.
+			t.rope_avoid(o)
+		for j in range(i + 1, n):
+			var o := _hang[j]
+			if box.intersects(o.rope_box.grow(6.0)):
+				t.rope_rope(o)
 
 
 ## A killed shell or a cut target falls; whatever still hangs in its way is
@@ -2671,7 +2717,15 @@ func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if _told.has(key):
 		return
 	_told[key] = true
-	fx.popup(Loc.t(key), at + Vector2(0, -60.0), col, 18)
+	var text := Loc.t(key)
+	if Prefs.hints.has(key):
+		# Explained before (in an earlier run): just its name, smaller, and
+		# the badge on the body says the rest.
+		fx.popup(text.get_slice(" – ", 0), at + Vector2(0, -60.0), col, 16)
+		Sfx.play("tease", 1.05, -9.0)
+		return
+	Prefs.hints[key] = true
+	fx.popup(text, at + Vector2(0, -60.0), col, 18)
 	Sfx.play("tease", 0.95, -4.0)
 
 

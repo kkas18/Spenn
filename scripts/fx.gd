@@ -71,6 +71,7 @@ var view := Vector2.ZERO          # tilt parallax offset of the world (px)
 # layer with additive blending, drawn over the rest of the effects.
 var _glow: Node2D
 const TEX_SOFT := preload("res://assets/particles/soft.png")
+var targets: Array[Target] = []   # popups keep clear of these (set by Game)
 var _links: Array[Dictionary] = []
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _charms: Array[Dictionary] = []  # trick charms in flight between targets
@@ -123,7 +124,7 @@ func _ready() -> void:
 			"col": Pal.INK, "pts": PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])})
 	for i in FRAG_POOL:
 		_frags.append({"t": -1.0, "type": 0, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
-			"spin": 0.0, "a0": 0.0, "a1": 0.0, "r": 0.0, "w": 0.0, "col": Pal.INK, "life": FRAG_LIFE})
+			"spin": 0.0, "a0": 0.0, "a1": 0.0, "r": 0.0, "w": 0.0, "col": Pal.INK, "life": FRAG_LIFE, "flip": 0.0, "flip_v": 0.0})
 	for i in TOKEN_POOL:
 		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
@@ -276,6 +277,10 @@ func _frag(type: int, pos: Vector2, vel: Vector2, col: Color, life := FRAG_LIFE)
 	f.life = life
 	f.rot = 0.0
 	f.spin = _rng.randf_range(-6.0, 6.0)
+	# Tumbling end over end: the piece turns its lit face to the lamp and
+	# away (see _draw), so a shard reads as a solid piece, not a flat line.
+	f.flip = _rng.randf() * TAU
+	f.flip_v = _rng.randf_range(7.0, 14.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
 	return f
 
 
@@ -300,6 +305,16 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 				f.w = 7.0 if kind != Target.Kind.HEAVY else 5.0
 				f.spin = _rng.randf_range(-3.0, 3.0)
 		Target.Kind.SPLIT, Target.Kind.BOSS, Target.Kind.MIRROR:
+			if kind == Target.Kind.BOSS:
+				# Its brass plates come away too, spinning off wide.
+				for i in 3:
+					var mid := rot + i * TAU / 3.0
+					var f := _frag(Frag.ARC, at, inherit + Vector2.from_angle(mid) * _rng.randf_range(160.0, 240.0) + Vector2(0, -90), Tok.PRIMARY, FRAG_LIFE * 1.3)
+					f.a0 = mid - 0.5
+					f.a1 = mid + 0.5
+					f.r = radius + 11.0
+					f.w = 7.0
+					f.spin = _rng.randf_range(-4.0, 4.0)
 			var rr := radius - (4.0 if kind == Target.Kind.SPLIT else 0.0)
 			for i in 6:
 				var a := rot + i * TAU / 6.0 + PI / 6.0
@@ -427,6 +442,28 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 				y = hit.pos.y + (hit.size + 8.0)
 		else:
 			y = hit.pos.y + (hit.size + 8.0)
+	# Keep clear of the enemies: a callout printed over a body hides the
+	# face you are aiming at. It moves to just above the body in the way
+	# (it rises from there), or just below when there is no room above.
+	for pass_i in 4:
+		var block: Target = null
+		for t in targets:
+			if not t.is_hittable():
+				continue
+			var tr := t.radius * t.depth_scale() + 6.0
+			# The text's box over its whole rise.
+			if absf(t.pos.x - x) < half + tr and t.pos.y + tr > y - size - POPUP_RISE and t.pos.y - tr < y + 4.0:
+				block = t
+				break
+		if block == null:
+			break
+		var br := block.radius * block.depth_scale() + 8.0
+		var above := block.pos.y - br
+		if above - size - POPUP_RISE >= top - POPUP_RISE:
+			y = above
+		else:
+			y = block.pos.y + br + size + POPUP_RISE
+	y = clampf(y, top, l.size.y - l.margin)
 	p.pos = Vector2(x, y)
 
 
@@ -644,6 +681,7 @@ func _process(delta: float) -> void:
 				f.vel *= exp(-0.8 * delta)
 				f.pos += f.vel * delta
 				f.rot += f.spin * delta
+				f.flip += f.flip_v * delta
 	for d in _puffs:
 		if d.t >= 0.0:
 			d.t += delta
@@ -752,12 +790,25 @@ func _draw() -> void:
 		var c: Color = f.col
 		match f.type:
 			Frag.ARC:
-				draw_arc(f.pos + Pal.SHADOW_OFFSET * 0.6, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(0, 0, 0, 0.3 * alpha), f.w, true)
-				draw_arc(f.pos, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(c, alpha), f.w, true)
+				# Lit as it tumbles: thinner edge-on, darker turned away,
+				# with a bright rim on the side toward the lamp.
+				var face := cos(float(f.flip))
+				var fw: float = f.w * (0.45 + 0.55 * absf(face))
+				var body := c.darkened(0.45 * (0.5 - 0.5 * face))
+				draw_arc(f.pos + Pal.SHADOW_OFFSET * 0.6, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(0, 0, 0, 0.3 * alpha), fw, true)
+				draw_arc(f.pos, f.r, f.a0 + f.rot, f.a1 + f.rot, 10, Color(body, alpha), fw, true)
+				draw_arc(f.pos + Vector2(-0.7, -0.7) * fw * 0.3, f.r - fw * 0.2, f.a0 + f.rot + 0.08, f.a1 + f.rot - 0.08, 8, Color(c.lightened(0.4), alpha * maxf(0.0, face) * 0.8), maxf(1.0, fw * 0.3), true)
 			Frag.SEG:
-				var d: Vector2 = Vector2.from_angle(f.rot) * f.r
+				var face := cos(float(f.flip))
+				var d: Vector2 = Vector2.from_angle(f.rot) * f.r * (0.35 + 0.65 * absf(face))
+				var body := c.darkened(0.45 * (0.5 - 0.5 * face))
+				var nrm := Vector2.from_angle(f.rot).orthogonal()
+				if nrm.dot(Vector2(-1, -1)) < 0.0:
+					nrm = -nrm
 				draw_line(f.pos - d + Pal.SHADOW_OFFSET * 0.6, f.pos + d + Pal.SHADOW_OFFSET * 0.6, Color(0, 0, 0, 0.3 * alpha), f.w, true)
-				draw_line(f.pos - d, f.pos + d, Color(c, alpha), f.w, true)
+				draw_line(f.pos - d, f.pos + d, Color(body, alpha), f.w, true)
+				draw_line(f.pos - d * 0.85 + nrm * f.w * 0.28, f.pos + d * 0.85 + nrm * f.w * 0.28, Color(c.lightened(0.4), alpha * maxf(0.0, face) * 0.8), maxf(1.0, f.w * 0.28), true)
+				draw_line(f.pos - d * 0.85 - nrm * f.w * 0.32, f.pos + d * 0.85 - nrm * f.w * 0.32, Color(c.darkened(0.5), alpha * 0.6), maxf(1.0, f.w * 0.2), true)
 			Frag.CAPSULE:
 				var d2 := Vector2.from_angle(f.rot) * 13.0
 				for layer in 2:

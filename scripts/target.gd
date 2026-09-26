@@ -350,6 +350,9 @@ var _clock := 0.0
 
 var _body: Node2D                  # lit layer: string, shadow, body (see rendering)
 var _face: Node2D                  # face layer: eye, mouth, details
+var _ink := Ink.new()              # the face's drawing, sent as one triangle array
+var _face_tick := 0
+var _face_phase := 0
 var _xf := Transform2D.IDENTITY    # this frame's body transform
 var _jit := Vector2.ZERO           # this frame's tremble, shared by every layer
 var _m_pts := PackedVector2Array()  # body mesh (body space)
@@ -369,6 +372,9 @@ var _r_mid := PackedVector2Array()
 var _c_pts := PackedVector2Array()  # chain links (world space)
 var _c_uv := PackedVector2Array()
 var _c_sh := PackedVector2Array()
+var _c_links := -1                 # links the chain arrays are laid out for
+var _lc := PackedVector2Array()     # link centres this frame
+var _ld := PackedVector2Array()     # and directions
 var _c_idx := PackedInt32Array()  # string strip (world space)
 var _r_pts := PackedVector2Array()
 var _r_uv := PackedVector2Array()
@@ -387,7 +393,12 @@ var _screen_h := 1280.0
 var _pluck_cd := 0.0
 
 
+static var _made := 0
+
+
 func _ready() -> void:
+	_face_phase = _made % 2
+	_made += 1
 	_pts.resize(N)
 	_prev.resize(N)
 	_sd.resize(SOFT_N)
@@ -872,6 +883,28 @@ func keep_in(w: float) -> void:
 
 
 ## Pushes this rope's free points out of body `o` (the rope bends round it).
+## The string's bounding box (hook to body), refreshed once per step for
+## the contact broad phase; empty when it has no string.
+var rope_box := Rect2()
+
+## Render interpolation (see Game._interpolate): where the body was a step
+## ago, and how far back from `pos` to draw it this frame.
+var prev_pos := Vector2.ZERO
+var render_off := Vector2.ZERO
+
+
+func update_rope_box() -> void:
+	if not _attached or rope_alpha <= 0.0:
+		rope_box = Rect2(Vector2(-1e6, -1e6), Vector2.ZERO)
+		return
+	var lo := _pts[0]
+	var hi := _pts[0]
+	for i in range(1, N):
+		lo = lo.min(_pts[i])
+		hi = hi.max(_pts[i])
+	rope_box = Rect2(lo, hi - lo)
+
+
 func rope_avoid(o: Target) -> void:
 	if not _attached or rope_alpha <= 0.0:
 		return
@@ -1709,7 +1742,7 @@ func _stance_step(dt: float) -> void:
 
 ## A small sign over the body as the stance changes: ! (wary), a flame
 ## (furious), a star (veteran).
-func _draw_stance(f: Node2D) -> void:
+func _draw_stance(f: Ink) -> void:
 	if stance_flash <= 0.0 or phase != Phase.HANGING:
 		return
 	var a := minf(1.0, stance_flash * 2.0)
@@ -1720,7 +1753,7 @@ func _draw_stance(f: Node2D) -> void:
 	match stance:
 		Stance.WARY:
 			f.draw_line(p + Vector2(0, -4.5), p + Vector2(0, 1.5), Color(col, a), 2.0, true)
-			Pal.disc(f, p + Vector2(0, 4.2), 1.2, Color(col, a))
+			f.disc(p + Vector2(0, 4.2), 1.2, Color(col, a))
 		Stance.FURIOUS:
 			f.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -5.5), p + Vector2(3.5, 1.5), p + Vector2(0, 5.0), p + Vector2(-3.5, 1.5)]), Color(col, a))
 		Stance.VETERAN:
@@ -1802,7 +1835,7 @@ func _arm_step(dt: float) -> void:
 ## the elbow and tapering, in the body's colour with a darker rim. Winding
 ## up it grows out, then draws back and trembles; the shove shoots it out
 ## to the neighbour's side; then it shrinks back in.
-func _draw_arm(f: Node2D) -> void:
+func _draw_arm(f: Ink) -> void:
 	if arm == Arm.NONE or _gone:
 		return
 	var to := arm_to - pos
@@ -1962,7 +1995,7 @@ func _charm_step(dt: float) -> void:
 
 
 ## The bead: a thread from the body, a coloured bead with a tiny glyph.
-func _draw_charm(f: Node2D) -> void:
+func _draw_charm(f: Ink) -> void:
 	if charm == Charm.NONE or phase != Phase.HANGING:
 		return
 	var a := 1.0 - 0.7 * hidden_amt
@@ -2313,7 +2346,7 @@ func body_xform() -> Transform2D:
 		bob = Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * env)
 	var body := Transform2D(body_rot + wig, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
 	var ds := depth_scale()
-	return Transform2D(0.0, pos + _jit + bob) * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
+	return Transform2D(0.0, pos + render_off + _jit + bob) * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
 
 
 ## Steel chain along the string: links every 7 px, alternately seen flat
@@ -2321,16 +2354,28 @@ func body_xform() -> Transform2D:
 ## the end. Built as one tube mesh in the lit wire material (shaded and
 ## antialiased by the shader) plus its soft shadow: two draw calls for the
 ## whole chain. World space, drawn with the string.
+const LINK_SEG := 8
+static var _LINK_P := PackedVector2Array()
+static var _LINK_M := PackedVector2Array()
+
+
 func _draw_chain(ci: RID) -> void:
+	if _LINK_P.is_empty():
+		for j in LINK_SEG + 1:
+			var ang := TAU * j / LINK_SEG
+			_LINK_P.append(Vector2(cos(ang) * 4.6, sin(ang) * 2.67))
+			_LINK_M.append(Vector2(cos(ang) / 4.6, sin(ang) / 2.67).normalized())
 	const STEP := 7.0
 	const HW := 1.15
 	var hide := radius * depth_scale() * 0.85
-	_c_pts.clear()
-	_c_uv.clear()
-	_c_idx.clear()
+	# First the links' centres and directions along the string. Only the
+	# last few (inside the body) are ever hidden, so the drawn links are
+	# always the first K: their UVs and triangles depend on K alone and are
+	# rebuilt only when it changes; each frame just moves the vertices.
+	_lc.clear()
+	_ld.clear()
 	var dist := 0.0
 	var next := STEP * 0.5
-	var k := 0
 	for i in range(1, _r_mid.size()):
 		var p0 := _r_mid[i - 1]
 		var p1 := _r_mid[i]
@@ -2338,46 +2383,74 @@ func _draw_chain(ci: RID) -> void:
 		while seg > 0.0 and next <= dist + seg:
 			var c := p0.lerp(p1, (next - dist) / seg)
 			next += STEP
-			k += 1
 			if _attached and c.distance_to(pos) < hide:
 				continue
-			var d := (p1 - p0) / seg
-			var n := d.orthogonal()
-			var base := _c_pts.size()
-			if k % 2 == 0:
-				# Flat link: a tube around an oval 4.6 along, 2.7 across.
-				for j in 13:
-					var ang := TAU * j / 12.0
-					var p := c + d * cos(ang) * 4.6 + n * sin(ang) * 2.67
-					var m := (d * cos(ang) / 4.6 + n * sin(ang) / 2.67).normalized()
-					_c_pts.append(p - m * HW)
-					_c_pts.append(p + m * HW)
-					_c_uv.append(Vector2(B_WIRE - 1.0, float(j)))
-					_c_uv.append(Vector2(B_WIRE + 1.0, float(j)))
-				for j in 12:
-					var q := base + j * 2
-					_c_idx.append_array([q, q + 1, q + 3, q, q + 3, q + 2])
-			else:
-				# Edge-on link: a short bar.
-				var e := d * 4.6
-				var w := n * HW * 1.2
-				_c_pts.append_array([c - e - w, c - e + w, c + e - w, c + e + w])
-				_c_uv.append_array([Vector2(B_WIRE - 1.0, 0.0), Vector2(B_WIRE + 1.0, 0.0), Vector2(B_WIRE - 1.0, 1.0), Vector2(B_WIRE + 1.0, 1.0)])
-				_c_idx.append_array([base, base + 1, base + 3, base, base + 3, base + 2])
+			_lc.append(c)
+			_ld.append((p1 - p0) / seg)
 		dist += seg
-	if _c_idx.is_empty():
+	var links := _lc.size()
+	if links == 0:
 		return
+	if links != _c_links:
+		_chain_layout(links)
+	var v := 0
+	for k in links:
+		var c := _lc[k]
+		var d := _ld[k]
+		var n := d.orthogonal()
+		if k % 2 == 1:
+			# Flat link: a tube around an oval 4.6 along, 2.7 across
+			# (its outline and normals from a table, in the link's frame).
+			for j in LINK_SEG + 1:
+				var lp := _LINK_P[j]
+				var lm := _LINK_M[j]
+				var p := c + d * lp.x + n * lp.y
+				var m := (d * lm.x + n * lm.y) * HW
+				_c_pts[v] = p - m
+				_c_pts[v + 1] = p + m
+				v += 2
+		else:
+			# Edge-on link: a short bar.
+			var e := d * 4.6
+			var w := n * HW * 1.2
+			_c_pts[v] = c - e - w
+			_c_pts[v + 1] = c - e + w
+			_c_pts[v + 2] = c + e - w
+			_c_pts[v + 3] = c + e + w
+			v += 4
 	var a := rope_alpha * modulate.a
 	# Shadow: the same links, pushed down-right, in the soft shadow band.
-	_c_sh.resize(_c_uv.size())
-	for j in _c_uv.size():
-		_c_sh[j] = Vector2(B_SHADOW + (_c_uv[j].x - B_WIRE), 0.0)
 	RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse() * Transform2D(0.0, Vector2(0.9, 0.9)))
 	_one_col[0] = Color(0.0, 0.0, 0.0, 0.5 * a)
 	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_sh)
 	RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse())
 	_one_col[0] = Color(Pal.METAL_LIGHT.lightened(0.35).lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5), a)
 	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_uv)
+
+
+## UVs, shadow UVs and triangles for a chain of `links` links (edge-on and
+## flat in turn, starting edge-on); the vertices are filled per frame.
+func _chain_layout(links: int) -> void:
+	_c_links = links
+	_c_pts.clear()
+	_c_uv.clear()
+	_c_idx.clear()
+	for k in links:
+		var base := _c_uv.size()
+		if k % 2 == 1:
+			for j in LINK_SEG + 1:
+				_c_uv.append(Vector2(B_WIRE - 1.0, float(j)))
+				_c_uv.append(Vector2(B_WIRE + 1.0, float(j)))
+			for j in LINK_SEG:
+				var q := base + j * 2
+				_c_idx.append_array([q, q + 1, q + 3, q, q + 3, q + 2])
+		else:
+			_c_uv.append_array([Vector2(B_WIRE - 1.0, 0.0), Vector2(B_WIRE + 1.0, 0.0), Vector2(B_WIRE - 1.0, 1.0), Vector2(B_WIRE + 1.0, 1.0)])
+			_c_idx.append_array([base, base + 1, base + 3, base, base + 3, base + 2])
+	_c_pts.resize(_c_uv.size())
+	_c_sh.resize(_c_uv.size())
+	for j in _c_uv.size():
+		_c_sh[j] = Vector2(B_SHADOW + (_c_uv[j].x - B_WIRE), 0.0)
 
 
 func rope_style() -> Rope:
@@ -2468,7 +2541,12 @@ func _process(delta: float) -> void:
 	_body.transform = _xf
 	_face.transform = _xf
 	_body.queue_redraw()
-	_face.queue_redraw()
+	# The face follows the body every frame through its transform; its
+	# drawing (blinks, glances, moods) is refreshed at half rate, alternate
+	# frames for alternate enemies, unless something sudden is showing.
+	_face_tick += 1
+	if (_face_tick + _face_phase) % 2 == 0 or flash_t > 0.0 or startle_t > 0.0 or phase != Phase.HANGING:
+		_face.queue_redraw()
 
 
 func _update_eye(delta: float) -> void:
@@ -3072,10 +3150,18 @@ func _plate(r: float, center: float, half: float, hw: float, metal: Color, sh: C
 ## Face layer, in body space: the jelly's bubbles and the shells' rivets,
 ## then eye and mouth. World-space extras (the frayed string, the first-
 ## sighting ring, the boss's health) are drawn through the inverse.
+## The face layer is collected in `_ink` and submitted as a single draw
+## call (see Ink).
 func _draw_face() -> void:
+	_ink.clear()
+	_face_ink()
+	_ink.flush(_face.get_canvas_item())
+
+
+func _face_ink() -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
-	var f := _face
+	var f := _ink
 	var inv := _xf.affine_inverse()
 	f.draw_set_transform_matrix(inv)
 	if fray_t > 0.0 and _attached and rope_alpha > 0.0:
@@ -3129,10 +3215,10 @@ func _draw_face() -> void:
 		for i in hp_max:
 			var x := (i - (hp_max - 1) * 0.5) * 11.0
 			var p := pos + Vector2(x, radius + 40.0)
-			Pal.disc(f, p + Vector2(0.8, 1.0), 3.4, Color(0, 0, 0, 0.4))
-			Pal.disc(f, p, 3.2, Color(Tok.PRIMARY_LO, 0.9))
+			f.disc(p + Vector2(0.8, 1.0), 3.4, Color(0, 0, 0, 0.4))
+			f.disc(p, 3.2, Color(Tok.PRIMARY_LO, 0.9))
 			if i < hp:
-				Pal.disc(f, p - Vector2(0.4, 0.4), 2.4, Tok.PRIMARY_HI)
+				f.disc(p - Vector2(0.4, 0.4), 2.4, Tok.PRIMARY_HI)
 	f.draw_set_transform_matrix(Transform2D.IDENTITY)
 	var col := color()
 	col.a *= 1.0 - 0.9 * hidden_amt
@@ -3161,16 +3247,16 @@ func _crown(a: float) -> void:
 	var sh := PackedVector2Array()
 	for p in pts:
 		sh.append(p + Vector2(1.2, 1.4))
-	_face.draw_colored_polygon(sh, Color(0, 0, 0, 0.35 * a))
-	_face.draw_colored_polygon(pts, Color(Pal.GOLD, a))
+	_ink.draw_colored_polygon(sh, Color(0, 0, 0, 0.35 * a))
+	_ink.draw_colored_polygon(pts, Color(Pal.GOLD, a))
 	# A band along the base and a highlight on the left points (lamp side).
-	_face.draw_line(Vector2(-w * 0.5, base - 1.2), Vector2(w * 0.5, base - 1.2), Color(Pal.GOLD_DARK, a), 2.4, true)
-	_face.draw_line(pts[1], pts[2], Color(Pal.GOLD_LIGHT, 0.8 * a), 1.2, true)
-	_face.draw_line(pts[2], pts[3], Color(Pal.GOLD_LIGHT, 0.6 * a), 1.2, true)
+	_ink.draw_line(Vector2(-w * 0.5, base - 1.2), Vector2(w * 0.5, base - 1.2), Color(Pal.GOLD_DARK, a), 2.4, true)
+	_ink.draw_line(pts[1], pts[2], Color(Pal.GOLD_LIGHT, 0.8 * a), 1.2, true)
+	_ink.draw_line(pts[2], pts[3], Color(Pal.GOLD_LIGHT, 0.6 * a), 1.2, true)
 	for k in [1, 3, 5]:
-		Pal.disc(_face, pts[k] + Vector2(0, 1.5), 1.6, Color(Pal.GOLD_LIGHT, a))
+		_ink.disc(pts[k] + Vector2(0, 1.5), 1.6, Color(Pal.GOLD_LIGHT, a))
 	if champion:
-		Pal.disc(_face, Vector2(0, base - h * 0.35), 2.2, Color(Pal.CORAL.lerp(Pal.SHADE, 0.5), a))
+		_ink.disc(Vector2(0, base - h * 0.35), 2.2, Color(Pal.CORAL.lerp(Pal.SHADE, 0.5), a))
 
 
 ## Cute and crying: tears roll from both sides of the eye, over the face.
@@ -3181,8 +3267,8 @@ func _tears(a: float) -> void:
 		var k := fposmod(_clock * 1.3 + (0.5 if sx > 0.0 else 0.0), 1.0)
 		var p := eo + Vector2(sx * er * 0.95, er * 0.2 + k * radius * 0.55)
 		var c := Color(Pal.DROP.lightened(0.35), 0.9 * (1.0 - k * 0.7) * a)
-		Pal.disc(_face, p, 2.4, c)
-		_face.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.0, -0.6), p + Vector2(0, -5.0), p + Vector2(2.0, -0.6)]), c)
+		_ink.disc(p, 2.4, c)
+		_ink.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.0, -0.6), p + Vector2(0, -5.0), p + Vector2(2.0, -0.6)]), c)
 
 
 ## Nemesis: a stitched scar slashed across the eye (one more per level).
@@ -3192,12 +3278,12 @@ func _scar(a: float) -> void:
 		var o := Vector2(k * h * 0.35, -k * h * 0.2)
 		var p0 := Vector2(-h * 0.75, -h * 0.8) + o
 		var p1 := Vector2(h * 0.55, h * 0.75) + o
-		_face.draw_line(p0 + Vector2(1, 1), p1 + Vector2(1, 1), Color(0, 0, 0, 0.35 * a), 3.0, true)
-		_face.draw_line(p0, p1, Color(Color("E9B7AE"), 0.95 * a), 2.2, true)
+		_ink.draw_line(p0 + Vector2(1, 1), p1 + Vector2(1, 1), Color(0, 0, 0, 0.35 * a), 3.0, true)
+		_ink.draw_line(p0, p1, Color(Color("E9B7AE"), 0.95 * a), 2.2, true)
 		var n := (p1 - p0).orthogonal().normalized() * 3.5
 		for s in 3:
 			var m := p0.lerp(p1, 0.25 + 0.25 * s)
-			_face.draw_line(m - n, m + n, Color(Pal.PUPIL, 0.8 * a), 1.2, true)
+			_ink.draw_line(m - n, m + n, Color(Pal.PUPIL, 0.8 * a), 1.2, true)
 
 
 ## Radius of the open centre of ring-shaped bodies (where the face sits).
@@ -3215,13 +3301,13 @@ func _hole() -> float:
 ## Bubbles rising slowly through jelly; rivets on the heavy's ring (gone
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
-	var f := _face
+	var f := _ink
 	if mood == Mood.GRUMPY and anger > 0.35 and phase == Phase.HANGING:
 		# Steam from the top: two wisps rising and fading, faster when angrier.
 		for sx: float in [-1.0, 1.0]:
 			var k := fposmod(_clock * lerpf(0.8, 1.8, anger) + (0.5 if sx > 0.0 else 0.0), 1.0)
 			var p := Vector2(sx * radius * 0.55, -radius - 4.0 - k * 16.0)
-			Pal.disc(f, p + Vector2(sin(k * 6.0) * 2.0 * sx, 0), 3.5 + k * 4.0, Color(Pal.INK.lightened(0.2), minf(1.0, (anger - 0.35) * 1.4) * 0.85 * (1.0 - k) * col.a))
+			f.disc(p + Vector2(sin(k * 6.0) * 2.0 * sx, 0), 3.5 + k * 4.0, Color(Pal.INK.lightened(0.2), minf(1.0, (anger - 0.35) * 1.4) * 0.85 * (1.0 - k) * col.a))
 
 	if kind == Kind.PIPP:
 		# A tiny beak under the eye and a tuft of down on top.
@@ -3247,7 +3333,7 @@ func _details(col: Color) -> void:
 		var k := fposmod(_clock * 0.8 + _hue_shift * 20.0, 1.0)
 		var a := (morale - 0.35) / 0.65 * sin(PI * k) * col.a
 		var p := Vector2(radius * 0.55, -radius * 0.55 + k * radius * 0.6)
-		Pal.disc(f, p, 2.6, Color(Pal.DROP.lightened(0.4), 0.8 * a))
+		f.disc(p, 2.6, Color(Pal.DROP.lightened(0.4), 0.8 * a))
 		f.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.2, -0.8), p + Vector2(0, -5.5), p + Vector2(2.2, -0.8)]), Color(Pal.DROP.lightened(0.4), 0.8 * a))
 	if _admire_t > 0.0:
 		# The Speilet catching its own reflection: a small star on the glint.
@@ -3293,7 +3379,7 @@ func _details(col: Color) -> void:
 				var x := sin(_clock * 0.9 + i * 2.1) * h * 0.45
 				var fade := 1.0 - absf(y) / (h * 0.75)
 				if fade > 0.0:
-					Pal.disc(f, Vector2(x, y), 1.4 + i * 0.5, Color(col.lightened(0.35), 0.3 * fade * col.a))
+					f.disc(Vector2(x, y), 1.4 + i * 0.5, Color(col.lightened(0.35), 0.3 * fade * col.a))
 		return
 	var rv := Color(col.lightened(0.45), col.a)
 	var sh := Color(0, 0, 0, 0.4 * col.a)
@@ -3308,13 +3394,13 @@ func _details(col: Color) -> void:
 				f.draw_arc(Vector2.ZERO, br - 1.6, PI * 1.05, PI * 1.7, 16, Color(Pal.INK, 0.35 * col.a), 1.0, true)
 				for i in 8:
 					var p := Vector2.from_angle(i * TAU / 8.0 + 0.2) * br
-					Pal.disc(f, p + Vector2(0.7, 0.7), 1.7, sh)
-					Pal.disc(f, p, 1.5, Color(Pal.INK, 0.9 * col.a))
+					f.disc(p + Vector2(0.7, 0.7), 1.7, sh)
+					f.disc(p, 1.5, Color(Pal.INK, 0.9 * col.a))
 		Kind.SHIELD:
 			for i in 4:
 				var p := Vector2.from_angle(i * TAU / 4.0 + PI / 4.0) * (radius - 5.0)
-				Pal.disc(f, p + Vector2(0.7, 0.7), 2.0, sh)
-				Pal.disc(f, p, 1.8, rv)
+				f.disc(p + Vector2(0.7, 0.7), 2.0, sh)
+				f.disc(p, 1.8, rv)
 		Kind.REEL:
 			# A spool: line wound on the rim, three spokes to a hub, and a
 			# little crank handle.
@@ -3325,11 +3411,11 @@ func _details(col: Color) -> void:
 			for k in 3:
 				var d := Vector2.from_angle(k * TAU / 3.0 + PI * 0.5)
 				f.draw_line(d * 10.0, d * (hole + 1.0), Color(col.darkened(0.4), col.a), 2.4, true)
-			Pal.disc(f, Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
-			Pal.disc(f, Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
+			f.disc(Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
+			f.disc(Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
 			var hp0 := Vector2.from_angle(-PI * 0.2) * (radius + 1.0)
 			f.draw_line(hp0, hp0 + Vector2(6, -3), Color(Pal.METAL_LIGHT, col.a), 2.4, true)
-			Pal.disc(f, hp0 + Vector2(6, -3), 2.6, Color(col.darkened(0.3), col.a))
+			f.disc(hp0 + Vector2(6, -3), 2.6, Color(col.darkened(0.3), col.a))
 		Kind.BOSS:
 			# Cracks spread across the shell stage by stage.
 			if boss_stage >= 1:
@@ -3349,7 +3435,7 @@ func _details(col: Color) -> void:
 ## you aim at it, an "o" when startled, a smirk when smug, a tongue when it
 ## taunts, a frown in rage and a grimace when struck. Drawn in eye space.
 func _mouth(er: float) -> void:
-	var f := _face
+	var f := _ink
 	var y := er * 1.25
 	var w := er * 0.85
 	# Pale on the dark recess of a ring body, dark on a filled one, and a
@@ -3366,7 +3452,7 @@ func _mouth(er: float) -> void:
 		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.6, true)
 		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.6, true)
 	elif startle_t > 0.0 or panicked():
-		Pal.disc(f, Vector2(0, y + 1.0), er * 0.26, dark)
+		f.disc(Vector2(0, y + 1.0), er * 0.26, dark)
 		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.8, true)
 	elif _taunt >= 0.0:
 		# Open grin with the tongue out.
@@ -3375,7 +3461,7 @@ func _mouth(er: float) -> void:
 			var a := PI * i / 8.0
 			grin.append(Vector2(cos(a) * w * 0.55, y - 1.0 + sin(a) * w * 0.45))
 		f.draw_colored_polygon(grin, dark)
-		Pal.disc(f, Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
+		f.disc(Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
 		f.draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 2.0, true)
 	elif enraged:
 		for i in 7:
@@ -3404,7 +3490,7 @@ func _mouth(er: float) -> void:
 
 
 func _eye() -> void:
-	var f := _face
+	var f := _ink
 	_eye_parts()
 	if kind != Kind.ROD:
 		var er := _eye_r()
@@ -3445,7 +3531,7 @@ func _skin() -> Color:
 ## curves like a real lid. Blinks, squints, smugness and sleepiness are all
 ## just how far the lids have come, so every expression stays clean.
 func _eye_parts() -> void:
-	var f := _face
+	var f := _ink
 	# The Skygge's eye sits in the thick part of the crescent.
 	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
 	var er := _eye_r()
@@ -3463,7 +3549,7 @@ func _eye_parts() -> void:
 
 ## One eye at `eo` (body space) of radius `er`; `side` is -1/1 for one of a
 ## pair (the Spinneren's), 0 for a single eye.
-func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
+func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	var bx := Transform2D(0.0, eo)
 	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
@@ -3471,7 +3557,7 @@ func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
 	er *= lerpf(1.0, wide, 0.5)
 	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
 		# Filled bodies: a dark socket keeps the eye readable.
-		Pal.disc(f, Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
+		f.disc(Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
 	var lash := Color(Pal.PUPIL, 0.9)
 	if phase == Phase.FALLING:
 		# Knocked out: a small cross for an eye.
@@ -3510,14 +3596,14 @@ func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
 	# a sudden fright shrinks it to a pinpoint instead.
 	if startle_t <= 0.0 and (panicked() or hurry or morale > 0.55):
 		pr = minf(pr * 1.4, er * 0.72)
-	Pal.disc(f, Vector2.ZERO, er, Pal.EYE)
+	f.disc(Vector2.ZERO, er, Pal.EYE)
 	var look := _pupil
 	if trait_kind == Trait.SHY and not aimed and not incoming:
 		# Shy: never quite meets your eye.
 		look = Vector2(-look.x * 0.6, look.y * 0.4 + 0.35)
 	var pupil := look * (er - pr - 1.2)
-	Pal.disc(f, pupil, pr, Pal.PUPIL)
-	Pal.disc(f, pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
+	f.disc(pupil, pr, Pal.PUPIL)
+	f.disc(pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
 	var skin := _skin()
 	if upper > 0.02:
 		_lid(f, er, upper, true, skin, lash)
@@ -3526,12 +3612,12 @@ func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
 	if mood == Mood.CUTE:
 		var cheek := minf(er * 1.3, radius * 0.6)
 		for sx: float in [-1.0, 1.0]:
-			Pal.disc(f, Vector2(sx * cheek, er * 0.95), minf(er * 0.3, radius * 0.18), Color(Pal.SHADE, 0.35))
-		Pal.disc(f, pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
+			f.disc(Vector2(sx * cheek, er * 0.95), minf(er * 0.3, radius * 0.18), Color(Pal.SHADE, 0.35))
+		f.disc(pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
 	if trait_kind == Trait.SHY and aimed and soft:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
-			Pal.disc(f, Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+			f.disc(Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
 	if kind == Kind.DROP and upper < 0.5:
 		# The Dråpe's lashes: three quick flicks over the eye.
 		for k in 3:
@@ -3571,7 +3657,7 @@ func _eye_one(f: Node2D, eo: Vector2, er: float, side: float) -> void:
 
 ## A lid over the round eye: filled in the skin colour from the top (or the
 ## bottom) down to a gently curved edge, with a fine lash line along it.
-func _lid(f: Node2D, er: float, amount: float, top: bool, skin: Color, lash: Color) -> void:
+func _lid(f: Ink, er: float, amount: float, top: bool, skin: Color, lash: Color) -> void:
 	var r := er + 0.9
 	var edge := -er + 2.0 * er * amount if top else er - 2.0 * er * amount
 	var hw := sqrt(maxf(0.0, r * r - edge * edge))
@@ -3602,7 +3688,7 @@ func _lid(f: Node2D, er: float, amount: float, top: bool, skin: Color, lash: Col
 
 
 ## The line of a closed eye: a soft curve, bowed down.
-func _lid_curve(f: Node2D, er: float, y: float, bow: float, col: Color, w: float) -> void:
+func _lid_curve(f: Ink, er: float, y: float, bow: float, col: Color, w: float) -> void:
 	var pts := PackedVector2Array()
 	for i in 9:
 		var t := lerpf(-1.0, 1.0, i / 8.0)
@@ -3612,7 +3698,7 @@ func _lid_curve(f: Node2D, er: float, y: float, bow: float, col: Color, w: float
 
 ## One brow, as a fine arc above the eye; `inner_y` and `outer_y` are in
 ## eye radii (negative is up), `sx` the side.
-func _brow(f: Node2D, er: float, sx: float, inner_y: float, outer_y: float, col: Color) -> void:
+func _brow(f: Ink, er: float, sx: float, inner_y: float, outer_y: float, col: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 6:
 		var t := i / 5.0

@@ -15,6 +15,7 @@ var shot_id := 0               # balls of one release (a triple fan) share it
 var cut_any := false
 var hit_rail := false
 var pos := Vector2.ZERO
+var prev_pos := Vector2.ZERO   # a physics step ago (render interpolation)
 var vel := Vector2.ZERO
 var age := 0.0
 var hits := 0                  # targets hit during this shot

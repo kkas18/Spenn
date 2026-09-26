@@ -2314,3 +2314,55 @@ Rettet:
    - Livet vises som messingknotter.
 6. **Små typer:** Dråpe og Pipp har radius 22 (før 20 og 19), og Dråpen har større øye
    (9 mot 7).
+
+## v7.50 – Teknisk revisjon gjennomført (seks punkter)
+
+1. **Ytelse:** målt med `tools/tests/perf.gd` i et travelt sluttspill:
+
+   | Mål | Før | Etter |
+   |---|---|---|
+   | Tegnekall | 764 | 347 |
+   | Trekanter | 33 000 | 23 600 |
+   | Skripttid for fiender, kontakter og bakgrunn (instrumentert, samme frø) | 13,4 ms | 8,7 ms |
+
+   - **Ansiktene:** alt i ett ansikt (øye, lokk, bryn, munn og detaljer) samles i én trekantliste
+     med den felles sirkelteksturen. Det er én tegnekall per fiende i stedet for 10–15. Den nye
+     hjelpeklassen heter `Ink` (`scripts/ink.gd`), og linjene får myke kanter fra teksturens
+     mipmaps.
+   - **Bakgrunnen:** fibre, perler, vindstreker, trådskygger og farelinjen går også gjennom
+     `Ink`, med ett kall for laget og ett for glødelaget.
+   - **Ansiktstegning på 30 Hz:** ansiktene tegnes på nytt annethvert bilde, forskjøvet mellom
+     fiendene. De følger kroppen hvert bilde via transformen, og tegnes straks ved treff eller
+     skrekk.
+   - **Kjetting:** leddene bruker en ferdig tabell i stedet for `cos`/`sin` per ledd. UV-er og
+     trekanter bygges bare når antall ledd endres.
+   - **Kontakter:** en grovfase gjør at fiendepar langt fra hverandre og kropper utenfor et taus
+     boks forkastes før de dyre testene. Tauboksen beregnes én gang per steg.
+2. **Jevn bevegelse:** fysikken går fortsatt i faste 1/120 s-steg, men fiender og kuler tegnes
+   interpolert mellom siste og forrige steg. Det gir jevn bevegelse på 90, 120 og 144 Hz. Selve
+   simuleringen er uendret.
+   - **Feilretting:** kulelyset lå i hjørnet øverst til venstre (nodens origo) siden v7.35. Nå
+     følger det kula.
+3. **Effekter:**
+   - Skallskår tumler og vender lys side mot lampen: de blir tynnere på kant, mørkere på
+     baksiden, og får lys og mørk kant.
+   - Spinneren slipper tre messingplater.
+   - Popup-tekst legger seg over (eller under) fienden i stedet for oppå den.
+4. **Hint i feltet:** full forklaring vises bare første gang noensinne (lagres i
+   `Prefs.hints`). Senere vises bare navnet, som «Rasende», mindre og roligere, og merket på
+   kroppen sier resten.
+5. **Balanse:** nedstigningen er 20 % saktere i starten og øker til full fart over 90 s. To
+   botrunder à 6 frø:
+
+   | Mål | Før | Etter |
+   |---|---|---|
+   | Median rundetid | 145–181 s | ca. 175 s |
+   | Korteste runde | 90 s | 125 s |
+
+6. **Tester i repoet** (`tools/tests`, holdt utenfor APK-en):
+   - `bot.gd` er en botspiller.
+   - `soak.gd` kjører et fullt sluttspill i 20 s og feiler ved nodelekkasje eller endrede
+     effektbuffere.
+   - `perf.gd` måler tegnekall og ytelse.
+   - `run.sh` kjører import, oppstart, soak og bot, og feiler ved alle skript- og motorfeil.
+   - CI kjører `run.sh` med frø 1 og 2 før APK-en bygges.

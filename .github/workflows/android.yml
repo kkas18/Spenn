@@ -101,6 +101,9 @@ jobs:
           ~/godot/godot --headless --path . --quit-after 120 2>&1 | tee /tmp/boot.log
           if grep -E "SCRIPT ERROR|Parse Error|ERROR:" /tmp/boot.log; then exit 1; fi
 
+      - name: Gameplay tests (soak and bot runs)
+        run: SEEDS="1 2" tools/tests/run.sh ~/godot/godot
+
       - name: Export signed APK
         run: |
           set -euo pipefail

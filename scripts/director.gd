@@ -36,6 +36,7 @@ const MOOD_FROM := 2
 # of it comes a finale: a champion, or on every third wave the boss.
 const FINALE_AT := 0.8
 const BOSS_EVERY := 3
+const WARMUP := 90.0            # s over which the early descent eases up to full
 # Pacing inside a wave: a build-up, a short peak (a flurry), then a breath.
 enum Pulse { BUILD, PEAK, RELAX }
 
@@ -304,7 +305,11 @@ func aggression() -> float:
 ## keeps climbing more slowly; no plateau within any realistic run.
 func descent(scale: float) -> float:
 	var i := intensity()
-	return minf(7.5 + 9.8 * pow(i, 0.85), 72.0) * lerpf(0.9, 1.15, aggression()) * scale
+	# A gentler first minute and a half (20 % slower at the start), so an
+	# average player is not overrun in wave 1 or 2 while still finding the
+	# aim; it has no effect after that.
+	var warm := lerpf(0.8, 1.0, clampf(elapsed / WARMUP, 0.0, 1.0))
+	return minf(7.5 + 9.8 * pow(i, 0.85), 72.0) * lerpf(0.9, 1.15, aggression()) * warm * scale
 
 
 ## Targets allowed on the field at once.

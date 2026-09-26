@@ -20,6 +20,7 @@ var tilt := true               # tilt parallax and gloss follow the phone
 var record := 0
 var intro_seen := false
 var seen := {}                 # enemy kinds already introduced
+var hints := {}                # in-field hints already explained in full
 var runs := 0                  # runs started (the pause hint shows for the first few)
 var total_points := 0          # lifetime points (+ mission rewards), for the stats
 var skin_points := 0           # the same, but never reset: unlocks skins
@@ -48,6 +49,7 @@ func _ready() -> void:
 		record = int(_cfg.get_value("stats", "record", 0))
 		intro_seen = bool(_cfg.get_value("stats", "intro_seen", false))
 		seen = _cfg.get_value("stats", "seen", {})
+		hints = _cfg.get_value("stats", "hints", {})
 		runs = int(_cfg.get_value("stats", "runs", 0))
 		total_points = int(_cfg.get_value("meta", "total_points", 0))
 		skin_points = int(_cfg.get_value("meta", "skin_points", total_points))
@@ -219,6 +221,7 @@ func save() -> void:
 	_cfg.set_value("stats", "record", record)
 	_cfg.set_value("stats", "intro_seen", intro_seen)
 	_cfg.set_value("stats", "seen", seen)
+	_cfg.set_value("stats", "hints", hints)
 	_cfg.set_value("stats", "runs", runs)
 	_cfg.set_value("meta", "total_points", total_points)
 	_cfg.set_value("meta", "skin_points", skin_points)
