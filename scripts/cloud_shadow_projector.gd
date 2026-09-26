@@ -3,10 +3,10 @@ class_name CloudShadowProjector
 ## Projects soft stylised shadows from gameplay objects onto the cloud plane.
 ## Attach this node as a child of a target and update height_hint as needed.
 
-@export var height_hint := 180.0
-@export var base_radius := 34.0
-@export var light_direction := Vector2(-0.42, 0.90)
-@export_range(0.0, 1.0) var strength := 0.20
+@export var height_hint: float = 180.0
+@export var base_radius: float = 34.0
+@export var light_direction: Vector2 = Vector2(-0.42, 0.90)
+@export_range(0.0, 1.0) var strength: float = 0.20
 
 func _ready() -> void:
 	z_index = -2
