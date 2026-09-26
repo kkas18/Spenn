@@ -7,9 +7,14 @@ const Projectile = preload("res://scripts/projectile.gd")
 var dragging: bool = false
 var pull: Vector2 = Vector2.ZERO
 var max_pull: float = 125.0
+var pulse: float = 0.0
 
 func _ready() -> void:
 	z_index = 20
+	queue_redraw()
+
+func _process(delta: float) -> void:
+	pulse += delta
 	queue_redraw()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -46,4 +51,11 @@ func _draw() -> void:
 	draw_line(Vector2(48,5), right, Color("#D5B06A"), 18.0, true)
 	draw_circle(Vector2(-48,5), 9, Color("#F3D59A"))
 	draw_circle(Vector2(48,5), 9, Color("#F3D59A"))
+	draw_circle(Vector2(0,10), 74, Color(0.12,0.26,0.38,0.07))
+	if dragging:
+		var power: float = clampf(pull.length()/max_pull,0.0,1.0)
+		for i in range(1,5):
+			var aim: Vector2 = -pull.normalized()*float(i)*42.0
+			draw_circle(Vector2(0,-42)+aim, 3.0+power*1.5, Color(1.0,0.88,0.55,0.22+power*0.32))
 	draw_circle(pocket, 15, Color("#E9B84E"))
+	draw_circle(pocket+Vector2(-4,-5),5,Color(1,0.94,0.68,0.75))
