@@ -17,6 +17,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -117,3 +119,21 @@ jobs:
           name: spenn-${{ github.sha }}
           path: build/spenn.apk
           if-no-files-found: error
+
+      # A fixed link for phones: every push replaces spenn.apk on the
+      # "spenn-latest" release, so the newest build is always at
+      # releases/download/spenn-latest/spenn.apk (no zip, no Actions page).
+      - name: Publish to the spenn-latest release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=spenn-latest
+          NOTES="Siste bygg: ${GITHUB_SHA::7} fra ${GITHUB_REF_NAME}. Last ned spenn.apk og åpne den på telefonen."
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "Spenn – siste bygg" --notes "$NOTES"
+          else
+            gh release edit "$TAG" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" build/spenn.apk --clobber

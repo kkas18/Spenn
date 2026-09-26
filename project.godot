@@ -4,19 +4,31 @@ config_version=5
 
 [application]
 
-config/name="Spenn"
+config/name="Taut"
+config/name_localized={
+"nb": "Spenn",
+"nn": "Spenn",
+"no": "Spenn"
+}
 config/version="2.0.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://icons/icon.png"
 config/quit_on_go_back=false
 boot_splash/bg_color=Color(0.055, 0.063, 0.078, 1)
-boot_splash/show_image=false
+boot_splash/show_image=true
+boot_splash/image="res://icons/splash.png"
+boot_splash/fullsize=false
+boot_splash/use_filter=true
 
 [autoload]
 
+Prefs="*res://scripts/prefs.gd"
+Device="*res://scripts/device.gd"
 Loc="*res://scripts/loc.gd"
+Motion="*res://scripts/motion.gd"
 Sfx="*res://scripts/sfx.gd"
+Music="*res://scripts/music.gd"
 
 [display]
 
@@ -27,8 +39,13 @@ window/size/window_height_override=880
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+window/energy_saving/keep_screen_on=true
 
 [input_devices]
+
+sensors/enable_accelerometer=true
+sensors/enable_gravity=true
+sensors/enable_gyroscope=true
 
 pointing/emulate_touch_from_mouse=true
 
@@ -42,3 +59,4 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.055, 0.063, 0.078, 1)
+textures/canvas_textures/default_texture_filter=3
