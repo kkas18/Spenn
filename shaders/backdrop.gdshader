@@ -7,13 +7,10 @@ shader_type canvas_item;
 // clean on 8-bit panels. As a target nears the line, a coral warmth rises
 // from it.
 
-// A late-evening room: plum-dark walls, a warm amber lamp, and moonlight
-// falling through a window we cannot see, its curtain stirring.
-uniform vec4 base : source_color = vec4(0.052, 0.046, 0.068, 1.0);
-uniform vec4 lift : source_color = vec4(0.098, 0.084, 0.112, 1.0);
-uniform vec4 lamp : source_color = vec4(0.42, 0.33, 0.25, 1.0);
-uniform vec4 ground : source_color = vec4(0.066, 0.058, 0.074, 1.0);
-uniform vec4 moon : source_color = vec4(0.58, 0.68, 0.98, 1.0);
+uniform vec4 base : source_color = vec4(0.050, 0.058, 0.076, 1.0);
+uniform vec4 lift : source_color = vec4(0.085, 0.094, 0.118, 1.0);
+uniform vec4 lamp : source_color = vec4(0.30, 0.32, 0.38, 1.0);
+uniform vec4 ground : source_color = vec4(0.064, 0.068, 0.082, 1.0);
 uniform vec4 warn : source_color = vec4(0.914, 0.518, 0.384, 1.0);
 uniform vec2 size = vec2(720.0, 1280.0);
 uniform float rail_y = 150.0;
@@ -22,7 +19,6 @@ uniform float danger = 0.0;
 uniform float time = 0.0;
 uniform float grain = 0.010;
 uniform float heat = 0.0;      // overload: the lamp burns gold
-uniform float calm = 0.0;      // between waves: the lamp dims to a glow
 uniform vec4 gold : source_color = vec4(0.83, 0.66, 0.31, 1.0);
 
 float hash(vec2 p) {
@@ -64,26 +60,10 @@ void fragment() {
 	// The lamp breathes: a slow, barely-there swell, never a flicker.
 	float breath = 0.94 + 0.06 * sin(time * 0.55) * sin(time * 0.23 + 1.3);
 	vec3 lc = mix(lamp.rgb, gold.rgb * 0.9, heat * 0.6);
-	col += lc * cone * (0.2 + 0.06 * heat) * shafts * breath * (1.0 - 0.3 * calm);
+	col += lc * cone * (0.16 + 0.08 * heat) * shafts * breath;
 	// Ground below the danger line, with a soft horizon.
 	float g = smoothstep(danger_y - 6.0, danger_y + 90.0, px.y);
 	col = mix(col, ground.rgb, g * 0.85);
-	// Moonlight through a window up and to the right: a tall pane of light
-	// sheared across the wall, crossed by the window bars, its left edge
-	// shaded by a curtain that sways in a slow draught.
-	{
-		float fh = danger_y - rail_y;
-		vec2 wc = vec2(size.x * 0.7, rail_y + fh * 0.36);
-		vec2 d = px - wc;
-		d.x += (d.y) * 0.42;
-		vec2 hs = vec2(size.x * 0.17, fh * 0.2);
-		float soft = 22.0;
-		float win = (1.0 - smoothstep(hs.x - soft, hs.x + soft, abs(d.x))) * (1.0 - smoothstep(hs.y - soft, hs.y + soft, abs(d.y)));
-		float bars = smoothstep(2.0, 6.0, abs(d.x)) * smoothstep(2.0, 6.0, abs(d.y));
-		float sway = 12.0 * sin(d.y * 0.02 + time * 0.55) + 16.0 * sin(time * 0.21);
-		float curtain = smoothstep(-hs.x * 0.62 + sway - 26.0, -hs.x * 0.62 + sway + 26.0, d.x);
-		col += moon.rgb * win * mix(0.55, 1.0, bars) * curtain * 0.07 * below;
-	}
 	// The floor in perspective: faint boards running toward a vanishing
 	// point high above the slingshot, and seams that crowd together toward
 	// the far edge (the danger line), so the ground reads as a plane.

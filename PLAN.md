@@ -1634,3 +1634,16 @@ Lyden er også gjort varmere:
 - **Testoppsett:** testrammen pauser nå direkte. Et dobbelttrykk rakk ikke gjennom
   på den trege testmaskinen, og pausemenyen ble da liggende over Game Over. Det var
   en feil i testen, ikke i spillet.
+
+# v7.20 – Tilbake til v7.17-utseendet
+
+Brukeren foretrakk v7.17. Utseendet fra v7.18 og v7.19 er tatt ut:
+- fargegradering, lysslynge, måneskinn, ildfluer og plommerommet;
+- månekantlyset, pusten mellom bølgene og frostet glass;
+- «Skumring»-temaet og de nye lydinnstillingene.
+
+To rene feilrettinger er beholdt:
+- **Sprettert-demoen i menyen:** integreres i faste småsteg, så fjæra ikke kan
+  «eksplodere» ved lange bilder.
+- **Kjettingen:** tegnes som ett lyssatt rørnett i stedet for ett tegnekall per ledd.
+  Det gir ca. 330 tegnekall i stedet for ca. 1 250.

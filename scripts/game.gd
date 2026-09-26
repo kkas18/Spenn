@@ -86,8 +86,6 @@ var _chain_t := 0.0
 var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
-var _grade: ShaderMaterial
-var _grade_rect: ColorRect
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
@@ -103,7 +101,6 @@ var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
 var _last_kill := Vector2.ZERO
 var _cocky_t := 0.0             # after a breach the survivors get cocky
-var _calm := 0.0                # the breath between waves (eased 0..1)
 var daily := false              # this run is the daily challenge
 var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
@@ -158,18 +155,6 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
-	# The room's final look: bloom and a warm, dreamy grade (not the HUD).
-	var grade_layer := CanvasLayer.new()
-	grade_layer.layer = 3
-	add_child(grade_layer)
-	var grade := ColorRect.new()
-	grade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	grade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_grade_rect = grade
-	_grade = ShaderMaterial.new()
-	_grade.shader = preload("res://shaders/grade.gdshader")
-	grade.material = _grade
-	grade_layer.add_child(grade)
 	# Shock rings refract the world (not the HUD); hidden while none are live.
 	var shock_layer := CanvasLayer.new()
 	shock_layer.layer = 4
@@ -197,7 +182,6 @@ func _ready() -> void:
 	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
-	hud.grade_rect = _grade_rect
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
 	hud.resume_pressed.connect(_resume)
@@ -251,10 +235,6 @@ func _clear_field() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
-	_calm = 0.0
-	backdrop.calm = 0.0
-	rail.calm = 0.0
-	Music.calm = 0.0
 	Music.danger = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
@@ -500,7 +480,6 @@ func _process(delta: float) -> void:
 		_acc -= SUBSTEP
 		_step(SUBSTEP)
 	_state_t += delta
-	_grade_tick()
 	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
 	_update_tilt(delta)
 	_update_ammo(delta)
@@ -524,22 +503,6 @@ static func sensor_gravity() -> Vector3:
 	if g.length() < 2.0:
 		g = Input.get_accelerometer()
 	return g if g.length() >= 2.0 else Vector3.ZERO
-
-
-## Bloom quality by device tier (off on the weakest), the screen's pixel
-## scale, and time for the grain.
-func _grade_tick() -> void:
-	# The device's tier drops on its own if frames run long, and takes the
-	# bloom down with it.
-	var taps := 8
-	match Device.tier:
-		Device.Tier.LOW:
-			taps = 0
-		Device.Tier.MID:
-			taps = 4
-	_grade.set_shader_parameter("taps", taps)
-	_grade.set_shader_parameter("scale", float(DisplayServer.window_get_size().x) / layout.size.x)
-	_grade.set_shader_parameter("time", _time)
 
 
 ## Reads the gravity sensor. The reference follows the phone's resting
@@ -694,13 +657,6 @@ func _pace(delta: float) -> void:
 	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
-	# Between waves the room breathes out: the lamp dims warmly, the bulbs
-	# glow and slow, the fireflies gather, the music softens.
-	var calm_want := 1.0 if director.wave_state == Director.Wave.BREAK else 0.0
-	_calm = move_toward(_calm, calm_want, rd / (0.6 if calm_want > _calm else 1.2))
-	backdrop.calm = _calm
-	rail.calm = _calm
-	Music.calm = _calm
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
 	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
@@ -1636,7 +1592,6 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_chain_t = CHAIN_WINDOW
 	director.count_kill()
 	run_kills += 1
-	rail.flare(0.8)
 	# The neighbours follow the fall with their eyes; the closest flinch.
 	for n in targets:
 		if n != t and n.is_hittable():
