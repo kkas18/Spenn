@@ -21,13 +21,13 @@ func _draw() -> void:
 	var flatten: float = lerpf(0.46, 0.25, h / 520.0)
 	var radius: float = base_radius * lerpf(0.82, 1.65, h / 520.0)
 	for i in range(5, 0, -1):
-		var k := float(i) / 5.0
-		var alpha := strength * (1.0 - k * 0.72) * 0.38
+		var k: float = float(i) / 5.0
+		var alpha: float = strength * (1.0 - k * 0.72) * 0.38
 		_draw_ellipse(offset, Vector2(radius * (1.0 + k * 0.34), radius * flatten * (1.0 + k * 0.22)), Color(0.16, 0.30, 0.43, alpha))
 
 func _draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
-	var points := PackedVector2Array()
+	var points: PackedVector2Array = PackedVector2Array()
 	for i in range(33):
-		var a := TAU * float(i) / 32.0
+		var a: float = TAU * float(i) / 32.0
 		points.append(center + Vector2(cos(a) * radii.x, sin(a) * radii.y))
 	draw_colored_polygon(points, color)
