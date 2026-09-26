@@ -14,7 +14,7 @@ func _ready() -> void:
 	score_label = _label(Vector2(28,26),32)
 	wave_label = _label(Vector2(28,72),18)
 	mult_label = _label(Vector2(590,35),22)
-	var pause := Button.new()
+	var pause: Button = Button.new()
 	pause.text = "Ⅱ"
 	pause.position = Vector2(635,82)
 	pause.size = Vector2(56,48)
@@ -23,7 +23,7 @@ func _ready() -> void:
 	refresh()
 
 func _label(pos: Vector2, size: int) -> Label:
-	var l := Label.new()
+	var l: Label = Label.new()
 	l.position = pos
 	l.add_theme_font_size_override("font_size",size)
 	l.add_theme_color_override("font_color",Color("#FFF8E8"))
