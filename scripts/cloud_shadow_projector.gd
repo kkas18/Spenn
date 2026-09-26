@@ -16,10 +16,10 @@ func _process(_delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	var h := clamp(height_hint, 30.0, 520.0)
-	var offset := light_direction.normalized() * lerp(16.0, 76.0, h / 520.0)
-	var flatten := lerp(0.46, 0.25, h / 520.0)
-	var radius := base_radius * lerp(0.82, 1.65, h / 520.0)
+	var h: float = clampf(height_hint, 30.0, 520.0)
+	var offset: Vector2 = light_direction.normalized() * lerpf(16.0, 76.0, h / 520.0)
+	var flatten: float = lerpf(0.46, 0.25, h / 520.0)
+	var radius: float = base_radius * lerpf(0.82, 1.65, h / 520.0)
 	for i in range(5, 0, -1):
 		var k := float(i) / 5.0
 		var alpha := strength * (1.0 - k * 0.72) * 0.38
