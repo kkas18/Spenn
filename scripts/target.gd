@@ -1653,7 +1653,8 @@ func _mesh_colors(col: Color) -> void:
 		_m_col.resize(n)
 	_m_col.fill(col)
 	if _m_mem > 0:
-		var mem := col.darkened(0.55)
+		# Jelly glows a little from inside, so its centre is less dark.
+		var mem := col.darkened(0.44 if soft else 0.55)
 		mem.a = col.a * (0.88 if soft else 1.0)
 		for i in _m_mem:
 			_m_col[i] = mem

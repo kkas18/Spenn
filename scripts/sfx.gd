@@ -101,8 +101,8 @@ func _ready() -> void:
 	AudioServer.set_bus_send(_bus, &"Master")
 	# Glue: take the sharpest air off, hold peaks, a small dark room.
 	var shelf := AudioEffectHighShelfFilter.new()
-	shelf.cutoff_hz = 7000.0
-	shelf.gain = 0.6
+	shelf.cutoff_hz = 6000.0
+	shelf.gain = 0.5
 	AudioServer.add_bus_effect(_bus, shelf)
 	var comp := AudioEffectCompressor.new()
 	comp.threshold = -22.0
@@ -111,12 +111,13 @@ func _ready() -> void:
 	comp.release_ms = 160.0
 	AudioServer.add_bus_effect(_bus, comp)
 	var room := AudioEffectReverb.new()
-	room.room_size = 0.3
-	room.damping = 0.75
-	room.spread = 0.6
-	room.hipass = 0.25
+	# A small, soft, furnished room: warmer and a touch more present.
+	room.room_size = 0.34
+	room.damping = 0.86
+	room.spread = 0.7
+	room.hipass = 0.3
 	room.dry = 1.0
-	room.wet = 0.08
+	room.wet = 0.13
 	AudioServer.add_bus_effect(_bus, room)
 	var lim := AudioEffectHardLimiter.new()
 	lim.ceiling_db = -1.0

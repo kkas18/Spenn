@@ -25,6 +25,7 @@ const SILENT_DB := -80.0
 var mode := Mode.SILENT
 var intensity := 0.0           # 0..1, set by the game while playing
 var overload := false          # overload: the mix goes warm and close
+var calm := 0.0                # between waves: softer and warmer
 var danger := 0.0              # 0..1, the closest target to the line
 var _duck := 0.0               # dB taken off (eases back)
 var _duck_hold := 0.0
@@ -114,10 +115,13 @@ func _process(delta: float) -> void:
 		match mode:
 			Mode.MENU:
 				menu_t = 0.0
-				cut_t = 6500.0
+				cut_t = 5200.0
 			Mode.PLAY:
-				play_t = lerpf(-3.0, 0.0, intensity)
-				cut_t = lerpf(20000.0, 3200.0, smoothstep(0.55, 1.0, danger))
+				play_t = lerpf(-3.0, 0.0, intensity) - 2.5 * calm
+				# Warm by default (the air above 11 kHz rolled off); closing in
+				# as a target nears the line, and softer between waves.
+				cut_t = lerpf(11000.0, 3200.0, smoothstep(0.55, 1.0, danger))
+				cut_t = lerpf(cut_t, 4200.0, calm)
 				if overload:
 					# Slowed time: the band goes muffled, as if heard through
 					# the rush of it, so the bright note ladder rides on top.

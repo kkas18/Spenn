@@ -22,6 +22,7 @@ var _bulbs := PackedVector2Array()
 var _wire := PackedVector2Array()
 var _bulb_ph := PackedFloat32Array()
 var _flare := 0.0
+var calm := 0.0                # between waves: the bulbs glow brighter and slower
 var _glow: Node2D
 const SOFT := preload("res://assets/particles/soft.png")
 const BULB := Color("FFE3C2")
@@ -153,8 +154,8 @@ func _draw() -> void:
 
 
 func _bulb_level(i: int) -> float:
-	var tw := 0.72 + 0.28 * sin(_clock * (1.1 + 0.37 * (i % 5)) + _bulb_ph[i])
-	return clampf(tw + 0.25 * Music.beat_pulse() + 0.6 * _flare, 0.0, 1.6)
+	var tw := 0.72 + 0.28 * sin(_clock * (1.1 + 0.37 * (i % 5)) * (1.0 - 0.5 * calm) + _bulb_ph[i])
+	return clampf(tw + 0.25 * Music.beat_pulse() + 0.6 * _flare + 0.35 * calm, 0.0, 1.6)
 
 
 func _draw_garland() -> void:

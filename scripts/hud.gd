@@ -17,6 +17,7 @@ var bar: TopBar
 var overlay: Overlay
 var intro_seq: Intro
 var locked := false            # input lock while a transition runs
+var grade_rect: CanvasItem     # the room's grade: set aside while the scrim is up
 
 var _scrim: ColorRect
 var _scrim_mat: ShaderMaterial
@@ -198,11 +199,16 @@ func fade_hud(to: float, d: float, delay := 0.0) -> void:
 
 func scrim_to(amount: float, d: float, delay := 0.0) -> void:
 	_scrim.visible = true
+	if grade_rect:
+		grade_rect.visible = false
 	var blur := 0.0 if Prefs.reduced_motion else 3.0
 	Motion.to(_scrim_mat, "shader_parameter/blur", blur * amount, d, Motion.Ease.STANDARD, delay)
 	var tr := Motion.to(_scrim_mat, "shader_parameter/amount", amount, d, Motion.Ease.STANDARD, delay)
 	if amount <= 0.0:
-		tr.done = func() -> void: _scrim.visible = false
+		tr.done = func() -> void:
+			_scrim.visible = false
+			if grade_rect:
+				grade_rect.visible = true
 
 
 ## Pause: gameplay is already frozen; scrim darkens (0–150 ms), blur follows
@@ -243,9 +249,11 @@ func _open_panel(p: Control, box: Control, delay: float) -> void:
 	p.visible = true
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
 	p.modulate.a = 0.0
-	box.scale = Vector2(0.97, 0.97)
+	# The glass pane settles in (a hair larger to its size) with its rows.
+	var pane: Control = box.get_parent() if box.get_parent() is PanelContainer else box
+	pane.scale = Vector2(0.97, 0.97)
 	Motion.to(p, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, delay)
-	Motion.to(box, "scale", Vector2.ONE, Motion.NORMAL, Motion.Ease.ENTER, delay)
+	Motion.to(pane, "scale", Vector2.ONE, Motion.NORMAL, Motion.Ease.EMPHASIZED, delay)
 	# The rows arrive one after another, each fading up from a little
 	# below: the panel reads top to bottom instead of popping in whole.
 	if not Prefs.reduced_motion:
@@ -302,6 +310,12 @@ func intro(name: String, desc: String) -> void:
 
 
 ## A panel is up: cards and enemy intros hold back so nothing overlaps it.
+## The scrim is up (a panel or the results): the room's grade steps aside
+## so the scrim's blur gets the frame's screen copy (only one is taken).
+func scrim_up() -> bool:
+	return _scrim.visible
+
+
 func modal_open() -> bool:
 	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible
 
@@ -403,17 +417,38 @@ func _build_fonts() -> void:
 		_theme.set_color(c, "PrimaryButton", Tok.ON_PRIMARY)
 
 
+## Buttons are frosted glass: a translucent pane (the blurred scene shows
+## through) with a fine light edge on top, rounded, on a soft shadow.
 func _box(bg: Color, border: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.border_color = border
+	var glass := bg != Tok.PRIMARY and bg != Tok.PRIMARY_HI and bg != Tok.PRIMARY_LO
+	s.bg_color = Color(bg.lightened(0.04), 0.62) if glass else bg
+	s.border_color = Color(border.lightened(0.25), 0.55) if glass else border
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(Tok.RADIUS_M)
+	s.border_width_top = 1
+	s.set_corner_radius_all(Tok.RADIUS_M + 4)
 	s.content_margin_left = Tok.SPACE_LG
 	s.content_margin_right = Tok.SPACE_LG
-	s.shadow_color = Tok.SHADOW
-	s.shadow_offset = Pal.SHADOW_OFFSET
-	s.shadow_size = 2
+	s.shadow_color = Color(0.0, 0.0, 0.0, 0.28)
+	s.shadow_offset = Vector2(0, 4)
+	s.shadow_size = 10
+	s.anti_aliasing = true
+	return s
+
+
+## A large frosted pane behind a panel's column.
+func _glass() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(0.14, 0.12, 0.17, 0.42)
+	s.border_color = Color(1.0, 0.96, 0.92, 0.1)
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(28)
+	s.set_content_margin_all(Tok.SPACE_LG)
+	s.content_margin_top = Tok.SPACE_LG + 4
+	s.content_margin_bottom = Tok.SPACE_LG + 4
+	s.shadow_color = Color(0.0, 0.0, 0.0, 0.3)
+	s.shadow_size = 24
+	s.shadow_offset = Vector2(0, 8)
 	s.anti_aliasing = true
 	return s
 
@@ -447,10 +482,14 @@ func _panel() -> Array:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(center)
+	var pane := PanelContainer.new()
+	pane.add_theme_stylebox_override("panel", _glass())
+	pane.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pane.resized.connect(func() -> void: pane.pivot_offset = pane.size * 0.5)
+	center.add_child(pane)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", Tok.SPACE_MD)
-	box.resized.connect(func() -> void: box.pivot_offset = box.size * 0.5)
-	center.add_child(box)
+	pane.add_child(box)
 	return [p, box]
 
 

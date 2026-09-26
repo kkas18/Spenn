@@ -1597,3 +1597,40 @@ Grafikken er gjennomgått i høy oppløsning (1080×2400 og 1440×3200).
 ## Ytelse
 Gløden bruker 8 prøvepunkter på sterke enheter, 4 på middels og ingen på svake.
 Enhetsnivået senkes av seg selv hvis bildene tar for lang tid.
+
+# v7.19 – Drømmende og koselig (C, D og E)
+
+## C. Materialer
+- **Kantlys fra månen:** lysshaderen legger et kjølig, blått kantlys på kantene som
+  vender mot vinduet oppe til høyre. Det gjelder gelé, skall og metall.
+- **Gelé:**
+  - Gløder svakt innenfra (ekstra lys midt på kroppen).
+  - Fordypningen i gelé-ringene er lysere (mørkning 0,44 i stedet for 0,55), som
+    godteri holdt opp mot en lampe.
+
+## D. Pust og lyd
+Mellom bølgene «puster» rommet ut. Pusten glir inn over 0,6 s og ut over 1,2 s:
+- lampen dempes 30 %;
+- lysslyngen gløder sterkere og blinker langsommere;
+- ildfluene blir tydeligere;
+- musikken er 2,5 dB lavere og filtreres ned mot 4,2 kHz.
+
+Lyden er også gjort varmere:
+- Musikken rulles av over 11 kHz i spill og over 5,2 kHz i menyen.
+- Lydeffektene har mykere diskant og et litt større, dempet rom (romklang 0,13).
+- Musikken er ikke byttet. Et nytt, drømmende spor krever at vi finner et med fri
+  lisens.
+
+## E. Frostet glass
+- **Knapper:** gjennomskinnelige glassflater med fin lys kant, radius 18 og myk skygge.
+- **Paneler:** pause, innstillinger, statistikk og kuler ligger på en stor frostet
+  glassrute (radius 28, myk skygge) over den uskarpe scenen.
+- **Innslag:** ruten svinger seg inn med en liten overskyting.
+
+## Rettet
+- **Uskarp bakgrunn:** fargefilteret og den uskarpe bakgrunnen bak panelene kunne
+  begge bruke skjermkopien i samme bilde. Filteret legges nå bort mens den uskarpe
+  bakgrunnen vises, og HUD-en styrer dette, så det også virker når spillet er pauset.
+- **Testoppsett:** testrammen pauser nå direkte. Et dobbelttrykk rakk ikke gjennom
+  på den trege testmaskinen, og pausemenyen ble da liggende over Game Over. Det var
+  en feil i testen, ikke i spillet.

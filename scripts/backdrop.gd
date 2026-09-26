@@ -13,6 +13,7 @@ var l: Layout
 var danger := 0.0              # max target danger, 0..1
 var descent := 0.0             # foreground descent speed (px/s)
 var heat := 0.0                # overload (0/1): the room warms to gold
+var calm := 0.0                # between waves: lamp low, fireflies up
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
 var _heat := 0.0
@@ -135,6 +136,8 @@ func _process(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = move_toward(_heat, heat, rd / 0.6)
 	mat.set_shader_parameter("heat", _heat)
+	mat.set_shader_parameter("calm", calm)
+	_flies.modulate.a = 1.0 + 0.8 * calm
 	_dust.color = Color(Pal.INK.lerp(Pal.GOLD_LIGHT, _heat), 0.07 + 0.08 * _heat)
 	if l:
 		for b in _bokeh:

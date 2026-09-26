@@ -87,6 +87,7 @@ var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
 var _grade: ShaderMaterial
+var _grade_rect: ColorRect
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
@@ -102,6 +103,7 @@ var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
 var _last_kill := Vector2.ZERO
 var _cocky_t := 0.0             # after a breach the survivors get cocky
+var _calm := 0.0                # the breath between waves (eased 0..1)
 var daily := false              # this run is the daily challenge
 var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
@@ -163,6 +165,7 @@ func _ready() -> void:
 	var grade := ColorRect.new()
 	grade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	grade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grade_rect = grade
 	_grade = ShaderMaterial.new()
 	_grade.shader = preload("res://shaders/grade.gdshader")
 	grade.material = _grade
@@ -194,6 +197,7 @@ func _ready() -> void:
 	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
+	hud.grade_rect = _grade_rect
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
 	hud.resume_pressed.connect(_resume)
@@ -247,6 +251,10 @@ func _clear_field() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
+	_calm = 0.0
+	backdrop.calm = 0.0
+	rail.calm = 0.0
+	Music.calm = 0.0
 	Music.danger = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
@@ -686,6 +694,13 @@ func _pace(delta: float) -> void:
 	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
+	# Between waves the room breathes out: the lamp dims warmly, the bulbs
+	# glow and slow, the fireflies gather, the music softens.
+	var calm_want := 1.0 if director.wave_state == Director.Wave.BREAK else 0.0
+	_calm = move_toward(_calm, calm_want, rd / (0.6 if calm_want > _calm else 1.2))
+	backdrop.calm = _calm
+	rail.calm = _calm
+	Music.calm = _calm
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
 	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
