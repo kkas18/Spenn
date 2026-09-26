@@ -368,20 +368,23 @@ func _crisp_fonts(list: Array) -> void:
 
 func _build_fonts() -> void:
 	var ts := TextServerManager.get_primary_interface()
-	var fraunces: Font = load("res://fonts/Fraunces.ttf")
-	var manrope: Font = load("res://fonts/Manrope.ttf")
-	_crisp_fonts([fraunces, manrope])
+	# Gluten: round, bouncy, a little wobbly, like the jelly enemies it
+	# names; for the title, the score and the big cards. Nunito: rounded
+	# and quiet, for everything small (labels, buttons, missions).
+	var gluten: Font = load("res://fonts/Gluten.ttf")
+	var nunito: Font = load("res://fonts/Nunito.ttf")
+	_crisp_fonts([gluten, nunito])
 	_font_caps = FontVariation.new()
-	_font_caps.base_font = manrope
-	_font_caps.variation_opentype = {ts.name_to_tag("wght"): 700}
+	_font_caps.base_font = nunito
+	_font_caps.variation_opentype = {ts.name_to_tag("wght"): 800}
 	_font_caps.spacing_glyph = Tok.TRACKING
 	_font_num = FontVariation.new()
-	_font_num.base_font = fraunces
-	_font_num.variation_opentype = {ts.name_to_tag("wght"): 600, ts.name_to_tag("opsz"): 72}
-	_font_num.opentype_features = {ts.name_to_tag("tnum"): 1, ts.name_to_tag("lnum"): 1}
+	_font_num.base_font = gluten
+	_font_num.variation_opentype = {ts.name_to_tag("wght"): 650}
+	_font_num.opentype_features = {ts.name_to_tag("tnum"): 1}
 	_font_display = FontVariation.new()
-	_font_display.base_font = fraunces
-	_font_display.variation_opentype = {ts.name_to_tag("wght"): 600, ts.name_to_tag("opsz"): 144}
+	_font_display.base_font = gluten
+	_font_display.variation_opentype = {ts.name_to_tag("wght"): 700}
 	_theme = Theme.new()
 	_theme.default_font = _font_caps
 	_theme.default_font_size = Tok.TYPE_BUTTON

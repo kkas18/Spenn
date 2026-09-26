@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://behurg5dew3fn"
-path="res://.godot/imported/Fraunces.ttf-339d8c711e2dbeb6474913c2d6675039.fontdata"
+uid="uid://boi6d5p3ocxes"
+path="res://.godot/imported/Gluten.ttf-11e8217a5c2339f7be5df62041d01485.fontdata"
 
 [deps]
 
-source_file="res://fonts/Fraunces.ttf"
-dest_files=["res://.godot/imported/Fraunces.ttf-339d8c711e2dbeb6474913c2d6675039.fontdata"]
+source_file="res://fonts/Gluten.ttf"
+dest_files=["res://.godot/imported/Gluten.ttf-11e8217a5c2339f7be5df62041d01485.fontdata"]
 
 [params]
 

@@ -1647,3 +1647,13 @@ To rene feilrettinger er beholdt:
   «eksplodere» ved lange bilder.
 - **Kjettingen:** tegnes som ett lyssatt rørnett i stedet for ett tegnekall per ledd.
   Det gir ca. 330 tegnekall i stedet for ca. 1 250.
+
+## v7.21 – Ny skrift (Gluten + Nunito) og menymusikk (Dreamy Flashback)
+
+- **Skrift:** Fraunces/Manrope erstattet. *Gluten* (rund, myk og sprettende, som geléfiendene)
+  brukes til tittelbokstaver, poengsum og store tall (vekt 650–700, tabulære tall).
+  *Nunito* (avrundede terminaler) brukes til knapper, etiketter og små tekster i kapiteler (vekt 800).
+  Begge SIL OFL 1.1, lisenser i `fonts/`. Oversampling fra v7.17 beholdt.
+- **Menymusikk:** «Dreamy Flashback» (Kevin MacLeod, CC BY 4.0) erstatter «Envision». Spillmusikken
+  («Mesmerizing Galaxy») er uendret, så C-moll-tonestigen og 124 BPM gjelder fortsatt.
+- Kreditter (CREDITS.md og kredittskjermen) oppdatert.

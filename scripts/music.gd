@@ -2,7 +2,7 @@ extends Node
 ## Music system (autoload `Music`). Two recorded tracks by Kevin MacLeod
 ## (incompetech.com, CC BY 4.0, see CREDITS.md), prepared as seamless loops
 ## by tools/import_assets.py:
-##   menu  «Envision»            calm, mysterious
+##   menu  «Dreamy Flashback»    dreamy, harp and pads
 ##   play  «Mesmerizing Galaxy»  124 BPM, driving
 ## State changes never cut the music; they crossfade the tracks and move a
 ## low-pass on the Music bus:

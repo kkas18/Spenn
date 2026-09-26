@@ -11,7 +11,7 @@ re-encoding, seamless loops, texture downsizing). Nothing else is changed.
   Licensed under Creative Commons: By Attribution 4.0 License
   http://creativecommons.org/licenses/by/4.0/
   → `assets/music/play.ogg`
-- «Envision», Kevin MacLeod (incompetech.com)
+- «Dreamy Flashback», Kevin MacLeod (incompetech.com)
   Licensed under Creative Commons: By Attribution 4.0 License
   http://creativecommons.org/licenses/by/4.0/
   → `assets/music/menu.ogg` (loop crossfade baked in)
@@ -56,4 +56,4 @@ smoke_04, smoke_07, trace_06, circle_04, circle_05
 
 ## Fonts — SIL Open Font License 1.1
 
-Fraunces and Manrope, from google/fonts; licences in `fonts/`.
+Gluten (Etcetera Type Co.) and Nunito (Vernon Adams et al.), from google/fonts, SIL OFL 1.1; licences in `fonts/`.

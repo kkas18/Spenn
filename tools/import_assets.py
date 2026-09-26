@@ -91,7 +91,7 @@ MUSIC = {
     # 124 BPM, 48 bars: the published loop version is cut on the bar.
     "play": ("music_Mesmerizing_Galaxy_Loop.mp3", int(round(48 * 4 * 60.0 / 124.0 * 44100)), 0.0),
     # Not a loop: baked crossfade from the end back into the start.
-    "menu": ("music_Envision.mp3", None, 3.0),
+    "menu": ("music_Dreamy_Flashback.mp3", None, 3.0),
 }
 
 # texture name: (source file, size)
