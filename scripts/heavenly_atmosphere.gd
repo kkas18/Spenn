@@ -11,7 +11,6 @@ var motes := [
 
 func _ready() -> void:
 	z_index = 80
-	mouse_filter = Control.MOUSE_FILTER_IGNORE if self is Control else 0
 	queue_redraw()
 
 func _process(delta: float) -> void:
