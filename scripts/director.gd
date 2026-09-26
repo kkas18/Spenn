@@ -5,10 +5,10 @@ signal target_scored(points: int)
 signal target_struck(at: Vector2, color: Color)
 const Target=preload("res://scripts/target.gd")
 const Shadow=preload("res://scripts/cloud_shadow_projector.gd")
-var wave:=1
-var remaining:=0
+var wave:int=1
+var remaining:int=0
 var spawn_parent:Node
-var colors=[Color("#487CCB"),Color("#6756C8"),Color("#57A06E"),Color("#D89A4B")]
+var colors:Array[Color]=[Color("#487CCB"),Color("#6756C8"),Color("#57A06E"),Color("#D89A4B")]
 func setup(parent:Node)->void:
  spawn_parent=parent
  start_wave()
