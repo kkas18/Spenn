@@ -24,6 +24,15 @@ const CUT_SPEED := 1400.0      # a rising ball this fast severs a string near it
 const EXTRA_LIFE_EVERY := 1500
 const CHAIN_WINDOW := 1.2
 const CLOSE_CALL := 0.55       # danger above this when killed = close call
+const RESCUE := 0.85           # ... and above this, a rescue ("SAVED!")
+# Hazards: from wave 3 most waves bring one event partway through.
+enum Hazard { NONE, GUST, BLACKOUT, GOLD }
+const HAZARD_FROM := 3
+const GUST_TIME := 9.0
+const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a share)
+const GUST_BALL := 0.6
+const BLACKOUT_TIME := 8.0
+const GOLD_BONUS := 400
 const MAX_MINIONS := 3
 const TRIPLE_SPREAD := 0.1
 const Ammo := Slingshot.Ammo
@@ -74,6 +83,17 @@ var _release_hold := -1.0       # how long the last pull was held
 var _tactic_told := 0
 var _rhythm_told := false
 var _plunge_t := 12.0
+var _close_danger := 0.0        # how close the last killed target was to the line
+var _hazard := Hazard.NONE
+var _last_hazard := Hazard.NONE
+var _hazard_in := -1.0          # until the scheduled hazard starts
+var _hazard_t := 0.0            # time into the active hazard
+var _hazard_on := false
+var gust := 0.0
+var _gust_dir := 1.0
+var _gust_whoosh := 0.0
+var _dark := 0.0
+var _evolve_told := false
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
@@ -256,6 +276,7 @@ func _clear_field() -> void:
 	_end_overload(true)
 	_end_flow(true)
 	flow = 0.0
+	_end_hazard()
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
@@ -337,6 +358,8 @@ func _start_run() -> void:
 	_habit_told = false
 	_tactic_told = 0
 	flows = 0
+	_evolve_told = false
+	_last_hazard = Hazard.NONE
 	_rhythm_told = false
 	_plunge_t = 12.0
 	_chain = 0
@@ -554,6 +577,7 @@ func _process(delta: float) -> void:
 		_overload_tick(delta)
 		_flow_tick(delta)
 		_learn_tick()
+		_hazard_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -784,6 +808,7 @@ func _wave_tick(delta: float) -> void:
 				Pal.next_theme()
 				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
 				Sfx.play("streak", 0.85)
+				_schedule_hazard()
 				var tac := director.tactic()
 				if tac > _tactic_told:
 					_tactic_told = tac
@@ -797,11 +822,15 @@ func _clear_wave() -> void:
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
 	fx.shock(mid, 8.0, 380.0, 0.6)
-	# Final-kill camera: lean in on the last one and let time drag.
-	fx.focus(_last_kill, 0.06, 1.1)
-	fx.aberrate(3.0)
-	fx.slowmo(0.3, 0.5)
-	Music.duck(5.0, 0.6)
+	# Final-kill camera: widescreen bars close in, the camera leans in on
+	# the last one and time all but stops, then the next wave breaks loose.
+	var calm := Prefs.reduced_motion
+	hud.cinematic(0.9)
+	fx.focus(_last_kill, 0.05 if calm else 0.1, 1.4)
+	fx.aberrate(2.0 if calm else 4.0)
+	fx.slowmo(0.4 if calm else 0.2, 0.5 if calm else 0.8)
+	Music.duck(6.0, 0.9)
+	Sfx.play("burst", 0.55, -2.0)
 	Sfx.play("clear")
 	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
 	Sfx.haptic_pattern("record")
@@ -1024,7 +1053,7 @@ func _step(dt: float) -> void:
 	_knock_sfx_cd = maxf(0.0, _knock_sfx_cd - dt)
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
-			t.wind = _breeze(t.pos.x) + _push.x
+			t.wind = _breeze(t.pos.x) + _push.x + gust
 			t.step(dt, descent, layout.danger_y, band, layout.size.y)
 			if t.phase == Target.Phase.HANGING:
 				worst = maxf(worst, t.danger)
@@ -1037,6 +1066,7 @@ func _step(dt: float) -> void:
 	for b in balls:
 		if not b.active:
 			continue
+		b.vel.x += gust * GUST_BALL * dt
 		if not b.step(dt, layout):
 			_finish_ball(b)
 			continue
@@ -1141,6 +1171,7 @@ func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, d
 	var col := t.color()
 	var at := t.pos
 	var was_close := t.danger > CLOSE_CALL
+	_close_danger = t.danger
 	t.dent(contact, closing)
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = depth
@@ -1395,6 +1426,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var col := t.color()
 	backdrop.ripple(contact, col, clampf(closing / 1100.0, 0.35, 1.0) * (1.4 if t.hp <= 1 else 1.0))
 	var was_close := t.danger > CLOSE_CALL
+	_close_danger = t.danger
 	var hit_at := t.pos
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = 0
@@ -1453,6 +1485,12 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
 	_add_score(pts, at)
 	var text := Loc.t(SKILL_KEY[s])
+	var rescue := s == Skill.CLUTCH and _close_danger >= RESCUE
+	if rescue:
+		# Saved at the very last moment: worth double and a moment of its own.
+		text = Loc.t("skill.rescue")
+		_add_score(pts, at)
+		pts *= 2
 	if s == Skill.DOUBLE and n >= 2:
 		text = Loc.t("skill.triple") if n == 2 else Loc.t("skill.multi") % (n + 1)
 	elif s == Skill.CHAIN and n >= 2:
@@ -1465,7 +1503,16 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 			steps[i] += 4
 	Sfx.phrase(steps, 0.075, -2.0)
 	Sfx.haptic(14, 0.45)
-	if s == Skill.CLUTCH:
+	if rescue:
+		fx.slowmo(0.25, 0.55)
+		fx.focus(at, 0.08, 1.0)
+		fx.aberrate(5.0)
+		fx.flash(at, 80.0, Pal.GOLD_LIGHT)
+		backdrop.rescue()
+		Music.duck(5.0, 0.6)
+		Sfx.phrase([4, 5, 6, 7], 0.07, 0.0)
+		Sfx.haptic_pattern("record")
+	elif s == Skill.CLUTCH:
 		fx.slowmo(0.45, 0.28)
 		fx.focus(at, 0.035, 0.6)
 	elif (s == Skill.DOUBLE and n >= 2) or (s == Skill.CHAIN and n >= 2) or s == Skill.BREAK:
@@ -1625,6 +1672,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	cuts += 1
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
+	_close_danger = t.danger
 	t.cut()
 	var gained := t.points() * 2 * _mult() * _surge()
 	gained += _kill_bonus(t, gained)
@@ -1677,6 +1725,15 @@ func _kill_bonus(t: Target, gained: int) -> int:
 					n.scatter(t.pos)
 	_last_kill = t.pos
 	_flow_add(FLOW_KILL)
+	if t.golden:
+		bonus += GOLD_BONUS * _mult() * _surge()
+		fx.popup(Loc.t("gold.pop") % (GOLD_BONUS * _mult() * _surge()), t.pos + Vector2(0, -60.0), Pal.GOLD_LIGHT, 26, true)
+		fx.flash(t.pos, 90.0, Pal.GOLD_LIGHT)
+		fx.ring(t.pos, Pal.GOLD, 90.0)
+		fx.shards(t.pos, Pal.GOLD, 8, t.vel)
+		Sfx.phrase([4, 5, 6, 7, 8], 0.06, -1.0)
+		Sfx.haptic_pattern("record")
+		_flow_add(1.0)
 	if t.is_leader:
 		_break_formation(t, true)
 	_kill_note()
@@ -1837,6 +1894,130 @@ func _cross_u(p: Vector2, v: Vector2) -> float:
 	var w := layout.size.x
 	x = pingpong(x, w)
 	return clampf(x / w, 0.0, 0.999)
+
+
+# ---------------------------------------------------------------- hazards
+
+## Most waves from HAZARD_FROM on bring one event partway through, never
+## the same twice running.
+func _schedule_hazard() -> void:
+	_end_hazard()
+	if director.wave < HAZARD_FROM or _rng.randf() > 0.7:
+		return
+	var pool: Array[Hazard] = [Hazard.GUST, Hazard.BLACKOUT, Hazard.GOLD]
+	pool.erase(_last_hazard)
+	_hazard = pool[_rng.randi() % pool.size()]
+	_last_hazard = _hazard
+	_hazard_in = _rng.randf_range(6.0, 15.0)
+
+
+func _hazard_tick(delta: float) -> void:
+	for t in targets:
+		if t.evolved:
+			t.evolved = false
+			_announce_evolve(t)
+		if t.fled:
+			t.fled = false
+			fx.popup(Loc.t("gold.fled"), Vector2(t.anchor.x, layout.rail_y + 60.0), Pal.GOLD_LIGHT, 16)
+	Target.evolve_on = director.wave >= HAZARD_FROM
+	if _hazard == Hazard.NONE:
+		return
+	if not _hazard_on:
+		if director.breather > 0.0 or overload_t > 0.0:
+			return
+		_hazard_in -= delta
+		if _hazard_in <= 0.0:
+			_begin_hazard()
+		return
+	var rd := delta / maxf(Engine.time_scale, 0.001)
+	_hazard_t += rd
+	match _hazard:
+		Hazard.GUST:
+			var env := smoothstep(0.0, 1.2, _hazard_t) * smoothstep(0.0, 1.2, GUST_TIME - _hazard_t)
+			# It turns once, halfway through.
+			var dir := _gust_dir if _hazard_t < GUST_TIME * 0.5 else -_gust_dir
+			gust = dir * GUST_ACC * layout.scale * env * (0.65 + 0.35 * sin(_hazard_t * 1.7))
+			_gust_whoosh -= rd
+			if _gust_whoosh <= 0.0 and env > 0.5:
+				_gust_whoosh = _rng.randf_range(1.6, 2.6)
+				Sfx.play("whoosh", _rng.randf_range(0.6, 0.8), 2.0)
+			backdrop.gust = gust
+			if _hazard_t >= GUST_TIME:
+				_end_hazard()
+		Hazard.BLACKOUT:
+			var env := smoothstep(0.0, 0.6, _hazard_t) * smoothstep(0.0, 0.9, BLACKOUT_TIME - _hazard_t)
+			# The lamp struggles: now and then it flickers back for a blink.
+			var flick := 0.0
+			if not Prefs.reduced_motion and fposmod(_hazard_t, 2.6) > 2.45:
+				flick = 0.55
+			_set_dark(env * (1.0 - flick))
+			if _hazard_t >= BLACKOUT_TIME:
+				_end_hazard()
+		Hazard.GOLD:
+			if _hazard_t >= Target.GOLD_TIME + 2.0:
+				_end_hazard()
+
+
+func _begin_hazard() -> void:
+	_hazard_on = true
+	_hazard_t = 0.0
+	match _hazard:
+		Hazard.GUST:
+			_gust_dir = 1.0 if _rng.randf() < 0.5 else -1.0
+			_gust_whoosh = 0.0
+			hud.card(Loc.t("hazard.gust"), Loc.t("hazard.gustSub"), 1.4)
+		Hazard.BLACKOUT:
+			hud.card(Loc.t("hazard.dark"), Loc.t("hazard.darkSub"), 1.4)
+			Sfx.play("fall", 0.7)
+		Hazard.GOLD:
+			if _spawn_golden() == null:
+				_end_hazard()
+				return
+			hud.card(Loc.t("hazard.gold"), Loc.t("hazard.goldSub"), 1.4)
+			Sfx.play("clear", 1.3)
+
+
+func _end_hazard() -> void:
+	_hazard = Hazard.NONE
+	_hazard_on = false
+	_hazard_in = -1.0
+	gust = 0.0
+	backdrop.gust = 0.0
+	_set_dark(0.0)
+
+
+func _set_dark(v: float) -> void:
+	_dark = v
+	Target.dark = v
+	backdrop.dark = v
+	rail.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), v)
+
+
+## A golden one drops in at a free spot: it never sinks, and it flees.
+func _spawn_golden() -> Target:
+	var t := _free_target()
+	if t == null:
+		return null
+	var used: Array[float] = []
+	for o in targets:
+		if o.is_hittable():
+			used.append(o.anchor.x)
+	var x := _best_slot(used, 12)
+	t.aggression = 0.55
+	t.spawn(Target.Kind.RING, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * _rng.randf_range(0.18, 0.32), 0.0)
+	t.golden = true
+	return t
+
+
+func _announce_evolve(t: Target) -> void:
+	fx.popup(Loc.t("evolve.pop"), t.pos + Vector2(0, -t.radius - 30.0), Pal.INK, 18)
+	fx.ring(t.pos, t.color(), 60.0)
+	fx.puff(t.pos, Pal.INK, 4, 22.0, 0.15)
+	Sfx.play("clank", 0.8)
+	t.voice("taunt")
+	if not _evolve_told:
+		_evolve_told = true
+		hud.card(Loc.t("evolve.title"), Loc.t("evolve.sub"), 1.8)
 
 
 # ---------------------------------------------------------------- flow

@@ -170,6 +170,23 @@ static var aim_hold := -1.0
 static var cold_x := NAN
 var _rhythm_used := false       # one early dodge per aim
 var _order_drop := 0.0          # a team plunge, waiting on its telegraph
+# Blackout (0..1): bodies, strings and shadows sink into the dark; the
+# faces (eyes) are drawn on their own layer and keep glowing.
+static var dark := 0.0
+const DARK_TINT := Color(0.13, 0.15, 0.2)
+# Golden one: a rare gold ring worth a fortune. It never sinks and flees
+# back up its string after GOLD_TIME.
+const GOLD_TIME := 5.5
+var golden := false
+var _gold_t := 0.0
+var fled := false               # it got away (the game says so)
+# Evolution: a ring left hanging too long hardens into a heavy. It warns
+# first (pulses and trembles) so there is a last chance.
+static var evolve_on := false
+const EVOLVE_AT := 18.0
+const EVOLVE_WARN := 1.6
+var _age := 0.0
+var evolved := false            # hardened this frame (the game announces)
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -359,6 +376,11 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_lunge_left = 0.0
 	_order_drop = 0.0
 	_rhythm_used = false
+	golden = false
+	_gold_t = 0.0
+	fled = false
+	_age = 0.0
+	evolved = false
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -825,9 +847,12 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if scared:
 					# Overload: it scrambles back up its string, away from you.
 					length = maxf(60.0 * (_screen_h / 1280.0), length - 35.0 * dt)
+				elif golden:
+					_gold_step(dt)
 				else:
 					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * dt
 				goal_length = length
+				_evolve_step(dt)
 			if panicked():
 				tele_t = 0.0
 				_lunge_left = 0.0
@@ -1128,6 +1153,48 @@ func _move_anchor(dt: float) -> void:
 		_hopped -= back
 
 
+## Golden one: glitters for GOLD_TIME, then winches itself up and away.
+func _gold_step(dt: float) -> void:
+	_gold_t += dt
+	if _gold_t < GOLD_TIME:
+		return
+	if _gold_t - dt < GOLD_TIME:
+		Sfx.play("reel", 1.3)
+		voice("up")
+	length -= 520.0 * (_screen_h / 1280.0) * dt
+	if length < 14.0:
+		fled = true
+		phase = Phase.OFF
+		visible = false
+
+
+func evolve_warning() -> float:
+	if kind != Kind.RING or not evolve_on or golden or leader != null or is_leader:
+		return 0.0
+	return clampf((_age - (EVOLVE_AT - EVOLVE_WARN)) / EVOLVE_WARN, 0.0, 1.0)
+
+
+## A plain ring hanging on too long hardens into a heavy: same place,
+## tougher shell, a chain for a string.
+func _evolve_step(dt: float) -> void:
+	if kind != Kind.RING or golden or leader != null or is_leader:
+		return
+	_age += dt
+	if not evolve_on or _age < EVOLVE_AT:
+		return
+	kind = Kind.HEAVY
+	soft = false
+	hp = HP[Kind.HEAVY]
+	radius = RADIUS[Kind.HEAVY]
+	_m_key = -1
+	_sd.fill(0.0)
+	_sv.fill(0.0)
+	flash_t = 0.07
+	squash_t = 0.0
+	startle_t = 0.4
+	evolved = true
+
+
 ## Teamwork: a neighbour was destroyed at `from`; scatter away from it.
 func scatter(from: Vector2) -> void:
 	if tactic < 4 or leader != null or guard_of != null or kind == Kind.BOSS or _dodge_cd > 0.6:
@@ -1414,6 +1481,9 @@ func _tremble() -> Vector2:
 		j += Vector2(sin(_clock * 23.0 + _hue_shift * 50.0), cos(_clock * 19.0)) * 0.3
 	if (panicked() or hurry) and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
+	var ew := evolve_warning()
+	if ew > 0.0 and phase == Phase.HANGING:
+		j += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * 1.8 * ew
 	return j
 
 
@@ -1434,6 +1504,7 @@ func _process(delta: float) -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
 	intro_t = maxf(0.0, intro_t - delta)
+	_body.modulate = Color.WHITE.lerp(DARK_TINT, dark) if dark > 0.0 else Color.WHITE
 	_ring_t += delta
 	squash_t += delta
 	_clock += delta
@@ -1510,6 +1581,10 @@ func color() -> Color:
 	# a little more of the lamp.
 	var sd := seen_depth()
 	base = base.darkened(0.28 * maxf(0.0, -sd)).lightened(0.06 * maxf(0.0, sd))
+	var ew := evolve_warning()
+	if ew > 0.0:
+		# About to harden: a quickening pale pulse.
+		base = base.lerp(Pal.EYE, 0.35 * ew * (0.5 + 0.5 * sin(_clock * lerpf(8.0, 22.0, ew))))
 	if flash_t > 0.0:
 		# One-frame-ish matte flash on impact (lighter, never glowing).
 		base = base.lerp(Pal.EYE, 0.55 * flash_t / 0.07)
@@ -1517,6 +1592,8 @@ func color() -> Color:
 
 
 func _base_color() -> Color:
+	if golden:
+		return Pal.GOLD.lerp(Pal.GOLD_LIGHT, 0.5 + 0.5 * sin(_clock * 7.0))
 	# The current colour theme (they change, harmoniously, wave by wave).
 	var base := Pal.kind_color(kind)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:

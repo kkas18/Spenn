@@ -290,6 +290,12 @@ func hide_game_over() -> void:
 
 
 ## Big centred card: an event name and a line under it.
+## Widescreen bars close in for a cinematic moment, held `hold` seconds.
+func cinematic(hold: float) -> void:
+	overlay.cine_t = 0.0
+	overlay.cine_hold = hold
+
+
 func card(title: String, sub: String, hold := 1.0) -> void:
 	overlay.card_title = title
 	overlay.card_sub = sub
@@ -813,6 +819,8 @@ class Overlay extends Control:
 	var card_sub := ""
 	var card_t := 99.0
 	var card_hold := 1.0
+	var cine_t := 99.0
+	var cine_hold := 1.0
 	var menu_a := 0.0
 	var intro_name := ""
 	var intro_desc := ""
@@ -825,6 +833,17 @@ class Overlay extends Control:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var _flow_a := 0.0
+
+	func _draw_cine(l: Layout) -> void:
+		var total := 0.25 + cine_hold + 0.45
+		if cine_t >= total:
+			return
+		var k := Motion.ease_value(Motion.Ease.ENTER, cine_t / 0.25)
+		if cine_t > 0.25 + cine_hold:
+			k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (cine_t - 0.25 - cine_hold) / 0.45)
+		var h := l.size.y * 0.085 * k
+		draw_rect(Rect2(0, 0, l.size.x, h), Color(0, 0, 0, 0.92))
+		draw_rect(Rect2(0, l.size.y - h, l.size.x, h), Color(0, 0, 0, 0.92))
 
 	## The flow meter: a fine bar on the floor just under the danger line.
 	## Hot, it fills white-cyan, glows and beats with the music.
@@ -851,6 +870,7 @@ class Overlay extends Control:
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
 		card_t += rd
+		cine_t += rd
 		intro_t += rd
 		count_t += rd
 		_clock += rd
@@ -887,6 +907,7 @@ class Overlay extends Control:
 			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Tok.PRIMARY, p))
 		if hud.modal_open():
 			return
+		_draw_cine(l)
 		_draw_flow(l, caps)
 		if intro_t < Hud.INTRO_TIME and intro_name != "":
 			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))

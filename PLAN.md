@@ -1714,3 +1714,22 @@ Strengene i bakgrunnen er nå lysfibre (alle tre forslagene):
   - Musikken åpner seg, og lysfibrene pulserer i takt og skifter mot en elektrisk farge.
   - Bom tapper måleren.
 - Balansen kontrolleres med spill-boten, med fast og variert rytme, før og etter.
+
+## v7.25 – Hendelser, siste-drap-kamera, REDDET! og fiender som vokser (runde 2)
+
+- **K. Hendelser:** fra bølge 3 får omtrent 70 % av bølgene én hendelse 6–15 sekunder inn,
+  aldri samme hendelse to ganger på rad. Hver hendelse varsles med et kort.
+  - **VINDKAST (9 s):** vinden drar i fiendene og litt i kulene, snur halvveis, og vindstriper
+    og lysfibre lener seg med.
+  - **MØRKLEGGING (8 s):** kropper, snorer, vegg og bjelke synker i mørket, mens øynene lyser
+    videre. Lampen flimrer tilbake av og til.
+  - **GULLFIENDE:** en gullring som aldri synker og flykter etter 5,5 sekunder. Treff gir
+    400 × multiplikator og full FLYT-måler.
+- **L. Siste-drap-kamera:** svarte kinobarer lukker seg, kameraet zoomer inn og tiden nesten
+  stopper før neste bølge.
+- **M. REDDET!:** en fiende drept helt ved linjen (fare ≥ 0,85) gir dobbel poengsum, dyp
+  sakte film, zoom og en gullblink langs farelinjen. «SISTE SEKUND» gjelder fortsatt for
+  nesten-redninger.
+- **E. Utvikling:** fra bølge 3 herdes en vanlig ring som får henge i 18 sekunder til en
+  tung fiende med kjetting. Den pulserer og skjelver i 1,6 sekunder først, så du har en siste
+  sjanse. Første gang forklarer et kort det.

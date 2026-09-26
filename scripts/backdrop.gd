@@ -31,6 +31,9 @@ var danger := 0.0              # max target danger, 0..1
 var descent := 0.0             # foreground descent speed (px/s)
 var heat := 0.0                # overload (0/1): the room warms to gold
 var flow := false              # flow: the fibres pulse on every beat
+var gust := 0.0                # a gust (px/s², signed): streaks of wind, strings lean
+var dark := 0.0                # blackout, 0..1: the wall and dust sink into the dark
+var _rescue := 0.0             # a rescue: the danger wire flashes gold
 var _flow := 0.0
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
@@ -139,6 +142,9 @@ func _process(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	_heat = move_toward(_heat, heat, rd / 0.6)
 	_flow = move_toward(_flow, 1.0 if flow else 0.0, rd / 0.4)
+	_rescue = maxf(0.0, _rescue - rd / 0.9)
+	_bg.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), dark)
+	_dust.gravity = Vector2(gust * 0.35, -3.0)
 	mat.set_shader_parameter("heat", _heat)
 	_dust.color = Color(Pal.INK.lerp(Pal.GOLD_LIGHT, _heat), 0.07 + 0.08 * _heat)
 	if l:
@@ -201,6 +207,7 @@ func _draw_layer() -> void:
 	_layer.position = view * 0.4
 	_draw_wall_shadows()
 	_draw_bokeh()
+	_draw_gust()
 	_draw_far()
 	_draw_danger()
 
@@ -239,7 +246,7 @@ func _draw_bokeh() -> void:
 	for b in _bokeh:
 		var p := Vector2(b.x * l.size.x, l.rail_y + b.y * l.play_h)
 		var lit := clampf(1.0 - p.distance_to(lamp) / (l.size.y * 0.7), 0.0, 1.0)
-		var a := (0.012 + 0.03 * lit) * (0.7 + 0.3 * sin(_clock * 0.4 + b.ph))
+		var a := (0.012 + 0.03 * lit) * (0.7 + 0.3 * sin(_clock * 0.4 + b.ph)) * (1.0 - 0.8 * dark)
 		var r: float = b.r
 		var c := Pal.INK.lerp(Pal.GOLD_LIGHT, _heat)
 		_layer.draw_texture_rect(SOFT, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(c, a))
@@ -266,7 +273,7 @@ func _draw_far() -> void:
 		pulse = _flow * (pow(1.0 - fposmod(b, 1.0), 4.0) if b >= 0.0 else 0.5 + 0.5 * sin(_clock * 13.0))
 	for i in _far.size():
 		var f: Dictionary = _far[i]
-		var sway := sin(_clock * f.rate + f.phase) * 6.0
+		var sway := sin(_clock * f.rate + f.phase) * 6.0 + gust * 0.12
 		var top := Vector2(f.x, l.rail_y + 10.0)
 		var length: float = l.play_h * f.len * 0.8 + _far_drop * FAR_SCALE
 		var drop_s := -1.0
@@ -322,6 +329,28 @@ func _draw_far() -> void:
 		f.col = _cols[SEG - 1]
 
 
+## A saved target: the wire it nearly crossed flashes gold.
+func rescue() -> void:
+	_rescue = 1.0
+
+
+## Wind: fine streaks racing across the room with the gust.
+func _draw_gust() -> void:
+	var g := absf(gust) / (160.0 * l.scale)
+	if g <= 0.02:
+		return
+	var w := l.size.x
+	var dir := signf(gust)
+	for i in 18:
+		var u := fposmod(i * 0.618, 1.0)
+		var y := l.rail_y + 30.0 + u * (l.play_h - 60.0)
+		var len := 50.0 + 90.0 * fposmod(i * 0.37, 1.0)
+		var sp := 700.0 + 500.0 * fposmod(i * 0.71, 1.0)
+		var x := fposmod(i * 131.0 + _clock * sp * dir, w + len * 2.0) - len
+		var a := 0.07 * g * (0.5 + 0.5 * fposmod(i * 0.43, 1.0))
+		_layer.draw_line(Vector2(x, y), Vector2(x - dir * len, y + len * 0.04), Color(Pal.INK, a), 1.2, true)
+
+
 ## Where a string's lowest bead sits (0..1 down it).
 func _bead_s(f: Dictionary) -> float:
 	return 1.0 - float(f.beads) * 0.09
@@ -372,10 +401,12 @@ func _draw_danger() -> void:
 		var x := w * i / 40.0
 		var env := sin(PI * i / 40.0)
 		_wire.append(Vector2(x, y + sin(_clock * hz + i * 0.9) * amp * env))
-	var col := Pal.METAL.lerp(Pal.CORAL, k)
+	var col := Pal.METAL.lerp(Pal.CORAL, k).lerp(Pal.GOLD_LIGHT, _rescue)
 	if k > 0.05:
 		# Warm halo around the wire when it is under strain.
 		_layer.draw_polyline(_wire, Color(Pal.CORAL, 0.12 * k), 9.0, true)
+	if _rescue > 0.0:
+		_layer.draw_polyline(_wire, Color(Pal.GOLD_LIGHT, 0.3 * _rescue), 12.0, true)
 	_layer.draw_set_transform(Vector2(0, 2))
 	_layer.draw_polyline(_wire, Color(Pal.SHADOW, 0.6), 2.0, true)
 	_layer.draw_set_transform(Vector2.ZERO)
