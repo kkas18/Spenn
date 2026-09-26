@@ -206,6 +206,9 @@ var rescuable := false          # falling from a cut, may still be caught
 var slipped := false            # missed its grab: falls (the game scores it)
 var grabbed := false            # caught a rope this frame (the game reacts)
 var rescued := false            # ... and it was a rescue
+# Nemesis: the one that got through comes back later in the run, scarred,
+# smug and tougher (level: how many times it has got through).
+var nemesis := 0
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -408,6 +411,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	slipped = false
 	grabbed = false
 	rescued = false
+	nemesis = 0
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -904,6 +908,8 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			_body_step(dt)
 			_z_step(dt)
 			_tease(dt)
+			if nemesis > 0:
+				smug = maxf(smug, 0.75)
 			_soft_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
 			_rope_step(dt)
@@ -2319,6 +2325,23 @@ func _draw_face() -> void:
 	col.a *= 1.0 - 0.9 * hidden_amt
 	_details(col)
 	_eye()
+	if nemesis > 0:
+		_scar(col.a)
+
+
+## Nemesis: a stitched scar slashed across the eye (one more per level).
+func _scar(a: float) -> void:
+	var h := maxf(_hole(), radius * 0.45)
+	for k in mini(nemesis, 2):
+		var o := Vector2(k * h * 0.35, -k * h * 0.2)
+		var p0 := Vector2(-h * 0.75, -h * 0.8) + o
+		var p1 := Vector2(h * 0.55, h * 0.75) + o
+		_face.draw_line(p0 + Vector2(1, 1), p1 + Vector2(1, 1), Color(0, 0, 0, 0.35 * a), 3.0, true)
+		_face.draw_line(p0, p1, Color(Color("E9B7AE"), 0.95 * a), 2.2, true)
+		var n := (p1 - p0).orthogonal().normalized() * 3.5
+		for s in 3:
+			var m := p0.lerp(p1, 0.25 + 0.25 * s)
+			_face.draw_line(m - n, m + n, Color(Pal.PUPIL, 0.8 * a), 1.2, true)
 
 
 ## Radius of the open centre of ring-shaped bodies (where the face sits).

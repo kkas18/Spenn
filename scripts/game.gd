@@ -33,6 +33,13 @@ const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a
 const GUST_BALL := 0.6
 const BLACKOUT_TIME := 8.0
 const GOLD_BONUS := 400
+# Nemesis: the target that took a knot returns 18-30 s of play later,
+# scarred and tougher; destroying it pays revenge.
+const NEMESIS_BACK := Vector2(18.0, 30.0)
+const REVENGE := 300
+# Pendulum hit: a target struck as it swings fast through the bottom of its arc.
+const SWING_ANGLE := 0.14
+const SWING_SPEED := 150.0
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 5
@@ -60,11 +67,11 @@ const FLOW_RELOAD := 1.4        # reload speed factor while it lasts
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
-enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN, BREAK, AIR }
-const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain", "skill.break", "skill.air"]
-const SKILL_POINTS := [40, 40, 60, 50, 50, 60, 80, 70]
-const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14, 0.12, 0.12]
-const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8], [2, 4, 5, 7], [1, 3, 5, 8]]
+enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN, BREAK, AIR, SWING }
+const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain", "skill.break", "skill.air", "skill.swing"]
+const SKILL_POINTS := [40, 40, 60, 50, 50, 60, 80, 70, 50]
+const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14, 0.12, 0.12, 0.1]
+const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8], [2, 4, 5, 7], [1, 3, 5, 8], [4, 2, 4, 7]]
 const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 # Chain reactions: a falling body this fast knocks off what it lands on; a
 # freshly struck target slamming a neighbour this hard hurts it.
@@ -104,8 +111,12 @@ var _dark := 0.0
 var _evolve_told := false
 var _acro_t := 8.0
 var _acro_told := false
+var _nemesis_kind := -1         # the kind that got through, waiting to return
+var _nemesis_lv := 0
+var _nemesis_in := -1.0
+var revenges := 0
 var overloads := 0
-var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
+var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
 var ammo: Array[int] = []       # index 0 is loaded
 var reload_t := 0.0
@@ -368,13 +379,17 @@ func _start_run() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	overloads = 0
-	skill_counts = [0, 0, 0, 0, 0, 0, 0, 0]
+	skill_counts = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 	waves_cleared = 0
 	_habit_told = false
 	_tactic_told = 0
 	flows = 0
 	_evolve_told = false
 	_acro_told = false
+	_nemesis_kind = -1
+	_nemesis_lv = 0
+	_nemesis_in = -1.0
+	revenges = 0
 	_acro_t = 8.0
 	_last_hazard = Hazard.NONE
 	_rhythm_told = false
@@ -596,6 +611,7 @@ func _process(delta: float) -> void:
 		_learn_tick()
 		_hazard_tick(delta)
 		_acro_tick(delta)
+		_nemesis_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -1454,6 +1470,9 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var col := t.color()
 	if t.acro == Target.Acro.FLY:
 		_skill(Skill.AIR, contact)
+	elif t.kind != Target.Kind.BOSS and absf(atan2(t.pos.x - t.anchor.x, t.pos.y - t.anchor.y)) < SWING_ANGLE and absf(t.vel.x) > SWING_SPEED * layout.scale:
+		# Caught at the bottom of a fast swing: timing, not just aim.
+		_skill(Skill.SWING, contact)
 	backdrop.ripple(contact, col, clampf(closing / 1100.0, 0.35, 1.0) * (1.4 if t.hp <= 1 else 1.0))
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
@@ -1773,6 +1792,17 @@ func _kill_bonus(t: Target, gained: int) -> int:
 					n.scatter(t.pos)
 	_last_kill = t.pos
 	_flow_add(FLOW_KILL)
+	if t.nemesis > 0:
+		var rv := REVENGE * t.nemesis * _mult() * _surge()
+		bonus += rv
+		revenges += 1
+		fx.popup(Loc.t("nemesis.revenge") % rv, t.pos + Vector2(0, -70.0), Pal.GOLD_LIGHT, 28, true)
+		fx.flash(t.pos, 100.0, Pal.GOLD_LIGHT)
+		fx.ring(t.pos, Pal.GOLD, 100.0)
+		fx.focus(t.pos, 0.06, 0.8)
+		fx.slowmo(0.35, 0.4)
+		Sfx.phrase([0, 3, 4, 7, 8], 0.07, 0.0)
+		Sfx.haptic_pattern("record")
 	if t.golden:
 		bonus += GOLD_BONUS * _mult() * _surge()
 		fx.popup(Loc.t("gold.pop") % (GOLD_BONUS * _mult() * _surge()), t.pos + Vector2(0, -60.0), Pal.GOLD_LIGHT, 26, true)
@@ -1800,6 +1830,11 @@ func _breach(t: Target) -> void:
 	var at := Vector2(t.pos.x, layout.danger_y)
 	if t.is_leader:
 		_break_formation(t, false)
+	# It will be back, and it will remember.
+	if t.kind != Target.Kind.BOSS and not t.golden:
+		_nemesis_kind = t.kind
+		_nemesis_lv = maxi(_nemesis_lv, t.nemesis) + 1
+		_nemesis_in = _rng.randf_range(NEMESIS_BACK.x, NEMESIS_BACK.y)
 	t.cut()
 	rail.flex(t.anchor.x, 9.0)
 	fx.shake(3.0)
@@ -2224,6 +2259,38 @@ func _magnet(b: Ball, dt: float) -> void:
 			best = t
 	if best:
 		b.vel += (best.pos - b.pos).normalized() * 260.0 * perk("magnet") * dt
+
+
+# ---------------------------------------------------------------- nemesis
+
+## The one that got through returns (once the field is in full swing),
+## named, scarred and tougher; the card says who is back.
+func _nemesis_tick(delta: float) -> void:
+	if _nemesis_kind < 0 or _nemesis_in < 0.0:
+		return
+	if director.wave_state != Director.Wave.SPAWNING or director.breather > 0.0 or overload_t > 0.0:
+		return
+	_nemesis_in -= delta
+	if _nemesis_in > 0.0:
+		return
+	var t := _spawn_one(_nemesis_kind as Target.Kind)
+	if t == null:
+		_nemesis_in = 3.0
+		return
+	_nemesis_in = -1.0
+	_nemesis_kind = -1
+	t.nemesis = _nemesis_lv
+	t.hp += _nemesis_lv
+	t.aggression = minf(1.0, t.aggression + 0.25)
+	var name := Loc.t("nemesis.%d" % t.kind)
+	if _nemesis_lv > 1:
+		name += " " + ["", "", "II", "III", "IV"][mini(_nemesis_lv, 4)]
+	hud.card(Loc.t("nemesis.back") % name, Loc.t("nemesis.sub"), 1.6)
+	Sfx.voice("taunt", 0.8, 0, -2.0)
+	Sfx.play("boss", 1.2, -6.0)
+	fx.after(0.6, func() -> void:
+		if is_instance_valid(t) and t.is_hittable():
+			t.taunt())
 
 
 # ---------------------------------------------------------------- flow

@@ -1772,3 +1772,18 @@ Fra bølge 5 (varslet med kortet «DE SVINGER»):
 - Nivåprikker på kortet viser hva du har fra før. Alt nullstilles ved ny runde.
 - Bot (6 frø): median ca. 219 s mot 166 s. Oppgraderingene gir følbar vekst, men en runde
   ender fortsatt rundt bølge 7–11.
+
+## v7.28 – Nemesis (E) og pendeltreff (F)
+
+- **Nemesis:** fienden som tar en knute av deg, kommer tilbake 18–30 sekunder senere i runden
+  (mens bølgen er i gang).
+  - Den har navn per type (ARR-RINGEN, JERNKJEVEN, TVILLINGEN, PINNEN, STUPEREN, VOKTER-VIDAR,
+    SNELLEMANN, SKYGGEN, DOKTOR DRYPP, SPEILGLISET).
+  - Den har et sydd arr over øyet, et permanent kjepphøyt blikk og ett ekstra liv per nivå.
+    Den er også raskere til å reagere.
+  - Den varsles med kortet «ARR-RINGEN ER TILBAKE» og håner deg.
+  - Tar du den: HEVN! +300 × nivå × multiplikator, med zoom, sakte film og en egen melodi.
+  - Kommer den gjennom igjen, blir den nivå II (to arr) osv.
+- **Pendeltreff:** treffer du en fiende i bunnen av en rask sving (vinkel < 0,14 rad, fart over
+  150 px/s), får du skillet PENDELTREFF (+50, egen tone). Det belønner timing, ikke bare sikte.
+- Bot (6 frø): median ca. 214 s, som før, så balansen er uendret.
