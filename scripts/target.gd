@@ -242,6 +242,20 @@ var raged := false              # flew into a rage this frame (the game names it
 var crying := 0.0               # cute: tears (s)
 var wants_help := false         # cute: asks the game for a friend's help
 var _help_cd := 0.0
+# Variants: members of a family that look and act a little differently.
+#   Dykker (DROP):  BOB (mint) bobs on its bungee; TWIN (lilac) splits into
+#                   two little drops; BIG (deep blue) is large, takes two
+#                   hits and dives further.
+#   Vakt (RING):    HOPPER (pink) hops sideways now and then; BIG (deep
+#                   blue) is large, takes two hits and is slower.
+enum Var { STD, BOB, TWIN, BIG, HOPPER }
+const VARIANT_TINT := [Color.WHITE, Color("7FE3B8"), Color("C3A8FF"), Color("3C6BD6"), Color("FF9CC6")]
+var variant := Var.STD
+# Champion: a wave's finale, bigger, tougher, grumpy, ringed in gold.
+var champion := false
+var _bob_off := 0.0
+var _bob_ph := 0.0
+var _hopper_t := 2.5
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -455,6 +469,11 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	charm_flash = 0.0
 	mood = Mood.NEUTRAL
 	anger = 0.0
+	variant = Var.STD
+	champion = false
+	_bob_off = 0.0
+	_bob_ph = randf() * TAU
+	_hopper_t = randf_range(1.5, 3.0)
 	raged = false
 	crying = 0.0
 	wants_help = false
@@ -732,7 +751,7 @@ func speed_mul() -> float:
 
 
 func mass() -> float:
-	return MASS[kind]
+	return MASS[kind] * (1.5 if variant == Var.BIG else 1.0) * (1.4 if champion else 1.0)
 
 
 ## Circle used for target-to-target contact (the rod uses its half span).
@@ -1048,6 +1067,19 @@ func _brain(dt: float) -> void:
 				squash_t = 0.0
 				squash_dir = Vector2.UP
 		Kind.RING:
+			if variant == Var.HOPPER and not aimed:
+				# Hoppering: a quick sideways hop now and then.
+				_hopper_t -= dt
+				if _hopper_t <= 0.0:
+					_hopper_t = randf_range(2.0, 3.2)
+					var sc := _screen_h / 1280.0
+					var dir := -1.0 if randf() < 0.5 else 1.0
+					if anchor.x + dir * 70.0 * sc > slide_hi or anchor.x + dir * 70.0 * sc < slide_lo:
+						dir = -dir
+					_slide(anchor.x + dir * randf_range(50.0, 80.0) * sc, 420.0 * sc, true)
+					vel.y -= 110.0
+					squash_t = 0.0
+					squash_dir = Vector2.UP
 			# Vakt: with cover available it slides its hook along the rail to
 			# hang behind another target; otherwise it evades like the rest.
 			if aimed and has_cover and a > 0.12 and _dodge_cd <= 0.0:
@@ -1078,7 +1110,14 @@ func _brain(dt: float) -> void:
 					_brain_t = lerpf(4.5, 2.2, a)
 					_dodge_cd = lerpf(3.0, 1.6, a)
 					_aim_t = 0.0
-			_lunge_brain(dt, lerpf(4.5, 2.2, a), 50.0)
+			if variant == Var.BOB:
+				# Bobs on its bungee: never where you last saw it.
+				var off := sin(_clock * 4.2 + _bob_ph) * 26.0 * (_screen_h / 1280.0)
+				length += off - _bob_off
+				goal_length = length
+				_bob_off = off
+			var big := variant == Var.BIG
+			_lunge_brain(dt, lerpf(4.5, 2.2, a) * (1.5 if variant == Var.BOB else (1.4 if big else 1.0)), 85.0 if big else 50.0)
 		Kind.SHIELD:
 			# Vokter: the plate turns toward the slingshot with some lag.
 			_evade(dt)
@@ -1365,6 +1404,32 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	startle_t = 0.25
 	Sfx.play("slide", randf_range(0.95, 1.1))
+
+
+## Makes this one a variant of its family (right after spawning).
+func set_variant(v: int) -> void:
+	variant = v as Var
+	if variant == Var.BIG:
+		radius *= 1.35 if kind == Kind.DROP else 1.25
+		hp = maxi(hp, 2)
+		_eye_scale *= 1.2
+		_m_key = -1
+
+
+## A wave's finale: bigger, tougher, grumpy.
+func make_champion() -> void:
+	champion = true
+	radius *= 1.15
+	hp += 2
+	_eye_scale *= 1.1
+	_m_key = -1
+	aggression = minf(1.0, aggression + 0.2)
+	set_mood(Mood.GRUMPY)
+
+
+## Key for the "new enemy" card: the kind, or its variant.
+func intro_id() -> int:
+	return kind if variant == Var.STD else 100 + kind * 10 + variant
 
 
 ## Sets the mood rolled at spawn (and when a cute one gets upset).
@@ -2059,6 +2124,8 @@ func _base_color() -> Color:
 		return Pal.GOLD.lerp(Pal.GOLD_LIGHT, 0.5 + 0.5 * sin(_clock * 7.0))
 	# The current colour theme (they change, harmoniously, wave by wave).
 	var base := Pal.kind_color(kind)
+	if variant != Var.STD:
+		base = base.lerp(VARIANT_TINT[variant], 0.75)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
 		# Each individual a shade of its own: hue, saturation and value drift
 		# a little around the theme's colour, never far enough to blur kinds.
@@ -2596,6 +2663,16 @@ func _draw_face() -> void:
 		for i in shc.size():
 			shc[i] += Vector2(1.5, 1.5)
 		f.draw_colored_polygon(shc, Color(0, 0, 0, 0.35))
+		f.draw_colored_polygon(crown, Pal.GOLD)
+	if champion and phase == Phase.HANGING:
+		# The champion's ring of gold, turning slowly, with a small crown.
+		for i in 16:
+			var a0 := _clock * 0.9 + i * TAU / 16.0
+			f.draw_arc(pos, radius + 13.0, a0, a0 + 0.22, 4, Color(Pal.GOLD, 0.8), 2.0, true)
+		var cp := pos + Vector2(0, -radius - 20.0)
+		var crown := PackedVector2Array()
+		for q: Vector2 in [Vector2(-9, 4), Vector2(-9, -3), Vector2(-4.5, 1), Vector2(0, -6), Vector2(4.5, 1), Vector2(9, -3), Vector2(9, 4)]:
+			crown.append(cp + q * 1.6)
 		f.draw_colored_polygon(crown, Pal.GOLD)
 	_draw_charm(f)
 	if kind == Kind.BOSS and phase == Phase.HANGING:

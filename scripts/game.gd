@@ -27,7 +27,7 @@ const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const RESCUE := 0.85           # ... and above this, a rescue ("SAVED!")
 # Hazards: from wave 3 most waves bring one event partway through.
 enum Hazard { NONE, GUST, BLACKOUT, GOLD }
-const HAZARD_FROM := 3
+const HAZARD_FROM := 2
 const GUST_TIME := 9.0
 const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a share)
 const GUST_BALL := 0.6
@@ -42,14 +42,14 @@ const SWING_ANGLE := 0.14
 const SWING_SPEED := 150.0
 # Cunning tricks and the wave each starts at.
 const EMPTY_WAVE := 2           # an empty rack: the nearest to the line pounce
-const PLAYDEAD_WAVE := 3
-const SNEAK_WAVE := 4           # while you aim at one, another sneaks down
-const SWAP_WAVE := 6            # two neighbours trade places under your aim
+const PLAYDEAD_WAVE := 2
+const SNEAK_WAVE := 3           # while you aim at one, another sneaks down
+const SWAP_WAVE := 4            # two neighbours trade places under your aim
 const SNEAK_EVERY := 7.0
 const SWAP_EVERY := 8.0
 # Trick charms (from CHARM_WAVE): spawned on some targets, shared, swapped,
 # inherited, copied by Pipp and handed out by Pakkis.
-const CHARM_WAVE := 3
+const CHARM_WAVE := 2
 const CHARM_SWAP := Vector2(7.0, 11.0)
 const CHARM_PASS_CD := 5.0
 const CHARM_GIFT := 6.0
@@ -62,7 +62,7 @@ const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.
 const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
-const ACRO_WAVE := 5
+const ACRO_WAVE := 3
 const ACRO_EVERY := Vector2(8.0, 13.0)
 const RESCUE_CHANCE := 0.4
 const ACRO_KINDS := [Target.Kind.RING, Target.Kind.SPLIT, Target.Kind.DROP, Target.Kind.SHADE, Target.Kind.MEDIC, Target.Kind.REEL, Target.Kind.PIPP]
@@ -520,6 +520,7 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	# Aggression first: the temperament is rolled from it at spawn.
 	t.aggression = director.aggression()
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
+	_roll_variant(t)
 	_maybe_intro(t)
 	_roll_mood(t)
 	if director.wave >= CHARM_WAVE and kind != Target.Kind.BOSS and kind != Target.Kind.PAKKIS and _rng.randf() < clampf(0.12 + 0.03 * (director.wave - CHARM_WAVE), 0.0, 0.35):
@@ -582,7 +583,7 @@ func _boss_alive() -> bool:
 
 ## First time a kind ever appears it gets a short card and a marker ring.
 func _maybe_intro(t: Target) -> void:
-	if not Prefs.seen.has(t.kind) and not _intro_queue.has(t):
+	if not Prefs.seen.has(t.intro_id()) and not _intro_queue.has(t):
 		_intro_queue.append(t)
 
 
@@ -593,9 +594,9 @@ func _run_intros() -> void:
 	if t.phase == Target.Phase.HANGING and t.delay > 0.0:
 		return
 	_intro_queue.pop_front()
-	if t.phase != Target.Phase.HANGING or not Prefs.first_sight(t.kind):
+	if t.phase != Target.Phase.HANGING or not Prefs.first_sight(t.intro_id()):
 		return
-	var parts := Loc.t("enemy.%d" % t.kind).split("|")
+	var parts := Loc.t("enemy.%d" % t.intro_id()).split("|")
 	hud.intro(parts[0], parts[1] if parts.size() > 1 else "")
 	t.intro_t = 3.0
 	Sfx.play("intro")
@@ -767,7 +768,11 @@ func _jolt() -> void:
 ## heartbeat when a target is close to the line.
 func _pace(delta: float) -> void:
 	director.tick(delta)
+	director.update_wave(_alive_count())
 	_wave_tick(delta)
+	if director.wants_finale():
+		director.finale_done = true
+		_spawn_finale()
 	_spawn_t -= delta
 	if director.wave_state == Director.Wave.SPAWNING:
 		if _alive_count() < director.alive_floor():
@@ -1757,6 +1762,8 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 		Sfx.haptic(80, 0.9)
 	if kind == Target.Kind.SPLIT:
 		_split(t)
+	elif kind == Target.Kind.DROP and t.variant == Target.Var.TWIN:
+		_twin(t)
 
 
 ## Rigid shells each sound like what they are made of.
@@ -1859,6 +1866,13 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	_flow_add(FLOW_KILL)
 	if t.charm != Target.Charm.NONE:
 		_inherit_charm(t)
+	if t.champion:
+		var cb := 150 * director.wave * _mult() * _surge()
+		bonus += cb
+		fx.popup(Loc.t("finale.won") % cb, t.pos + Vector2(0, -80.0), Pal.GOLD_LIGHT, 26, true)
+		fx.ring(t.pos, Pal.GOLD, 110.0)
+		fx.focus(t.pos, 0.07, 0.9)
+		Sfx.phrase([0, 2, 4, 7, 8], 0.07, -1.0)
 	if t.nemesis > 0:
 		var rv := REVENGE * t.nemesis * _mult() * _surge()
 		bonus += rv
@@ -2655,6 +2669,69 @@ func _answer_cry(t: Target) -> void:
 		guard.slide_now(t.anchor.x + (guard.anchor.x - t.anchor.x) * 0.15, 360.0 * layout.scale)
 		guard.voice("taunt", -4.0)
 		_name_trick("mood.help", t.pos)
+
+
+# ---------------------------------------------------------------- variants & finale
+
+## Families get variants as the run goes on (each introduced once).
+func _roll_variant(t: Target) -> void:
+	var w := director.wave
+	var r := _rng.randf()
+	match t.kind:
+		Target.Kind.DROP:
+			if w >= 2 and r < 0.3:
+				t.set_variant(Target.Var.BOB)
+			elif w >= 3 and r < 0.5:
+				t.set_variant(Target.Var.TWIN)
+			elif w >= 4 and r < 0.65:
+				t.set_variant(Target.Var.BIG)
+		Target.Kind.RING:
+			if w >= 2 and r < 0.2:
+				t.set_variant(Target.Var.HOPPER)
+			elif w >= 3 and r < 0.32:
+				t.set_variant(Target.Var.BIG)
+
+
+## A twin drop bursts into two little drops on short strings.
+func _twin(t: Target) -> void:
+	for side: float in [-1.0, 1.0]:
+		var d := _free_target()
+		if d == null:
+			return
+		var ax := clampf(t.anchor.x + side * 30.0, 40.0, layout.size.x - 40.0)
+		var p := t.pos + Vector2(side * 12.0, 0)
+		var anchor := Vector2(ax, layout.rail_y + 3.0)
+		var len := anchor.distance_to(p)
+		d.aggression = t.aggression
+		d.spawn(Target.Kind.DROP, anchor, len, len, 0.0)
+		d.radius = 13.0
+		d.pos = p
+		d.vel = Vector2(side * 140.0, -80.0)
+
+
+## The wave's finale: on every third wave the boss, otherwise a champion
+## (a bigger, grumpy, tougher one of the kinds met so far, with a trick).
+func _spawn_finale() -> void:
+	if director.boss_wave():
+		if not _boss_alive():
+			_spawn_boss()
+		hud.card(Loc.t("finale.boss"), Loc.t("event.bossSub"), 1.6)
+		Sfx.play("boss")
+		return
+	var pool: Array = [Target.Kind.RING, Target.Kind.HEAVY, Target.Kind.SPLIT, Target.Kind.REEL, Target.Kind.SHIELD, Target.Kind.MIRROR, Target.Kind.PAKKIS]
+	var kinds: Array = []
+	for k in pool:
+		if Prefs.seen.has(k) or k == Target.Kind.RING:
+			kinds.append(k)
+	var t := _spawn_one(kinds[_rng.randi() % kinds.size()] as Target.Kind, 0.08)
+	if t == null:
+		return
+	t.make_champion()
+	if t.charm == Target.Charm.NONE and t.kind != Target.Kind.PAKKIS:
+		t.set_charm(1 + _rng.randi() % 5)
+	hud.card(Loc.t("finale.title"), Loc.t("finale.sub"), 1.6)
+	Sfx.play("boss", 1.3, -4.0)
+	Sfx.voice("taunt", 0.7, 0, -2.0)
 
 
 # ---------------------------------------------------------------- flow

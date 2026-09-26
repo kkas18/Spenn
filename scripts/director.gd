@@ -23,7 +23,7 @@ const HABIT_TELL := 0.45
 # Tactics: what the enemies have learned, unlocked wave by wave and
 # announced when it arrives.
 enum Tactic { NAIVE, DODGE, FEINT, RHYTHM, TEAM }
-const TACTIC_WAVE := [1, 2, 4, 6, 8]
+const TACTIC_WAVE := [1, 2, 3, 4, 5]
 # Rhythm: the player's hold time (EMA and spread) and where shots cross
 # the field (columns, slowly forgotten).
 const COLS := 6
@@ -31,7 +31,11 @@ const RHYTHM_MIN_SHOTS := 6
 # Wave moods: from wave 3 each wave rolls a character (never the same
 # twice running) that shapes who comes, how fast and in what mood.
 enum WaveMood { NORMAL, CALM, CHAOS, GRUMPY, CUTE }
-const MOOD_FROM := 3
+const MOOD_FROM := 2
+# Each wave is won by kills (a quota), not by what spawned; near the end
+# of it comes a finale: a champion, or on every third wave the boss.
+const FINALE_AT := 0.8
+const BOSS_EVERY := 3
 # Pacing inside a wave: a build-up, a short peak (a flurry), then a breath.
 enum Pulse { BUILD, PEAK, RELAX }
 
@@ -53,6 +57,7 @@ var hold_dev := 0.0
 var hold_n := 0
 var cols := PackedFloat32Array()
 var wave_mood := WaveMood.NORMAL
+var finale_done := false
 var pulse := Pulse.BUILD
 var pulse_t := 12.0
 var pulse_len := 12.0
@@ -72,6 +77,7 @@ func reset() -> void:
 	wave_spawned = 0
 	wave_killed = 0
 	wave_break = 0.0
+	finale_done = false
 	side_bias = 0.0
 	hold_avg = 0.0
 	hold_dev = 0.0
@@ -206,14 +212,31 @@ func tactic() -> Tactic:
 	return t as Tactic
 
 
+## Kills needed to win the wave.
 func wave_quota() -> int:
-	return mini(10 + 3 * (wave - 1), 32)
+	return mini(24 + 8 * (wave - 1), 90)
 
 
 func count_spawn(n := 1) -> void:
 	wave_spawned += n
-	if wave_state == Wave.SPAWNING and wave_spawned >= wave_quota():
+
+
+## Spawning stops once the kills so far plus what is still hanging would
+## reach the quota; if some get through and the field empties short of it,
+## reinforcements come.
+func update_wave(alive: int) -> void:
+	if wave_state == Wave.SPAWNING and wave_killed + alive >= wave_quota():
 		wave_state = Wave.CLEARING
+	elif wave_state == Wave.CLEARING and alive == 0 and wave_killed < wave_quota():
+		wave_state = Wave.SPAWNING
+
+
+func wants_finale() -> bool:
+	return not finale_done and wave_state == Wave.SPAWNING and wave_progress() >= FINALE_AT
+
+
+func boss_wave() -> bool:
+	return wave % BOSS_EVERY == 0
 
 
 func count_kill() -> void:
@@ -235,6 +258,7 @@ func next_wave() -> void:
 	wave_state = Wave.SPAWNING
 	wave_spawned = 0
 	wave_killed = 0
+	finale_done = false
 
 
 func intensity() -> float:
@@ -304,9 +328,8 @@ func poll_event() -> Event:
 	event_count += 1
 	next_event = elapsed + EVENT_EVERY * lerpf(1.0, 0.8, clampf(intensity() / 6.0, 0.0, 1.0))
 	breather = BREATHER
-	if event_count % 3 == 0:
-		return Event.BOSS
-	return Event.FORMATION if event_count % 3 == 1 else Event.RUSH
+	# The boss is now a wave's finale; events alternate formation and rush.
+	return Event.FORMATION if event_count % 2 == 1 else Event.RUSH
 
 
 ## Weighted pick; types unlock as intensity rises, nastier ones gain weight.

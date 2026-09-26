@@ -1889,3 +1889,32 @@ Rettet:
 - **Ytelse:** fibrene sjekker bare fiender som henger i nærheten. Ren skripttid gikk ned fra
   ca. 9 til ca. 7 ms per bilde.
 - Bot (6 frø): median ca. 183 s, som før.
+
+## v7.33 – Profesjonelt bølgesystem og fiendevarianter
+
+**Bølgene (ny modell):**
+- **Drap, ikke spawns:** en bølge er ferdig når du har *drept* kvoten, og feltet er tomt.
+  Kvoten er 24 + 8 per bølge (maks 90). Fiender som slipper gjennom, teller ikke: det kommer
+  forsterkninger til kvoten er nådd.
+- **Finale ved 80 %:** hver bølge bygger opp mot en finale.
+  - En *mester* dukker opp: en større, sur fiende med gullkrone-glorie, +2 liv og et triks.
+  - Hver 3. bølge er finalen *Spinneren* (bossen). Bossen kommer ikke lenger tilfeldig midt i
+    en bølge.
+- **Bølgelengde:** omtrent 1–1,5 minutt, i stedet for rundt 25 sekunder.
+- Funksjoner som var knyttet til senere bølger, er flyttet tidligere, så de fortsatt dukker opp
+  i en vanlig runde:
+  - bølge 2: taktikk, hendelser, triks, humør, spille død og tom for kuler;
+  - bølge 3: finter, akrobatikk og snik;
+  - bølge 4: rytme og bytte plass;
+  - bølge 5: samarbeid.
+
+**Fiendevarianter (egen farge, navn og oppførsel):**
+- **Dykker (dråpen):**
+  - *Sprett* (mint): gynger opp og ned på strikken, så det er vanskelig å time skuddet.
+  - *Tvilling* (lilla): deler seg i to små dråper når den blir truffet.
+  - *Kjempedråpe* (dypblå): stor, tåler to treff og stuper lengre.
+- **Vakt (ringen):**
+  - *Hoppering* (rosa): hopper sidelengs med jevne mellomrom.
+  - *Kjempering* (dypblå): stor, tåler to treff og er tregere.
+- Hver variant introduseres første gang med navn og forklaring.
+- Bot (6 frø): ca. 45 sek per bølge (en vanlig spiller får lengre bølger), rundene ender rundt bølge 3–5, og median overlevelse er ca. 165 sek, som før.
