@@ -2,8 +2,8 @@ extends Node2D
 class_name HeavenlyAtmosphere
 ## Cheap mobile-friendly light shafts, motes and foreground glints.
 
-var t := 0.0
-var motes := [
+var t: float = 0.0
+var motes: Array[Vector2] = [
 	Vector2(82, 180), Vector2(174, 345), Vector2(286, 220), Vector2(398, 410),
 	Vector2(520, 165), Vector2(635, 360), Vector2(120, 720), Vector2(470, 790),
 	Vector2(650, 920), Vector2(255, 1010), Vector2(555, 1110)
