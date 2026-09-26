@@ -2093,3 +2093,24 @@ Rettet:
     til slutt.
   - Nullstiller rekord, statistikk, dagens rekord og oppdrag.
   - Kulene beholdes: de låses opp av egne poeng som aldri nullstilles.
+
+## v7.40 – Fiender som dytter hverandre
+
+- **Hvem:** fiender med humør (sure og søte), fra bølge 3. Maks én om gangen, med 4,5–9 sekunders
+  pause mellom dytt (kortere i senere bølger) og 10 sekunder per fiende.
+- **Når:**
+  - En sur fiende du sikter på dytter naboen til side og viker selv unna den andre veien, ut av
+    skuddlinja.
+  - En søt fiende puffer en venn du sikter på, ut av linja.
+  - De reagerer bare på siktet (holdt i 0,3 s), aldri på en kule som allerede er i lufta.
+- **Varsel:**
+  - En gelé-arm vokser ut, løftes over hodet og skjelver (0,6 s).
+  - Deretter slår den i en bue ned mot naboen, med fartsstreker, støv, en klask-lyd og vibrasjon.
+  - Den som blir dyttet, svinger inn i naboene sine med den ekte fysikken og blir sur eller lei
+    seg.
+- **Motspill:** slipp før armen slår, eller treff dytteren mens den lader. Da er dyttet
+  avbrutt, og du får «AVBRUTT! +60».
+- **Aldri** dytt mot fareområdet, og ikke for fiender som er nær det.
+- Første gang forklarer et kort hvordan det fungerer.
+- Bot (6 frø, tre kjøringer): 3–8 dytt per runde, og noen avbrutt. Overlevelsen er innenfor
+  støyen mot samme kode uten dytting (median ca. 170 mot 173 s).

@@ -58,6 +58,8 @@ const CHARM_BREAK := 30
 const DEFENSIVE := [Target.Charm.BUBBLE, Target.Charm.SPRING, Target.Charm.GHOST]
 # Moods (from MOOD_WAVE): grumpy and cute enemies, the mix set by the wave.
 const MOOD_WAVE := 2
+const SHOVE_WAVE := 3          # from here, moody ones shove their neighbours
+const SHOVE_AIM := 0.3         # s the aim must hold before one reacts
 const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
 const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
@@ -144,6 +146,8 @@ var _charm_pass_cd := 0.0
 var _charm_gift_t := 4.0
 var _charm_copy_t := 3.0
 var _calm_t := 0.5
+var _shove_cd := 5.0           # s until the next shove may start (one at a time)
+var _shover: Target = null
 var _last_pulse := 0
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -437,6 +441,8 @@ func _start_run() -> void:
 	_chain = 0
 	_chain_t = 0.0
 	_next_life_at = EXTRA_LIFE_EVERY
+	_shove_cd = 5.0
+	_shover = null
 	_rush_left = 0
 	_spawn_t = 2.5
 	_last_tap = -10.0
@@ -686,6 +692,7 @@ func _process(delta: float) -> void:
 		_cunning_tick(delta)
 		_charm_tick(delta)
 		_mood_tick(delta)
+		_shove_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -2799,6 +2806,91 @@ func _mood_tick(delta: float) -> void:
 			if c.mood == Target.Mood.CUTE and c.is_hittable() and c.pos.distance_to(g.pos) < 150.0 * layout.scale:
 				g.anger = maxf(0.0, g.anger - 0.08)
 				break
+
+
+## Shoving, fair by design:
+##  - only moody ones do it, from wave SHOVE_WAVE, one at a time, with a
+##    pause of several seconds between shoves;
+##  - they react to the aim only (held SHOVE_AIM s), never to a ball
+##    already flying, and the arm winds up for Target.ARM_WIND s first:
+##    release in time and the shot lands;
+##  - hit the shover while it winds up and the shove is stopped, for a
+##    bonus;
+##  - a grumpy one aimed at shoves its neighbour aside and recoils the other
+##    way, out of the line; a cute one nudges an aimed-at friend out of it.
+##    The one shoved swings into whoever is beside it (the real contacts),
+##    which can knock them into the line instead;
+##  - nobody is shoved toward the danger line, or once it is close to it.
+func _shove_tick(delta: float) -> void:
+	_shove_cd -= delta
+	var sc := layout.scale
+	if _shover != null:
+		if not is_instance_valid(_shover) or _shover.arm == Target.Arm.NONE:
+			_shover = null
+			return
+		if _shover.arm == Target.Arm.WIND and _shover.struck_t > 0.0:
+			# Caught winding up: the shove is off, and that is worth a bonus.
+			_shover.cancel_shove()
+			_shover.annoy(0.3)
+			_add_score(60, _shover.pos)
+			fx.popup(Loc.t("shove.stopped") + "  +60", _shover.pos + Vector2(0, -_shover.radius - 34.0), Pal.GOLD_LIGHT, 18, true)
+			Sfx.play("streak", 1.2, -6.0)
+			_shover = null
+			return
+		if _shover.shoved:
+			_shover.shoved = false
+			_land_shove(_shover, _shover.arm_victim)
+		return
+	if director.wave < SHOVE_WAVE or _shove_cd > 0.0 or state != State.PLAYING:
+		return
+	if not slingshot.is_aiming() or Target.aim_hold < SHOVE_AIM:
+		return
+	var safe_y := layout.danger_y - 170.0 * sc
+	for a in targets:
+		if a.mood == Target.Mood.NEUTRAL or a.arm != Target.Arm.NONE or a.shove_cd > 0.0 or a.struck_t > 0.0 or not _free_mover(a):
+			continue
+		if a.pos.y > safe_y:
+			continue
+		var v: Target = null
+		if a.mood == Target.Mood.GRUMPY and a.aimed:
+			v = _nearest(a, func(o: Target) -> bool: return _free_mover(o) and absf(o.pos.y - a.pos.y) < 110.0 * sc and o.pos.y < safe_y, 190.0)
+		elif a.mood == Target.Mood.CUTE and not a.aimed:
+			v = _nearest(a, func(o: Target) -> bool: return o.aimed and _free_mover(o) and absf(o.pos.y - a.pos.y) < 110.0 * sc and o.pos.y < safe_y, 190.0)
+		if v == null or absf(v.pos.x - a.pos.x) < 10.0:
+			continue
+		a.begin_shove(v)
+		a.shove_cd = 10.0
+		_shover = a
+		_shove_cd = maxf(4.5, 7.5 - 0.3 * (director.wave - SHOVE_WAVE)) + _rng.randf_range(0.0, 1.5)
+		if not _told.has("shove.card"):
+			_told["shove.card"] = true
+			hud.card(Loc.t("shove.title"), Loc.t("shove.sub"), 2.2)
+		return
+
+
+## The shove lands: the neighbour is flung sideways (a swing on its string
+## and a slide along the rail), the shover recoils the other way.
+func _land_shove(a: Target, v: Target) -> void:
+	if not is_instance_valid(v) or not v.is_hittable() or not a.is_hittable():
+		return
+	var sc := layout.scale
+	var dir := signf(v.pos.x - a.pos.x)
+	var grumpy := a.mood == Target.Mood.GRUMPY
+	var strength := 1.0 if grumpy else 0.7
+	var at := v.pos - Vector2(dir * v.radius, 0)
+	v.push(Vector2(dir * 240.0 * strength, -30.0), at)
+	v.slide_now(v.anchor.x + dir * 70.0 * strength * sc, 520.0 * sc)
+	v.annoy(0.35)
+	v.cry()
+	if grumpy:
+		a.slide_now(a.anchor.x - dir * 60.0 * sc, 460.0 * sc)
+		a.push(Vector2(-dir * 90.0, 0), a.pos + Vector2(dir * a.radius, 0))
+	fx.puff(at, Pal.INK, 4, 14.0, 0.25)
+	fx.sparks(at, Pal.INK_DIM, 4)
+	Sfx.play("knock", 1.35 if grumpy else 1.6, -6.0)
+	Sfx.play("whoosh", 1.4, -10.0)
+	Sfx.haptic(8, 0.25)
+	_name_trick("shove.name" if grumpy else "shove.nudge", a.pos)
 
 
 func _answer_cry(t: Target) -> void:

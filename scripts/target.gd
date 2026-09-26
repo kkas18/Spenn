@@ -221,6 +221,19 @@ var surprised := false          # the act ended in a drop (the game says so)
 # Trick charms: a skill made visible, a bead dangling under the body. It can
 # be tossed, inherited, copied and handed out (the game moves them), and a
 # ball through the bead breaks it.
+# Shoving: a jelly arm grows out, winds back (the tell, ARM_WIND), then
+# shoves a neighbour sideways; the shover recoils the other way. The game
+# decides who and when (see Game._shove_tick); hitting it while it winds
+# up stops the shove.
+enum Arm { NONE, WIND, SHOVE, BACK }
+const ARM_WIND := 0.6
+var arm := Arm.NONE
+var arm_t := 0.0
+var arm_to := Vector2.ZERO        # world point the hand reaches for
+var arm_victim: Target = null
+var shoved := false               # the shove landed this frame (the game acts)
+var shove_cd := 0.0
+
 enum Charm { NONE, BUBBLE, SPRING, GHOST, BALLOON, VINE }
 const CHARM_COL := [Color.WHITE, Color("7FE0C0"), Color("8FD0FF"), Color("F29CC8"), Color("FFB27A"), Color("9BD86A")]
 const BUBBLE_BACK := 8.0
@@ -1192,6 +1205,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			else:
 				_brain(dt)
 			_charm_step(dt)
+			_arm_step(dt)
 			_mood_step(dt)
 			_stance_step(dt)
 			_move_anchor(dt)
@@ -1731,6 +1745,133 @@ func set_mood(m: int) -> void:
 
 
 ## Grumpy ones take things badly: anger rises (a rage at 1).
+## Starts winding up a shove at `v`.
+func begin_shove(v: Target) -> void:
+	arm = Arm.WIND
+	arm_t = 0.0
+	arm_victim = v
+	arm_to = v.pos
+	voice("taunt" if mood == Mood.GRUMPY else "up", -6.0)
+
+
+## Stops a shove still winding up (the arm pulls back); true if it was.
+func cancel_shove() -> bool:
+	if arm != Arm.WIND:
+		return false
+	arm = Arm.BACK
+	arm_t = 0.0
+	arm_victim = null
+	return true
+
+
+func _arm_step(dt: float) -> void:
+	shove_cd = maxf(0.0, shove_cd - dt)
+	if arm == Arm.NONE:
+		return
+	if phase != Phase.HANGING:
+		arm = Arm.NONE
+		arm_victim = null
+		return
+	arm_t += dt
+	if is_instance_valid(arm_victim) and arm_victim.is_hittable():
+		arm_to = arm_victim.pos
+		if arm == Arm.WIND:
+			look_at = arm_victim.pos
+			has_look = true
+	elif arm == Arm.WIND:
+		cancel_shove()
+		return
+	match arm:
+		Arm.WIND:
+			if arm_t >= ARM_WIND:
+				arm = Arm.SHOVE
+				arm_t = 0.0
+				shoved = true
+		Arm.SHOVE:
+			if arm_t >= 0.1:
+				arm = Arm.BACK
+				arm_t = 0.0
+		Arm.BACK:
+			if arm_t >= 0.32:
+				arm = Arm.NONE
+				arm_victim = null
+
+
+## The jelly arm, in world space: from the body's side to the hand, bent at
+## the elbow and tapering, in the body's colour with a darker rim. Winding
+## up it grows out, then draws back and trembles; the shove shoots it out
+## to the neighbour's side; then it shrinks back in.
+func _draw_arm(f: Node2D) -> void:
+	if arm == Arm.NONE or _gone:
+		return
+	var to := arm_to - pos
+	var dist := to.length()
+	if dist < 1.0:
+		return
+	var dir := to / dist
+	var up := dir.orthogonal()
+	if up.y > 0.0:
+		up = -up
+	var near := radius + 16.0
+	var far := maxf(near, dist - (arm_victim.radius if is_instance_valid(arm_victim) else 18.0) + 4.0)
+	# The hand's angle from the neighbour's direction toward straight up and
+	# over (raised), and its distance from the centre.
+	var th := 0.0
+	var rr := near
+	var shake := Vector2.ZERO
+	match arm:
+		Arm.WIND:
+			var k := arm_t / ARM_WIND
+			rr = lerpf(radius * 0.8, near, Motion.ease_value(Motion.Ease.ENTER, minf(1.0, k / 0.3)))
+			th = 2.0 * Motion.ease_value(Motion.Ease.STANDARD, clampf((k - 0.3) / 0.5, 0.0, 1.0))
+			shake = up.rotated(0.3) * sin(_clock * 55.0) * 1.8 * clampf((k - 0.7) / 0.3, 0.0, 1.0)
+		Arm.SHOVE:
+			var e := Motion.ease_value(Motion.Ease.EXIT, clampf(arm_t / 0.1, 0.0, 1.0))
+			th = lerpf(2.0, 0.0, e)
+			rr = lerpf(near, far, e)
+		Arm.BACK:
+			var e := Motion.ease_value(Motion.Ease.STANDARD, clampf(arm_t / 0.32, 0.0, 1.0))
+			rr = lerpf(far, radius * 0.8, e)
+	if rr <= radius * 0.82:
+		return
+	var hd := dir * cos(th) + up * sin(th)
+	var hand := pos + hd * rr + shake
+	var base := pos + hd * radius * 0.78
+	var ext := clampf((rr - radius * 0.8) / maxf(1.0, far - radius * 0.8), 0.0, 1.0)
+	var bend := hd.orthogonal()
+	if bend.dot(up) < 0.0:
+		bend = -bend
+	var mid := base.lerp(hand, 0.5) + bend * (10.0 * (1.0 - 0.6 * ext))
+	up = bend
+	dir = hd
+	var col := color()
+	var rim := col.darkened(0.45)
+	var pts := PackedVector2Array()
+	for i in 9:
+		var t := i / 8.0
+		pts.append(base.lerp(mid, t).lerp(mid.lerp(hand, t), t))
+	for pass_i in 3:
+		for i in 8:
+			var w := lerpf(12.0, 7.5, i / 7.0)
+			var off := Vector2(2.0, 3.0) if pass_i == 0 else Vector2.ZERO
+			var c: Color = [Color(0, 0, 0, 0.3), rim, col.lightened(0.08)][pass_i]
+			var ww: float = [w, w + 3.0, w][pass_i]
+			f.draw_line(pts[i] + off, pts[i + 1] + off, c, ww, true)
+			f.draw_circle(pts[i + 1] + off, ww * 0.5, c, true, -1.0, true)
+	# The mitten: a round palm and a thumb, lit on top.
+	f.draw_circle(hand + Vector2(2, 3), 9.5, Color(0, 0, 0, 0.3), true, -1.0, true)
+	f.draw_circle(hand, 9.5, rim, true, -1.0, true)
+	f.draw_circle(hand, 8.0, col.lightened(0.08), true, -1.0, true)
+	f.draw_circle(hand + up * 7.0 - dir * 2.0, 4.0, rim, true, -1.0, true)
+	f.draw_circle(hand + up * 7.0 - dir * 2.0, 3.0, col.lightened(0.08), true, -1.0, true)
+	f.draw_arc(hand, 6.0, up.angle() - 0.8, up.angle() + 0.4, 8, Color(1, 1, 1, 0.35), 1.6, true)
+	if arm == Arm.SHOVE:
+		# Speed lines behind the shove.
+		for k in 3:
+			var o := up * (k - 1) * 7.0
+			f.draw_line(hand - dir * 18.0 + o, hand - dir * 34.0 + o, Color(Pal.INK, 0.35), 1.4, true)
+
+
 func annoy(v: float) -> void:
 	if mood != Mood.GRUMPY or phase != Phase.HANGING:
 		return
@@ -2956,6 +3097,7 @@ func _draw_face() -> void:
 		var g0 := _clock * 1.6
 		f.draw_arc(pos, hr, g0, g0 + 0.9, 12, Color(Pal.GOLD_LIGHT, 0.95), 2.2, true)
 	_draw_charm(f)
+	_draw_arm(f)
 	_draw_stance(f)
 	if kind == Kind.BOSS and phase == Phase.HANGING:
 		var hp_max: int = HP[kind]
