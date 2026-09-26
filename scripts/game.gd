@@ -11,28 +11,28 @@ const PauseOverlay=preload("res://scripts/pause_overlay.gd")
 const FX=preload("res://scripts/fx.gd")
 const Intro=preload("res://scripts/intro.gd")
 
-var hud
-var pause_overlay
-var fx
+var hud:SpennHUD
+var pause_overlay:SpennPauseOverlay
+var fx:SpennFX
 
 func _ready()->void:
- var environment=CloudEnvironment.new()
+ var environment:Node2D=CloudEnvironment.new()
  environment.name="CloudEnvironment2_5D"
  add_child(environment)
- var rail=Rail.new()
+ var rail:SpennRail=Rail.new()
  rail.position=Vector2(0,185)
  add_child(rail)
- var launcher=Launcher.new()
+ var launcher:SpennLauncher=Launcher.new()
  launcher.position=Vector2(360,1110)
  add_child(launcher)
  hud=HUD.new()
  add_child(hud)
- var atmosphere=HeavenlyAtmosphere.new()
+ var atmosphere:HeavenlyAtmosphere=HeavenlyAtmosphere.new()
  atmosphere.name="HeavenlyAtmosphere"
  add_child(atmosphere)
  fx=FX.new()
  add_child(fx)
- var director=Director.new()
+ var director:SpennDirector=Director.new()
  add_child(director)
  director.wave_changed.connect(hud.set_wave)
  director.target_scored.connect(hud.add_score)
@@ -42,7 +42,7 @@ func _ready()->void:
  add_child(pause_overlay)
  hud.pause_requested.connect(pause_overlay.toggle)
  pause_overlay.restart_requested.connect(_restart)
- var intro=Intro.new()
+ var intro:SpennIntro=Intro.new()
  add_child(intro)
 
 func _unhandled_input(event:InputEvent)->void:
