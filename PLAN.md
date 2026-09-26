@@ -2029,3 +2029,35 @@ Rettet:
   - Lærviklet håndtak med søm og messingknott.
   - Strikker i rav-latex med lys kant, og en lærlomme med søm.
   - Magasinet er et glassrør med messinglokk.
+
+## v7.38 – Tau med ekte kontakt, og levende menyer i messing
+
+- **Kule mot tau:**
+  - Tauet bøyer seg rundt kula og blir dratt med.
+  - Spenningen i tauet tar en del av farten på tvers og vrir kula litt mot tauets linje. Draget
+    forplanter seg ned til kroppen, som dyttes og vris.
+  - Dras tauet for langt, glir det av kula og smeller tilbake med en bølge.
+  - Tester mot kulas bane mellom del-stegene, så en rask kule ikke hopper over tauet.
+  - Kula får litt spinn av friksjonen, og lyden (tonehøyde og styrke) følger tauets lengde og
+    kraften i treffet.
+- **Tau mot tau:** tau som møtes, dytter hverandre til side og glir forbi i stedet for å gå
+  gjennom hverandre, og gnisningen dytter litt på begge kroppene.
+- **Fallende kropper** skyver tau til side på vei ned.
+- **Menyknapper som messingmynter:**
+  - Myntene henger i snorer fra toppen av skjermen og svaier av seg selv.
+  - De svinger når du trykker, og faller ned på snora når menyen åpnes.
+  - Ikonene er gravert i myntene.
+- **Språkspak:** en messingspak på en gravert plate (NO/EN), som slås over med fjær og klikk.
+- **Oppdrag som lapper på en snor:**
+  - Tre lapper festet med messingklyper faller ned én etter én, spretter og svaier.
+  - Målet står som et stort gulltall, med teksten under.
+- **Statistikk som instrumentpanel:**
+  - Tre messingmålere øverst: rekord, beste bølge og treffsikkerhet på en viserskive der
+    viseren svinger opp med overslag.
+  - Under er det et rutenett med graverte fliser med ikoner.
+  - Alle tallene teller opp når panelet åpnes.
+- **Innstillinger:**
+  - Hver rad har et gravert ikon i en messingring.
+  - Lyd vises som en nivåmåler med tre stigende søyler som fylles med gull.
+  - Bryterne er messingknotter som slår over på en fjær med overslag.
+  - Seksjonsnavnene står i gull med en gravert linje etter.

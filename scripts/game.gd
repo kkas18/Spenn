@@ -1323,8 +1323,13 @@ func _target_contacts() -> void:
 		if t.is_hittable():
 			t.keep_in(layout.size.x)
 			for o in targets:
-				if o != t and o.is_solid() and absf(o.pos.x - t.pos.x) < o.radius + 160.0 * sc:
+				if o == t or absf(o.pos.x - t.pos.x) >= o.radius + 160.0 * sc:
+					continue
+				# Hanging bodies and falling ones alike push strings aside.
+				if o.is_solid() or o.is_crushing(0.0):
 					t.rope_avoid(o)
+				if o.is_hittable() and o.get_instance_id() > t.get_instance_id():
+					t.rope_rope(o)
 
 
 ## A killed shell or a cut target falls; whatever still hangs in its way is
@@ -1500,8 +1505,15 @@ func _collide(b: Ball) -> void:
 			continue
 		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:
 			_break_charm(t)
-		if t.pluck(b.pos, b.vel, Ball.RADIUS):
-			Sfx.play("twang", randf_range(0.85, 1.25), -14.0)
+		var rdv := t.rope_contact(b.pos, b.pos - b.vel * SUBSTEP, b.vel, Ball.RADIUS)
+		if rdv != Vector2.ZERO:
+			b.vel += rdv
+			# The string rubs the ball: a touch of spin from the drag.
+			b.w += clampf(rdv.cross(b.vel.normalized()) * 0.004, -6.0, 6.0)
+			if t.consume_pluck():
+				var loud := clampf(linear_to_db(clampf(rdv.length() / 120.0, 0.05, 1.0)), -18.0, -6.0)
+				Sfx.play("twang", clampf(1.5 - t.length / 900.0, 0.8, 1.4) * randf_range(0.95, 1.05), loud)
+				Sfx.haptic(5, 0.15)
 		if not b.can_touch(t.get_instance_id()) or not t.is_solid():
 			continue
 		var cp := t.closest_point(b.pos)

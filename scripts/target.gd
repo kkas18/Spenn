@@ -1003,22 +1003,120 @@ func push(impulse: Vector2, at: Vector2) -> void:
 
 ## A ball crossing the string plucks it. Returns true when it did.
 func pluck(p: Vector2, v: Vector2, r: float) -> bool:
-	if not _attached or _pluck_cd > 0.0:
-		return false
-	var hit_any := false
-	for i in range(2, N - 2):
-		if _pts[i].distance_to(p) < r + 5.0:
-			hit_any = true
-			break
-	if not hit_any:
+	return rope_contact(p, p - v / 120.0, v, r) != Vector2.ZERO and consume_pluck()
+
+
+## A ball meets the string (anywhere a cut does not happen): the string
+## bends round the ball and is dragged with it, its tension turning the
+## ball a little toward the string's own line and taking some of its speed
+## across it; the tug runs down to the body. Pulled too far, the string
+## slips off the ball and whips back. Returns the ball's change in velocity.
+## `p0` is where the ball was a substep ago (so a fast ball cannot skip it).
+func rope_contact(p: Vector2, p0: Vector2, v: Vector2, r: float) -> Vector2:
+	if not _attached or rope_alpha < 0.5 or kind == Kind.BOSS:
+		return Vector2.ZERO
+	var last := N - 1
+	var top := _pts[0]
+	var line := pos - top
+	var ll := line.length()
+	if ll < 1.0:
+		return Vector2.ZERO
+	var reach := r + 1.6
+	var dv := Vector2.ZERO
+	var touched := false
+	for i in last:
+		var a := _pts[i]
+		var b := _pts[i + 1]
+		var cps := Geometry2D.get_closest_points_between_segments(p0, p, a, b)
+		var q: Vector2 = cps[1]
+		if (cps[0] as Vector2).distance_to(q) >= reach:
+			continue
+		var seg := b - a
+		if seg.length() < 0.001:
+			continue
+		# The string keeps to the side it was on before this substep: ahead
+		# of a ball crossing it, beside one that only grazes it.
+		var nr := seg.normalized().orthogonal()
+		var side := (q - p0).dot(nr)
+		if absf(side) < 0.01:
+			side = v.dot(nr)
+		var dir := nr * signf(side if side != 0.0 else 1.0)
+		# How far the string is already pulled from its straight line: past
+		# this it slides off the ball.
+		var dev := absf((q - top).cross(line) / ll)
+		if dev > 34.0:
+			continue
+		var t := clampf((q - a).dot(seg) / seg.length_squared(), 0.0, 1.0)
+		var off := (p + dir * reach - q).dot(dir)
+		if off <= 0.0:
+			continue
+		var wa := 0.0 if i == 0 else 1.0 - t
+		var wb := 0.0 if (i + 1 == last) else t
+		_pts[i] += dir * off * wa
+		_pts[i + 1] += dir * off * wb
+		touched = true
+		var into := v.dot(dir)
+		if into > 0.0:
+			# Tension grows with the weight below and with the pull.
+			# Per 1/120 s substep: a full crossing (a handful of substeps)
+			# takes roughly a fifth to a third of the ball's speed across it.
+			var k := clampf(0.02 + 0.012 * MASS[kind] + dev / 1400.0, 0.02, 0.06)
+			dv -= dir * into * k
+			var along := float(i + t) / last
+			vel += dir * into * k * along * 0.35 / MASS[kind]
+			ang_vel += clampf((p - pos).cross(dir * into * k) * 0.0004, -3.0, 3.0)
+	if touched and dv == Vector2.ZERO:
+		dv = Vector2(0.0001, 0.0)
+	return dv
+
+
+## True once per short cooldown: the game plays the pluck sound on it.
+func consume_pluck() -> bool:
+	if _pluck_cd > 0.0:
 		return false
 	_pluck_cd = 0.25
-	var kick := Vector2(v.x, v.y * 0.3).limit_length(900.0) * (1.0 / 120.0) * 0.45
-	for i in range(1, N - 1):
-		var fall := exp(-pow(_pts[i].distance_to(p) / 60.0, 2.0))
-		_prev[i] = _pts[i] - kick * fall
-	vel += Vector2(v.x, 0).limit_length(600.0) * 0.04 / MASS[kind]
 	return true
+
+
+## Two strings that meet push each other apart and slide past, instead of
+## passing through one another.
+func rope_rope(o: Target) -> void:
+	if not _attached or not o._attached or rope_alpha < 0.5 or o.rope_alpha < 0.5:
+		return
+	var ax0 := minf(_pts[0].x, pos.x) - 6.0
+	var ax1 := maxf(_pts[0].x, pos.x) + 6.0
+	var bx0 := minf(o._pts[0].x, o.pos.x)
+	var bx1 := maxf(o._pts[0].x, o.pos.x)
+	for i in N:
+		ax0 = minf(ax0, _pts[i].x - 6.0)
+		ax1 = maxf(ax1, _pts[i].x + 6.0)
+		bx0 = minf(bx0, o._pts[i].x)
+		bx1 = maxf(bx1, o._pts[i].x)
+	if ax1 < bx0 or bx1 < ax0:
+		return
+	const GAP := 4.0
+	for i in range(1, N - 1):
+		var p := _pts[i]
+		for j in N - 1:
+			var a: Vector2 = o._pts[j]
+			var b: Vector2 = o._pts[j + 1]
+			var q := Geometry2D.get_closest_point_to_segment(p, a, b)
+			var d := p - q
+			var l := d.length()
+			if l >= GAP:
+				continue
+			var n := d / l if l > 0.001 else Vector2(signf(pos.x - o.pos.x + 0.01), 0.0)
+			var push := (GAP - l) * 0.5
+			_pts[i] += n * push
+			var seg := b - a
+			var t := clampf((q - a).dot(seg) / maxf(seg.length_squared(), 0.001), 0.0, 1.0)
+			if j > 0:
+				o._pts[j] -= n * push * (1.0 - t)
+			if j + 1 < N - 1:
+				o._pts[j + 1] -= n * push * t
+			# The rub passes a little sideways drift to both bodies.
+			vel += n * push * 2.0
+			o.vel -= n * push * 2.0
 
 
 func startle(from: Vector2) -> void:
