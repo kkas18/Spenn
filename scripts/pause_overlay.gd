@@ -10,18 +10,18 @@ func _ready()->void:
  panel.position=Vector2.ZERO
  panel.size=Vector2(720,1280)
  add_child(panel)
- var title:=Label.new()
+ var title:Label=Label.new()
  title.text="PAUSE"
  title.position=Vector2(290,420)
  title.add_theme_font_size_override("font_size",38)
  panel.add_child(title)
- var resume:=Button.new()
+ var resume:Button=Button.new()
  resume.text="FORTSETT"
  resume.position=Vector2(235,500)
  resume.size=Vector2(250,64)
  resume.pressed.connect(toggle)
  panel.add_child(resume)
- var restart:=Button.new()
+ var restart:Button=Button.new()
  restart.text="START PÅ NYTT"
  restart.position=Vector2(235,580)
  restart.size=Vector2(250,64)
