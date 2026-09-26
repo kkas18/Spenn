@@ -51,6 +51,8 @@ var _was_empty := false
 const DEMO_CYCLE := 2.9
 const DEMO_DIR := Vector2(0.21, 0.978)   # pull down, a touch to the right
 var demo := false
+var rack_slots := 4             # spare balls the rack holds (perks add more)
+var long_sight := false         # perk: the aim guide reaches twice as far
 var _demo_t := 0.0
 var _demo_ball := -1.0            # time since the demo released (<0: not yet)
 
@@ -477,8 +479,8 @@ func _draw_aim_dots() -> void:
 	var next_dot := 0.05
 	var t := 0.0
 	var i := 0
-	const DOTS := 8
-	while i < DOTS and t < 0.4:
+	var dots := 16 if long_sight else 8
+	while i < dots and t < (0.8 if long_sight else 0.4):
 		t += dt
 		v.y += Ball.GRAVITY * dt
 		p += v * dt
@@ -492,7 +494,7 @@ func _draw_aim_dots() -> void:
 			break
 		if t >= next_dot:
 			next_dot += 0.045
-			var k := 1.0 - float(i) / DOTS
+			var k := 1.0 - float(i) / dots
 			# The dots carry the power: brighter and fuller the harder you pull,
 			# warming in the last 15 %.
 			var col := Pal.GOLD.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
@@ -556,7 +558,7 @@ func _draw_pouch() -> void:
 ## handle (the one in the pouch is the next shot). The slot being refilled
 ## shows a ball growing in as it reloads; empty slots are faint dimples.
 func _draw_ammo() -> void:
-	var slots := 4
+	var slots := rack_slots
 	var top := Vector2(l.ammo_x, l.ammo_top)
 	var bottom := top + Vector2(0, (slots - 1) * l.ammo_step)
 	# The rack: a short dark channel, lit from the upper left.

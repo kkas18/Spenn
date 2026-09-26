@@ -84,6 +84,8 @@ var overload_t := 0.0           # real seconds of overload left
 var flow := 0.0                 # 0..1: the meter, or what is left of flow
 var flow_t := 0.0               # real seconds of flow left
 var flows := 0                  # flow streaks this run
+var perks := {}                 # upgrades picked this run: id -> level
+var _perk_pending := false      # a wave was cleared; the cards are coming
 var _aim_start := -1.0          # game time the current pull began
 var _release_hold := -1.0       # how long the last pull was held
 var _tactic_told := 0
@@ -230,6 +232,7 @@ func _ready() -> void:
 	add_child(hud)
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
+	hud.perks.chosen.connect(_on_perk)
 	title.caught.connect(_on_letter_caught)
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
@@ -274,8 +277,12 @@ func _clear_field() -> void:
 		b.stop()
 	_shots.clear()
 	_intro_queue.clear()
+	perks.clear()
+	_perk_pending = false
+	hud.perks.visible = false
+	_apply_perks()
 	ammo.clear()
-	for i in AMMO_CAP:
+	for i in _ammo_cap():
 		ammo.append(Ammo.NORMAL)
 	reload_t = 0.0
 	slingshot.cancel()
@@ -811,6 +818,8 @@ func _wave_tick(delta: float) -> void:
 			if alive == 0 and _rush_left == 0:
 				_clear_wave()
 		Director.Wave.BREAK:
+			if _perk_pending or hud.perks.visible:
+				return
 			director.wave_break -= delta
 			if director.wave_break <= 0.0:
 				director.next_wave()
@@ -850,6 +859,8 @@ func _clear_wave() -> void:
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
+	_perk_pending = true
+	fx.after(1.3, _offer_perks)
 
 
 ## Pupils follow the nearest ball in flight (or the pouch while aiming).
@@ -1081,6 +1092,8 @@ func _step(dt: float) -> void:
 		if not b.active:
 			continue
 		b.vel.x += gust * GUST_BALL * dt
+		if perk("magnet") > 0:
+			_magnet(b, dt)
 		if not b.step(dt, layout):
 			_finish_ball(b)
 			continue
@@ -1301,7 +1314,8 @@ func _spawn_minions() -> void:
 # ---------------------------------------------------------------- hits
 
 func _collide(b: Ball) -> void:
-	var cut_speed := CUT_SPEED * layout.scale
+	var cut_speed := CUT_SPEED * layout.scale * (0.8 if perk("edge") > 0 else 1.0)
+	var cut_r := 9.0 if perk("edge") > 0 else 5.0
 	if b.hit_rail:
 		# Spent against the rail: it drops out of play instead of raining
 		# back down through the field.
@@ -1312,9 +1326,9 @@ func _collide(b: Ball) -> void:
 		# A fast ball severs the string it crosses; a slower one plucks it.
 		# Cut: the ball's centre (±5 px) crosses the string near its hook on
 		# the way up, fast, before touching the rail. A precision shot.
-		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(b.pos, 5.0):
+		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(b.pos, cut_r):
 			b.cut_any = true
-			if t.strike_string(b.pos):
+			if perk("edge") > 0 or t.strike_string(b.pos):
 				_on_cut(b, t)
 			else:
 				fx.sparks(b.pos, Pal.INK_DIM, 6)
@@ -1444,6 +1458,9 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
 	var hit_at := t.pos
+	if perk("heavy") > 0 and t.hp >= 2 and not b.special:
+		# Heavy balls: armour takes two blows' worth.
+		t.hp -= 1
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = 0
 	var gained := t.points() * b.hits * _mult() * _surge()
@@ -1551,6 +1568,8 @@ func _charge(v: float) -> void:
 	if overload_t > 0.0 or (state != State.PLAYING and state != State.STARTING):
 		return
 	var was := charge
+	if v > 0.0:
+		v *= 1.0 + 0.3 * perk("charge")
 	charge = clampf(charge + v, 0.0, 1.0)
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
@@ -1568,7 +1587,7 @@ func _begin_overload() -> void:
 	backdrop.heat = 1.0
 	fx.aberrate(7.0)
 	fx.set_base_time(OVERLOAD_SCALE)
-	while ammo.size() < AMMO_CAP:
+	while ammo.size() < _ammo_cap():
 		ammo.append(Ammo.NORMAL)
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45)
 	fx.shock(mid, 14.0, 560.0, 0.7)
@@ -2150,18 +2169,75 @@ func _try_rescue(t: Target) -> void:
 	t.expect_rescue(best)
 
 
+# ---------------------------------------------------------------- perks
+
+func perk(id: String) -> int:
+	return int(perks.get(id, 0))
+
+
+func _ammo_cap() -> int:
+	return AMMO_CAP + perk("rack")
+
+
+func _reload_time() -> float:
+	return director.reload_time() * pow(0.85, perk("reload"))
+
+
+func _flow_time() -> float:
+	return FLOW_TIME + 2.5 * perk("flow")
+
+
+## Three cards once the cleared wave's moment has played out.
+func _offer_perks() -> void:
+	_perk_pending = false
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	var ids := Perks.offer(perks, lives < LIVES, _rng)
+	if not ids.is_empty():
+		hud.perks.open(ids, perks)
+
+
+func _on_perk(id: String) -> void:
+	perks[id] = perk(id) + 1
+	if id == "knot" and lives < LIVES:
+		lives += 1
+		hud.bar.lives = lives
+		hud.bar.knot_shake = 1.0
+	_apply_perks()
+
+
+func _apply_perks() -> void:
+	slingshot.rack_slots = _ammo_cap() - 1
+	slingshot.long_sight = perk("sight") > 0
+
+
+## Magnet: a ball bends gently toward the nearest enemy ahead of it.
+func _magnet(b: Ball, dt: float) -> void:
+	var best: Target = null
+	var bd := 240.0 * layout.scale
+	for t in targets:
+		if not t.is_solid():
+			continue
+		var d := t.pos.distance_to(b.pos)
+		if d < bd and (t.pos - b.pos).dot(b.vel) > 0.0:
+			bd = d
+			best = t
+	if best:
+		b.vel += (best.pos - b.pos).normalized() * 260.0 * perk("magnet") * dt
+
+
 # ---------------------------------------------------------------- flow
 
 func _flow_add(v: float) -> void:
 	if flow_t > 0.0 or (state != State.PLAYING and state != State.STARTING):
 		return
-	flow = minf(1.0, flow + v)
+	flow = minf(1.0, flow + v * (1.0 + 0.2 * perk("flow")))
 	if flow >= 1.0:
 		_begin_flow()
 
 
 func _begin_flow() -> void:
-	flow_t = FLOW_TIME
+	flow_t = _flow_time()
 	flow = 1.0
 	flows += 1
 	hud.flow_hot = true
@@ -2183,7 +2259,7 @@ func _flow_tick(delta: float) -> void:
 	var rd := delta / maxf(Engine.time_scale, 0.001)
 	if flow_t > 0.0:
 		flow_t -= rd
-		flow = maxf(0.0, flow_t / FLOW_TIME)
+		flow = maxf(0.0, flow_t / _flow_time())
 		if flow_t <= 0.0:
 			_end_flow(false)
 	else:
@@ -2277,7 +2353,7 @@ func _finish_ball(b: Ball) -> void:
 
 
 func _grant(kind: int) -> void:
-	if ammo.size() >= AMMO_CAP:
+	if ammo.size() >= _ammo_cap():
 		ammo[mini(1, ammo.size() - 1)] = kind
 	elif ammo.is_empty():
 		ammo.append(kind)
@@ -2286,14 +2362,14 @@ func _grant(kind: int) -> void:
 
 
 func _update_ammo(delta: float) -> void:
-	if ammo.size() < AMMO_CAP and state != State.DEATH and state != State.GAME_OVER:
+	if ammo.size() < _ammo_cap() and state != State.DEATH and state != State.GAME_OVER:
 		reload_t += delta / (OVERLOAD_RELOAD if overload_t > 0.0 else 1.0) * (FLOW_RELOAD if flow_t > 0.0 else 1.0)
-		if reload_t >= director.reload_time():
+		if reload_t >= _reload_time():
 			reload_t = 0.0
 			ammo.append(Ammo.NORMAL)
 	else:
 		reload_t = 0.0
-	slingshot.set_ammo(ammo, reload_t / director.reload_time())
+	slingshot.set_ammo(ammo, reload_t / _reload_time())
 
 
 func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:

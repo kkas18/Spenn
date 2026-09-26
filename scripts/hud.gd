@@ -56,6 +56,7 @@ var _m_skins: UIButton
 var _m_daily: UIButton
 var daily := false             # the menu's mode: the next run is the daily challenge
 var flow := 0.0                # the flow meter, 0..1 (set by the game)
+var perks: PerkPanel           # upgrade cards between waves
 var flow_hot := false          # flow is on
 var _stats: Control
 var _stats_box: VBoxContainer
@@ -86,6 +87,9 @@ func _ready() -> void:
 	overlay = Overlay.new()
 	overlay.hud = self
 	add_child(overlay)
+	perks = PerkPanel.new()
+	perks.hud = self
+	add_child(perks)
 	_build_menu_bar()
 	_build_pause()
 	_build_settings()
@@ -109,7 +113,7 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
+	for c: Control in [bar, overlay, perks, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
 		c.position = Vector2.ZERO
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)

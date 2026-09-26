@@ -1753,3 +1753,22 @@ Fra bølge 5 (varslet med kortet «DE SVINGER»):
 - **B. Redningsgrep:** når du kutter et tau, kan (40 %) en nabo som henger lavere kaste seg ut, slik at
   tauet dens feier gjennom fallbanen. Den fallende griper det og lever videre («FANGET!»).
   Kutter du tauet de deler, faller begge («DOBBELTKUTT»).
+
+## v7.27 – Velg en oppgradering mellom bølgene (D)
+
+- Etter hver klarert bølge, når siste-drap-øyeblikket er over, glir tre kort inn etter tur
+  over det tomme feltet. Trykk ett: det løfter seg og blusser opp, de andre faller bort, og
+  neste bølge venter til du har valgt.
+- Oppgraderingene (maks nivå i parentes):
+  - Tunge kuler (1): treff på pansrede fiender teller dobbelt.
+  - Skarp egg (1): ett treff kutter tauet, og kutt er lettere.
+  - Lang flyt (2): +2,5 sek FLYT, og måleren fylles 20 % raskere.
+  - Større stativ (2): én kule ekstra.
+  - Rask lading (2): 15 % raskere lading.
+  - Langt sikte (1): siktelinjen viser dobbelt så langt.
+  - Magnetkule (2): kulene bøyer seg mot nærmeste fiende.
+  - Superlading (2): overbelastning lades 30 % raskere.
+  - Ny knute: kun når du har mistet en knute.
+- Nivåprikker på kortet viser hva du har fra før. Alt nullstilles ved ny runde.
+- Bot (6 frø): median ca. 219 s mot 166 s. Oppgraderingene gir følbar vekst, men en runde
+  ender fortsatt rundt bølge 7–11.
