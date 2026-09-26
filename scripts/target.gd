@@ -2,6 +2,7 @@ extends Area2D
 class_name SpennTarget
 
 signal destroyed(points: int)
+signal struck(at: Vector2, color: Color)
 
 @export var target_color := Color("#6557D9")
 @export var points := 100
@@ -26,6 +27,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func hit() -> void:
+	struck.emit(global_position, target_color)
 	hp -= 1
 	if hp <= 0:
 		destroyed.emit(points)
