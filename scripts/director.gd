@@ -2,6 +2,7 @@ extends Node
 class_name SpennDirector
 signal wave_changed(wave: int)
 signal target_scored(points: int)
+signal target_struck(at: Vector2, color: Color)
 const Target=preload("res://scripts/target.gd")
 const Shadow=preload("res://scripts/cloud_shadow_projector.gd")
 var wave:=1
@@ -20,6 +21,7 @@ func start_wave()->void:
   target.target_color=colors[i%colors.size()]
   target.points=100+wave*15
   target.destroyed.connect(_on_target_destroyed)
+  target.struck.connect(func(at:Vector2,color:Color): target_struck.emit(at,color))
   spawn_parent.add_child(target)
   var line:=Line2D.new()
   line.width=3.0
