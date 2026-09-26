@@ -33,6 +33,12 @@ const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a
 const GUST_BALL := 0.6
 const BLACKOUT_TIME := 8.0
 const GOLD_BONUS := 400
+# Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
+# to a neighbour's rope, and a friend may catch one whose rope was cut.
+const ACRO_WAVE := 5
+const ACRO_EVERY := Vector2(8.0, 13.0)
+const RESCUE_CHANCE := 0.4
+const ACRO_KINDS := [Target.Kind.RING, Target.Kind.SPLIT, Target.Kind.DROP, Target.Kind.SHADE, Target.Kind.MEDIC, Target.Kind.REEL]
 const MAX_MINIONS := 3
 const TRIPLE_SPREAD := 0.1
 const Ammo := Slingshot.Ammo
@@ -54,11 +60,11 @@ const FLOW_RELOAD := 1.4        # reload speed factor while it lasts
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
-enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN, BREAK }
-const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain", "skill.break"]
-const SKILL_POINTS := [40, 40, 60, 50, 50, 60, 80]
-const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14, 0.12]
-const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8], [2, 4, 5, 7]]
+enum Skill { BANK, LONG, DOUBLE, CUT, CLUTCH, CHAIN, BREAK, AIR }
+const SKILL_KEY := ["skill.bank", "skill.long", "skill.double", "skill.cut", "skill.clutch", "skill.chain", "skill.break", "skill.air"]
+const SKILL_POINTS := [40, 40, 60, 50, 50, 60, 80, 70]
+const SKILL_CHARGE := [0.1, 0.09, 0.1, 0.12, 0.1, 0.14, 0.12, 0.12]
+const SKILL_NOTES := [[3, 4], [0, 3, 4], [2, 3, 4, 5], [4, 7], [0, 2, 3, 4], [4, 5, 6, 7, 8], [2, 4, 5, 7], [1, 3, 5, 8]]
 const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 # Chain reactions: a falling body this fast knocks off what it lands on; a
 # freshly struck target slamming a neighbour this hard hurts it.
@@ -94,8 +100,10 @@ var _gust_dir := 1.0
 var _gust_whoosh := 0.0
 var _dark := 0.0
 var _evolve_told := false
+var _acro_t := 8.0
+var _acro_told := false
 var overloads := 0
-var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0]
+var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
 var ammo: Array[int] = []       # index 0 is loaded
 var reload_t := 0.0
@@ -353,12 +361,14 @@ func _start_run() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	overloads = 0
-	skill_counts = [0, 0, 0, 0, 0, 0, 0]
+	skill_counts = [0, 0, 0, 0, 0, 0, 0, 0]
 	waves_cleared = 0
 	_habit_told = false
 	_tactic_told = 0
 	flows = 0
 	_evolve_told = false
+	_acro_told = false
+	_acro_t = 8.0
 	_last_hazard = Hazard.NONE
 	_rhythm_told = false
 	_plunge_t = 12.0
@@ -578,6 +588,7 @@ func _process(delta: float) -> void:
 		_flow_tick(delta)
 		_learn_tick()
 		_hazard_tick(delta)
+		_acro_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -809,6 +820,9 @@ func _wave_tick(delta: float) -> void:
 				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
 				Sfx.play("streak", 0.85)
 				_schedule_hazard()
+				if director.wave == ACRO_WAVE and not _acro_told:
+					_acro_told = true
+					fx.after(0.9, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
 				var tac := director.tactic()
 				if tac > _tactic_told:
 					_tactic_told = tac
@@ -1424,6 +1438,8 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var loud := linear_to_db(clampf(closing / 1300.0, 0.3, 1.0))
 	var kind := t.kind
 	var col := t.color()
+	if t.acro == Target.Acro.FLY:
+		_skill(Skill.AIR, contact)
 	backdrop.ripple(contact, col, clampf(closing / 1100.0, 0.35, 1.0) * (1.4 if t.hp <= 1 else 1.0))
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
@@ -1673,7 +1689,20 @@ func _on_cut(b: Ball, t: Target) -> void:
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
+	# The rope it shares with others: all of them come down together.
+	var group := _rope_group(t)
 	t.cut()
+	var extra := 0
+	for o in group:
+		o.cut()
+		var og := o.points() * 2 * _mult() * _surge()
+		og += _kill_bonus(o, og)
+		_add_score(og, o.pos)
+		extra += 1
+	if extra > 0:
+		_skill(Skill.DOUBLE, t.pos, extra)
+	else:
+		_try_rescue(t)
 	var gained := t.points() * 2 * _mult() * _surge()
 	gained += _kill_bonus(t, gained)
 	_add_score(gained, t.pos)
@@ -2018,6 +2047,107 @@ func _announce_evolve(t: Target) -> void:
 	if not _evolve_told:
 		_evolve_told = true
 		hud.card(Loc.t("evolve.title"), Loc.t("evolve.sub"), 1.8)
+
+
+# ---------------------------------------------------------------- acrobatics
+
+## Every few seconds the most exposed light target picks a neighbour's rope
+## within swinging reach (one whose body hangs below it) and swings over.
+## Reports grabs, rescues and slips.
+func _acro_tick(delta: float) -> void:
+	Target.acro_on = director.wave >= ACRO_WAVE
+	for t in targets:
+		if t.grabbed:
+			t.grabbed = false
+			if t.rescued:
+				t.rescued = false
+				director.wave_killed = maxi(0, director.wave_killed - 1)
+				fx.popup(Loc.t("acro.caught"), t.pos + Vector2(0, -t.radius - 28.0), Pal.CORAL, 18)
+				Sfx.voice("taunt", 1.0, 3, -4.0)
+			fx.puff(t.pos + Vector2(0, -t.radius), Pal.INK, 2, 12.0, 0.1)
+		if t.slipped:
+			t.slipped = false
+			director.count_kill()
+			run_kills += 1
+			var pts := t.points() * _mult() * _surge()
+			_add_score(pts, t.pos)
+			fx.popup(Loc.t("acro.slip") % pts, t.pos + Vector2(0, -t.radius - 24.0), Pal.INK, 18)
+	if not Target.acro_on or director.breather > 0.0 or overload_t > 0.0:
+		return
+	_acro_t -= delta
+	if _acro_t > 0.0:
+		return
+	_acro_t = _rng.randf_range(ACRO_EVERY.x, ACRO_EVERY.y)
+	var best: Target = null
+	var best_host: Target = null
+	var best_score := -INF
+	for t in targets:
+		if not _can_swing(t):
+			continue
+		for h in targets:
+			if h == t or not h.is_hittable() or h.acro != Target.Acro.NONE or h.kind == Target.Kind.BOSS or h.golden:
+				continue
+			var dx := absf(h.anchor.x - t.anchor.x)
+			if dx < 70.0 * layout.scale or dx > minf(t.length * 1.1, 260.0 * layout.scale):
+				continue
+			# The rope must pass the height it can reach, above the host's body.
+			if h.pos.y - h.radius < t.pos.y + 10.0:
+				continue
+			var sc := t.danger * 2.0 - dx / (300.0 * layout.scale) + _rng.randf() * 0.3
+			if sc > best_score:
+				best_score = sc
+				best = t
+				best_host = h
+	if best:
+		best.start_swing(best_host)
+
+
+func _can_swing(t: Target) -> bool:
+	return t.is_hittable() and t.kind in ACRO_KINDS and t.acro == Target.Acro.NONE and t.rope_host == null \
+		and t.leader == null and not t.is_leader and t.guard_of == null and not t.golden and not t.panicked() \
+		and t.length > 110.0 * layout.scale and t.delay <= 0.0 and t.tele_t <= 0.0
+
+
+## Everyone hanging on the same rope as `t` (riders and their host).
+func _rope_group(t: Target) -> Array[Target]:
+	var root := t.rope_host if t.rope_host != null and is_instance_valid(t.rope_host) else t
+	var out: Array[Target] = []
+	for o in targets:
+		if o == t or not o.is_hittable():
+			continue
+		if o == root or o.rope_host == root:
+			out.append(o)
+	return out
+
+
+## A cut body may be saved: a friend hanging lower throws itself out so its
+## rope sweeps through the fall, and the falling one grabs it.
+func _try_rescue(t: Target) -> void:
+	if not Target.acro_on or _rng.randf() > RESCUE_CHANCE:
+		return
+	var best: Target = null
+	var best_d := INF
+	for r in targets:
+		if r == t or not r.is_hittable() or r.acro != Target.Acro.NONE or r.kind == Target.Kind.BOSS or r.leader != null or r.is_leader or r.golden:
+			continue
+		if r.pos.y < t.pos.y + 50.0:
+			continue
+		var dx := absf(r.anchor.x - t.pos.x)
+		if dx < 30.0 or dx > r.length * 0.6:
+			continue
+		if dx < best_d:
+			best_d = dx
+			best = r
+	if best == null:
+		return
+	# Where its rope must reach at the faller's height, and the swing that
+	# gets it there in about a quarter of a second.
+	var f := clampf((t.pos.y - best.anchor.y) / maxf(1.0, best.pos.y - best.anchor.y), 0.15, 1.0)
+	var need := (t.pos.x - best.anchor.x) / f - (best.pos.x - best.anchor.x)
+	best.vel.x += clampf(need / 0.25, -1100.0, 1100.0)
+	best.startle_t = 0.4
+	best.voice("up")
+	t.expect_rescue(best)
 
 
 # ---------------------------------------------------------------- flow

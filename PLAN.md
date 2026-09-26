@@ -1733,3 +1733,23 @@ Strengene i bakgrunnen er nå lysfibre (alle tre forslagene):
 - **E. Utvikling:** fra bølge 3 herdes en vanlig ring som får henge i 18 sekunder til en
   tung fiende med kjetting. Den pulserer og skjelver i 1,6 sekunder først, så du har en siste
   sjanse. Første gang forklarer et kort det.
+
+## v7.26 – Akrobat-pakken: lianesving og redningsgrep (A + B)
+
+Fra bølge 5 (varslet med kortet «DE SVINGER»):
+
+- **A. Lianesving:**
+  - Den mest utsatte fienden velger en nabo innen rekkevidde, der naboens kropp henger lavere
+    enn den selv, så tauet kan gripes over kroppen.
+  - Den låser blikket på naboen og pumper opp svingen, men bare i tauets egen svingretning, så
+    den bygger fart slik et barn på en huske gjør.
+  - Den slipper akkurat når den ballistiske banen krysser naboens tau (banen regnes ut hvert
+    bilde), flyr i en ekte kastbue og griper tauet. Farten bevares, så den svinger videre
+    der den tar tak.
+  - Naboen får et rykk.
+  - Fienden henger så på naboens tau og følger kroken hans.
+  - **Treff i lufta:** skillet «LUFTSKUDD» (dobbelt, egen tone).
+  - **Bom på grepet:** den faller («UPS!»), gir poeng og kan knuse fiender under seg.
+- **B. Redningsgrep:** når du kutter et tau, kan (40 %) en nabo som henger lavere kaste seg ut, slik at
+  tauet dens feier gjennom fallbanen. Den fallende griper det og lever videre («FANGET!»).
+  Kutter du tauet de deler, faller begge («DOBBELTKUTT»).

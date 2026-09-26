@@ -187,6 +187,25 @@ const EVOLVE_AT := 18.0
 const EVOLVE_WARN := 1.6
 var _age := 0.0
 var evolved := false            # hardened this frame (the game announces)
+# Acrobatics: a swing across to a neighbour's rope. PUMP builds the swing
+# (eyes locked on the rope it wants), FLY is the ballistic leap, and the
+# rope is caught if the flight passes it. A body falling from a cut rope
+# can also grab a friend's rope that sweeps through its path (a rescue).
+enum Acro { NONE, PUMP, FLY }
+const PUMP_ACC := 430.0         # px/s² added through the lower part of the swing
+const PUMP_MAX_T := 6.0
+const FLY_MAX_T := 1.3
+const GRAB_REACH := 10.0        # px beyond the body's radius
+const RESCUE_WINDOW := 0.7      # s a cut body can still grab a rope
+static var acro_on := false
+var acro := Acro.NONE
+var _acro_t := 0.0
+var swing_host: Target = null   # the rope it is heading for
+var rope_host: Target = null    # whose rope (hook) it hangs on now
+var rescuable := false          # falling from a cut, may still be caught
+var slipped := false            # missed its grab: falls (the game scores it)
+var grabbed := false            # caught a rope this frame (the game reacts)
+var rescued := false            # ... and it was a rescue
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -381,6 +400,14 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	fled = false
 	_age = 0.0
 	evolved = false
+	acro = Acro.NONE
+	_acro_t = 0.0
+	swing_host = null
+	rope_host = null
+	rescuable = false
+	slipped = false
+	grabbed = false
+	rescued = false
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -826,6 +853,9 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				delay -= dt
 				visible = delay <= 0.0
 				return
+			if acro == Acro.FLY:
+				_fly_step(dt, danger_y, danger_band)
+				return
 			if length < goal_length:
 				var sp: float = ENTRY_SPEED.get(kind, 900.0) * (_screen_h / 1280.0)
 				if not _dropping:
@@ -858,6 +888,11 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_lunge_left = 0.0
 				_order_drop = 0.0
 				_dodge_cd = maxf(_dodge_cd, 0.5)
+				acro = Acro.NONE
+			elif acro == Acro.PUMP:
+				_pump_step(dt)
+			elif rope_host != null:
+				_ride_step()
 			else:
 				_brain(dt)
 			_move_anchor(dt)
@@ -884,6 +919,9 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			fall_t += dt
 			vel.y += GRAVITY * dt
 			pos += vel * dt
+			if rescuable and fall_t < RESCUE_WINDOW and swing_host != null and _try_grab(swing_host):
+				rescued = true
+				return
 			body_rot += spin * dt
 			tilt += 4.5 * dt
 			_soft_step(dt)
@@ -1195,6 +1233,154 @@ func _evolve_step(dt: float) -> void:
 	evolved = true
 
 
+## Starts a swing across to `host`'s rope.
+func start_swing(host: Target) -> void:
+	acro = Acro.PUMP
+	_acro_t = 0.0
+	swing_host = host
+	_slide_to = NAN
+	_queued_x = NAN
+	watch(host, PUMP_MAX_T)
+	startle_t = 0.25
+
+
+## Pumping: a push through the bottom of each swing, always along the way it
+## is already going, so the swing grows like a child's on a swing. It lets
+## go the moment its flight would cross the host's rope.
+func _pump_step(dt: float) -> void:
+	_acro_t += dt
+	var h := swing_host
+	if h == null or not is_instance_valid(h) or not h.is_hittable() or h.acro != Acro.NONE or _acro_t > PUMP_MAX_T:
+		acro = Acro.NONE
+		swing_host = null
+		return
+	_watch = h
+	_watch_t = 0.3
+	var side := signf(h.pos.x - pos.x)
+	var swing := atan2(pos.x - anchor.x, pos.y - anchor.y)
+	if absf(swing) < 0.7:
+		var dir := signf(vel.x) if absf(vel.x) > 6.0 else side
+		vel.x += dir * PUMP_ACC * dt
+	# Let go on the way toward the host, around the top of the arc.
+	# (Not before a second of visible pumping and a real swing: the tell.)
+	if _acro_t > 1.0 and absf(swing) > 0.35 and signf(vel.x) == side and signf(pos.x - anchor.x) == side and vel.y < 60.0 and _flight_meets(h):
+		_release()
+
+
+## Whether a leap from here, with this velocity, crosses `h`'s rope within
+## reach (above its body and below its hook).
+func _flight_meets(h: Target) -> bool:
+	var p := pos
+	var y0 := pos.y
+	var v := vel * 1.1 + Vector2(0, -50.0)
+	var a := h.eyelet()
+	var b := h.pos
+	var st := 1.0 / 30.0
+	for i in 30:
+		v.y += GRAVITY * st
+		p += v * st
+		var q := Geometry2D.get_closest_point_to_segment(p, a, b)
+		if p.distance_to(q) < radius * 0.6 and q.y > a.y + 24.0 and q.y < b.y - h.radius - radius - 6.0 and q.y < y0 + 70.0:
+			return true
+	return false
+
+
+func _release() -> void:
+	acro = Acro.FLY
+	_acro_t = 0.0
+	_attached = false
+	# A little spring in the leap.
+	vel = vel * 1.1 + Vector2(0, -50.0)
+	spin = signf(vel.x) * randf_range(2.0, 3.5)
+	startle_t = 0.5
+	voice("up")
+	Sfx.play("whoosh", randf_range(1.0, 1.2), -4.0)
+
+
+## In the air: a thrown body. It grabs the host's rope if it passes close
+## enough; after FLY_MAX_T (or too low) it has missed and falls.
+func _fly_step(dt: float, danger_y: float, danger_band: float) -> void:
+	_acro_t += dt
+	vel.y += GRAVITY * dt
+	vel.x += wind * dt / MASS[kind]
+	pos += vel * dt
+	body_rot += spin * dt
+	danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
+	_rope_step(dt)
+	var h := swing_host
+	if h != null and is_instance_valid(h) and h.is_hittable() and _try_grab(h):
+		return
+	if _acro_t > FLY_MAX_T or danger > 0.6:
+		acro = Acro.NONE
+		swing_host = null
+		slipped = true
+		hp = 0
+		phase = Phase.FALLING
+		fall_t = 0.0
+		crushed.clear()
+		voice("down")
+
+
+## Catches `h`'s rope if the body is within reach of it: from now on it hangs
+## on that rope (the host's hook), keeping its momentum.
+func _try_grab(h: Target) -> bool:
+	var a := h.eyelet()
+	var q := Geometry2D.get_closest_point_to_segment(pos, a, h.pos)
+	if pos.distance_to(q) > radius + GRAB_REACH or q.y < a.y + 20.0 or q.y > h.pos.y - h.radius - 6.0:
+		return false
+	var host := h.rope_host if h.rope_host != null and is_instance_valid(h.rope_host) else h
+	if hp <= 0:
+		# Caught while falling from a cut rope: alive again.
+		hp = 1
+		_cut = false
+		_closed_t = 0.6
+	fall_t = 0.0
+	tilt = 0.0
+	crushed.clear()
+	phase = Phase.HANGING
+	acro = Acro.NONE
+	swing_host = null
+	rope_host = host
+	anchor = Vector2(host.anchor.x, anchor.y)
+	length = maxf(40.0, pos.distance_to(anchor))
+	goal_length = length
+	_attached = true
+	rope_alpha = 1.0
+	modulate.a = 1.0
+	rescuable = false
+	for i in N:
+		_pts[i] = eyelet().lerp(pos, float(i) / (N - 1))
+		_prev[i] = _pts[i]
+	_rope_len = length
+	# The rope takes the pull: a little of the momentum passes to the host.
+	h.vel += vel * 0.3 * MASS[kind] / MASS[h.kind]
+	h.ang_vel += signf(vel.x) * 1.5
+	h.startle_t = 0.35
+	spin = 0.0
+	ang_vel = signf(vel.x) * 3.0
+	_dodge_cd = 1.5
+	grabbed = true
+	voice("up")
+	Sfx.play("creak", randf_range(0.9, 1.05), -2.0)
+	return true
+
+
+## Hanging on a neighbour's rope: its hook sets ours; no moves of its own.
+func _ride_step() -> void:
+	if not is_instance_valid(rope_host) or rope_host.phase != Phase.HANGING:
+		# The host is gone but the rope still hangs from the hook.
+		rope_host = null
+		return
+	anchor.x = rope_host.anchor.x
+	_slide_to = NAN
+
+
+## A cut body that a friend is trying to catch.
+func expect_rescue(rescuer: Target) -> void:
+	rescuable = true
+	swing_host = rescuer
+
+
 ## Teamwork: a neighbour was destroyed at `from`; scatter away from it.
 func scatter(from: Vector2) -> void:
 	if tactic < 4 or leader != null or guard_of != null or kind == Kind.BOSS or _dodge_cd > 0.6:
@@ -1244,7 +1430,7 @@ func _body_step(dt: float) -> void:
 	vel.x += wind * dt / MASS[kind]
 	# They are alive: when the hook has moved on, the body pulls itself back
 	# under it instead of trailing for seconds on a long string.
-	if kind != Kind.ROD:
+	if kind != Kind.ROD and acro != Acro.PUMP:
 		var off := anchor.x - pos.x
 		if absf(off) > 10.0:
 			vel.x += clampf(off * 6.0, -700.0, 700.0) * dt / MASS[kind]
@@ -1257,7 +1443,8 @@ func _body_step(dt: float) -> void:
 		vel -= dir * k * (dist - length) * dt
 		# Extra damping along the string keeps the bounce elastic but calm.
 		vel -= dir * vel.dot(dir) * (2.2 + danger * 2.0) * dt
-	vel *= exp(-DAMPING * dt)
+	# Pumping, it works with the swing: far less loss than at rest.
+	vel *= exp(-(0.12 if acro == Acro.PUMP else DAMPING) * dt)
 	pos += vel * dt
 	# Swinging drives the wobble a little (the string pulls the top first).
 	var swing := atan2(-(pos.x - anchor.x), pos.y - anchor.y)
