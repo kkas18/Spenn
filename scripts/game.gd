@@ -277,6 +277,8 @@ func _ready() -> void:
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
 	hud.menu_pressed.connect(_to_menu)
+	hud.bar.record_broken.connect(_on_record_broken)
+	hud.bar.wave_record.connect(_on_wave_record)
 	get_viewport().size_changed.connect(_on_resize)
 	_apply_layout()
 	_boot()
@@ -446,6 +448,11 @@ func _start_run() -> void:
 	hud.bar.phase = 1
 	hud.bar.progress = 0.0
 	hud.bar.set_mult(1)
+	# The bests this run chases (the bar says when they are near or beaten).
+	hud.bar.daily = daily
+	hud.bar.best = Prefs.daily_record() if daily else Prefs.record
+	hud.bar.best_wave = int(Prefs.stats.get("best_wave", 0))
+	Prefs.fresh = {}
 	hud.hide_menu_ui()
 	hud.reveal_hud()
 	title.release()
@@ -459,6 +466,27 @@ func _start_run() -> void:
 	Motion.after(0.5, func() -> void:
 		if state == State.STARTING:
 			_set_state(State.PLAYING))
+
+
+## The record just fell, mid-run: the counter takes the stamp (drawn by the
+## bar); here, the burst of brass, the chime and a breath of slow motion.
+func _on_record_broken() -> void:
+	var at := Vector2(layout.center_x, layout.safe_top + 47.0)
+	fx.sparks(at, Pal.GOLD_LIGHT, 18)
+	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
+	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
+	Sfx.play("record")
+	Sfx.haptic_pattern("record")
+	if not Prefs.reduced_motion:
+		fx.slowmo(0.4, 0.3)
+
+
+## Past the best wave ever reached: a smaller moment at the medallion.
+func _on_wave_record() -> void:
+	var at := Vector2(layout.margin + 36.0, layout.safe_top + 48.0)
+	fx.sparks(at, Pal.GOLD_LIGHT, 10)
+	Sfx.phrase([4, 6, 8], 0.07, -5.0)
+	Sfx.haptic_pattern("light")
 
 
 ## A title letter's string snapped taut as it fell in: a puff of dust at

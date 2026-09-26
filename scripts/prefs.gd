@@ -21,7 +21,9 @@ var record := 0
 var intro_seen := false
 var seen := {}                 # enemy kinds already introduced
 var runs := 0                  # runs started (the pause hint shows for the first few)
-var total_points := 0          # lifetime points (+ mission rewards): unlocks skins
+var total_points := 0          # lifetime points (+ mission rewards), for the stats
+var skin_points := 0           # the same, but never reset: unlocks skins
+var fresh := {}                # bests set by the last run ("best", "wave"), until seen
 var skin := 0
 var missions: Array = []       # active: [{"id": String, "level": int}]
 var mission_level := 0         # missions completed so far: goals grow with it
@@ -48,6 +50,8 @@ func _ready() -> void:
 		seen = _cfg.get_value("stats", "seen", {})
 		runs = int(_cfg.get_value("stats", "runs", 0))
 		total_points = int(_cfg.get_value("meta", "total_points", 0))
+		skin_points = int(_cfg.get_value("meta", "skin_points", total_points))
+		fresh = _cfg.get_value("meta", "fresh", {})
 		skin = int(_cfg.get_value("meta", "skin", 0))
 		missions = _cfg.get_value("meta", "missions", [])
 		mission_level = int(_cfg.get_value("meta", "mission_level", 0))
@@ -114,6 +118,8 @@ func mark_intro_seen() -> void:
 func submit_score(score: int) -> bool:
 	if score <= record:
 		return false
+	if record > 0:
+		fresh["best"] = true
 	record = score
 	save()
 	return true
@@ -138,6 +144,7 @@ func _fill_missions() -> void:
 func complete_mission(i: int) -> int:
 	var pay := Meta.reward(int(missions[i].level))
 	total_points += pay
+	skin_points += pay
 	mission_level += 1
 	missions.remove_at(i)
 	missions.insert(i, {"id": Meta.roll(missions), "level": mission_level})
@@ -148,11 +155,30 @@ func complete_mission(i: int) -> int:
 ## A run ended: lifetime counters and points.
 func record_run(run: Dictionary) -> void:
 	total_points += int(run.get("score", 0))
+	skin_points += int(run.get("score", 0))
+	if int(run.get("wave", 0)) > int(stats.get("best_wave", 0)) and int(stats.get("runs", 0)) > 0:
+		fresh["wave"] = true
 	for k: String in ["kills", "overloads", "bank", "chain", "cuts", "double", "break", "shots", "hits", "secs", "score"]:
 		stats[k] = int(stats.get(k, 0)) + int(run.get(k, 0))
 	stats["runs"] = int(stats.get("runs", 0)) + 1
 	stats["best_wave"] = maxi(int(stats.get("best_wave", 0)), int(run.get("wave", 0)))
 	save()
+
+
+## Clears the record, the statistics, today's best and the missions.
+## Unlocked ball skins (and the one in use), settings and the enemies
+## already introduced are kept.
+func reset_progress() -> void:
+	record = 0
+	stats = {}
+	total_points = 0
+	daily_best = 0
+	daily_date = 0
+	missions = []
+	mission_level = 0
+	fresh = {}
+	_fill_missions()
+	_commit()
 
 
 func set_skin(i: int) -> void:
@@ -195,6 +221,8 @@ func save() -> void:
 	_cfg.set_value("stats", "seen", seen)
 	_cfg.set_value("stats", "runs", runs)
 	_cfg.set_value("meta", "total_points", total_points)
+	_cfg.set_value("meta", "skin_points", skin_points)
+	_cfg.set_value("meta", "fresh", fresh)
 	_cfg.set_value("meta", "skin", skin)
 	_cfg.set_value("meta", "missions", missions)
 	_cfg.set_value("meta", "mission_level", mission_level)

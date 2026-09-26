@@ -2061,3 +2061,35 @@ Rettet:
   - Lyd vises som en nivåmåler med tre stigende søyler som fylles med gull.
   - Bryterne er messingknotter som slår over på en fjær med overslag.
   - Seksjonsnavnene står i gull med en gravert linje etter.
+
+## v7.39 – Farger som følger spenningen, rekordsystem og nullstilling
+
+- **Fargesystem på fremdriften:**
+  - Strengen har kjølig, matt messing mens den er slakk (0–40 %).
+  - Så blir den varmt gull (40–80 %).
+  - I finalen er den ravgul og gløder på takten, og hele den strammede lengden lyser.
+  - Når den synger, er den hvitgull.
+  - Overgangene er myke.
+- **Medaljongens metall følger runden:** bronse (bølge 1–3), sølv (4–6), gull (7–9) og glødende
+  ravgull fra bølge 10.
+- **Rekord i spillet:**
+  - Fra 80 % av rekorden henger en lapp under telleren som teller ned («701 til rekord»), og
+    rammen puster i gull.
+  - Når rekorden slås, slår et «NY REKORD»-stempel ned på telleren med messingstøv, gnister,
+    en ring, klokkelyd, vibrasjon og et kort pust av sakte film. Stempelet krymper så til en
+    krone som blir sittende på rammen resten av runden.
+  - I dagens utfordring står det «DAGENS REKORD».
+- **Beste bølge:** når du passerer din beste bølge, får medaljongen en krone, teksten under viser
+  «Ny beste bølge» en stund, og det spilles en liten melodi.
+- **Game over:**
+  - Ved ny rekord slår et skrått stempel ned, og forrige rekord vises strøket over.
+  - Ved 85 % eller mer av rekorden står det «Så nær!», med en stolpe som fylles opp mot kronen,
+    og hvor mange poeng som manglet.
+- **Statistikk og meny:** en rekord eller beste bølge fra siste runde får et «Ny!»-merke på
+  måleren og en krone på rekorden i menyen, til neste runde starter.
+- **Nullstilling:**
+  - Ligger i Innstillinger → Data, som en rød rad.
+  - Du holder inne i 1,5 sekunder mens en ring fylles, med tikk-lyd underveis og en bekreftelse
+    til slutt.
+  - Nullstiller rekord, statistikk, dagens rekord og oppdrag.
+  - Kulene beholdes: de låses opp av egne poeng som aldri nullstilles.

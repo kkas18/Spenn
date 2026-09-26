@@ -386,7 +386,7 @@ func _refresh_text() -> void:
 		_pause_icon_caps[i].text = Loc.t(["pause.restart", "pause.settings", "pause.mainMenu"][i])
 	_s_title.text = Loc.t("settings.title")
 	for i in _s_secs.size():
-		_s_secs[i].text = Loc.t(["settings.sec.sound", "settings.sec.game", "settings.sec.access", "settings.sec.lang"][i])
+		_s_secs[i].text = Loc.t(["settings.sec.sound", "settings.sec.game", "settings.sec.access", "settings.sec.lang", "settings.sec.data"][i])
 	for r: SetRow in _s_rows:
 		r.refresh()
 	_s_credits.text = Loc.t("settings.credits")
@@ -697,6 +697,11 @@ func _build_settings() -> void:
 			Sfx.haptic_pattern("soft")],
 		null,
 		[SetRow.Kind.LANG, "settings.language", func() -> int: return 0 if Loc.lang == "no" else 1, func(v: int) -> void: Loc.set_language("no" if v == 0 else "en")],
+		null,
+		[SetRow.Kind.HOLD, "settings.reset", func() -> int: return 0, func(_v: int) -> void:
+			Prefs.reset_progress()
+			Sfx.play("clear", 0.8, -4.0)
+			Sfx.haptic_pattern("record")],
 	]
 	var rows: VBoxContainer = null
 	var first := true
@@ -739,11 +744,15 @@ func _build_settings() -> void:
 		r.key = g[1]
 		r.getter = g[2]
 		r.glyph = {"settings.music": "note", "settings.effects": "speaker", "settings.aimGuide": "aim", "settings.tilt": "tilt",
-			"settings.reducedMotion": "motion", "settings.haptics": "vibrate", "settings.language": "globe"}.get(g[1], "")
+			"settings.reducedMotion": "motion", "settings.haptics": "vibrate", "settings.language": "globe", "settings.reset": "restart"}.get(g[1], "")
 		r.first = first
 		r.theme_type_variation = &"RowButton"
 		var setter: Callable = g[3]
 		r.picked.connect(func(v: int) -> void: _act(func() -> void: setter.call(v)))
+		if g[1] == "settings.reset":
+			var row := r
+			r.note = func() -> String:
+				return Loc.t("settings.resetDone") if row.done_t < 2.2 else Loc.t("settings.resetHint")
 		if g[1] == "settings.tilt":
 			r.note = func() -> String:
 				return Loc.t("settings.noSensor") if Prefs.tilt and _game_sensor() == Vector3.ZERO and Input.get_gyroscope() == Vector3.ZERO else ""
@@ -850,6 +859,7 @@ func _fill_stats(box: VBoxContainer) -> void:
 	var shots := int(st.get("shots", 0))
 	var board := StatsBoard.new()
 	board.hud = self
+	board.fresh = Prefs.fresh.duplicate()
 	board.hero = [
 		["stats.best", Prefs.record],
 		["stats.wave", int(st.get("best_wave", 0))],
@@ -873,14 +883,14 @@ func _fill_stats(box: VBoxContainer) -> void:
 func _fill_skins(box: VBoxContainer) -> void:
 	box.add_child(_panel_title("skins.title"))
 	var sub := label(21, Tok.TEXT_SECONDARY, _font_body)
-	sub.text = sentence(Loc.t("skins.total") % _group(Prefs.total_points))
+	sub.text = sentence(Loc.t("skins.total") % _group(Prefs.skin_points))
 	box.add_child(sub)
 	box.add_child(_spacer(Tok.SPACE_SM))
 	for i in Meta.SKINS.size():
 		var sk: Array = Meta.SKINS[i]
-		var open := Meta.skin_unlocked(i, Prefs.total_points)
+		var open := Meta.skin_unlocked(i, Prefs.skin_points)
 		var b := button(func() -> void:
-			if Meta.skin_unlocked(i, Prefs.total_points):
+			if Meta.skin_unlocked(i, Prefs.skin_points):
 				Prefs.set_skin(i)
 				_open_meta(_skins, _skins_box, _fill_skins)
 			else:
@@ -1110,6 +1120,7 @@ class StatsBoard extends Control:
 	var hud: Hud
 	var hero: Array = []           # [key, value]
 	var tiles: Array = []          # [key, glyph, value (int or text)]
+	var fresh := {}                # bests the last run set: they get a "New!" tag
 	var _t := 0.0
 	var _needle := 0.0
 	var _needle_v := 0.0
@@ -1167,6 +1178,18 @@ class StatsBoard extends Control:
 				draw_string(num, Vector2(-tw * 0.5 + 2.0, base + 3.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.4))
 				draw_string(num, Vector2(-tw * 0.5, base), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI)
 			draw_set_transform(Vector2.ZERO)
+			if i < 2 and fresh.get(["best", "wave"][i], false):
+				var nk := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf((_t - 0.9) / 0.35, 0.0, 1.0))
+				if nk > 0.0:
+					var nt := Loc.t("stats.new")
+					var nw := body.get_string_size(nt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 20.0
+					draw_set_transform(c + Vector2(r * 0.62, -r * 0.8), 0.12, Vector2(nk, nk))
+					var nr := Rect2(-nw * 0.5, -13.0, nw, 26.0)
+					Hud.pill(self, Rect2(nr.position + Vector2(1.5, 2.5), nr.size), Color(0, 0, 0, 0.4))
+					Hud.pill(self, nr, TopBar.T_HOT)
+					var nb := (body.get_ascent(16) - body.get_descent(16)) * 0.5
+					draw_string(body, Vector2(-nw * 0.5, nb), nt, HORIZONTAL_ALIGNMENT_CENTER, nw, 16, Color("1A1206"))
+					draw_set_transform(Vector2.ZERO)
 			draw_string(body, Vector2(c.x - 100.0, c.y + r + 34.0), Hud.sentence(Loc.t(hero[i][0])), HORIZONTAL_ALIGNMENT_CENTER, 200.0, 19, Color(Tok.TEXT_SECONDARY, k))
 		# The tiles: three by three, each rising in after the one before.
 		var gy := 2.0 * r + 70.0
@@ -1407,7 +1430,8 @@ class LangPill extends UIButton:
 ## or the language pair. The whole row is the touch target; tapping the
 ## control itself picks the bar or side under the finger.
 class SetRow extends UIButton:
-	enum Kind {SWITCH, STEPS, LANG}
+	enum Kind {SWITCH, STEPS, LANG, HOLD}
+	const HOLD_TIME := 1.5
 	const BAR_W := 15.0
 	const BAR_GAP := 10.0
 	signal picked(v: int)
@@ -1420,10 +1444,18 @@ class SetRow extends UIButton:
 	var first := false
 	var _shown := -1.0
 	var _sv := 0.0
+	var _hold := 0.0               # HOLD: how far the ring has filled
+	var _holding := false
+	var done_t := 9.0              # HOLD: time since it went through
 
 	func _ready() -> void:
 		super()
 		pressed.connect(_on_press)
+		if kind == Kind.HOLD:
+			button_down.connect(func() -> void:
+				if done_t > 1.0:
+					_holding = true)
+			button_up.connect(func() -> void: _holding = false)
 
 	func refresh() -> void:
 		queue_redraw()
@@ -1446,6 +1478,8 @@ class SetRow extends UIButton:
 		var x := get_local_mouse_position().x
 		var r := _control_rect()
 		match kind:
+			Kind.HOLD:
+				pass
 			Kind.SWITCH:
 				picked.emit(1 - v)
 			Kind.STEPS:
@@ -1467,6 +1501,21 @@ class SetRow extends UIButton:
 		if getter.is_null():
 			return
 		var dt := minf(delta, 1.0 / 30.0)
+		if kind == Kind.HOLD:
+			done_t += dt
+			var before := _hold
+			if _holding:
+				_hold = minf(1.0, _hold + dt / HOLD_TIME)
+				if floorf(before * 4.0) != floorf(_hold * 4.0) and _hold < 1.0:
+					Sfx.play("tick", 0.8 + _hold * 0.6, -10.0)
+				if _hold >= 1.0:
+					_holding = false
+					done_t = 0.0
+					picked.emit(1)
+			else:
+				_hold = move_toward(_hold, 0.0, dt * (0.8 if done_t < 1.0 else 3.0))
+			queue_redraw()
+			return
 		var want := float(_value())
 		if _shown < -0.5:
 			_shown = want
@@ -1484,20 +1533,37 @@ class SetRow extends UIButton:
 		var f := hud.body_font()
 		var fs := Tok.TYPE_BODY + 1
 		var cy := size.y * 0.5
-		# The icon, engraved in a small brass ring.
+		# The icon, engraved in a small brass ring (coral for the one that
+		# destroys something).
+		var danger := kind == Kind.HOLD
 		var ic := Vector2(21.0, cy)
-		draw_circle(ic, 21.0, Tok.PRIMARY_LO, true, -1.0, true)
+		draw_circle(ic, 21.0, Tok.DANGER.darkened(0.35) if danger else Tok.PRIMARY_LO, true, -1.0, true)
 		draw_circle(ic + Vector2(-0.5, -0.5), 19.0, Color("0E1015"), true, -1.0, true)
-		Hud.glyph(self, glyph, ic, 0.95, Tok.PRIMARY_HI)
+		Hud.glyph(self, glyph, ic, 0.95, Tok.DANGER if danger else Tok.PRIMARY_HI)
 		var tx := 58.0
 		var sub: String = note.call() if note.is_valid() else ""
 		var base := cy + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5 - (12.0 if sub != "" else 0.0)
-		draw_string(f, Vector2(tx, base), Loc.t(key), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.TEXT_PRIMARY)
+		draw_string(f, Vector2(tx, base), Loc.t(key), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.DANGER if danger else Tok.TEXT_PRIMARY)
 		if sub != "":
 			draw_string(hud.body_font(), Vector2(tx, base + 27.0), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Tok.TEXT_FAINT)
 		var r := _control_rect()
 		var v := _value()
 		match kind:
+			Kind.HOLD:
+				# A ring that fills while the finger holds; done, it flashes
+				# and shows a tick.
+				var c := Vector2(size.x - 28.0, cy)
+				draw_circle(c + Vector2(1.5, 2.5), 24.0, Color(0, 0, 0, 0.4), true, -1.0, true)
+				draw_circle(c, 24.0, Tok.DANGER.darkened(0.45), true, -1.0, true)
+				draw_circle(c, 21.0, Color("0A0C10"), true, -1.0, true)
+				if _hold > 0.005:
+					draw_arc(c, 17.0, -PI * 0.5, -PI * 0.5 + TAU * _hold, 40, Tok.DANGER, 5.0, true)
+				if done_t < 1.2:
+					var fl := 1.0 - done_t / 1.2
+					draw_circle(c, 24.0 + 10.0 * (1.0 - fl), Color(Tok.DANGER, 0.3 * fl), true, -1.0, true)
+					draw_polyline(PackedVector2Array([c + Vector2(-7, 0), c + Vector2(-2, 5), c + Vector2(8, -6)]), Tok.TEXT_PRIMARY, 3.0, true)
+				else:
+					draw_circle(c, 4.0, Color(Tok.DANGER, 0.5 + 0.5 * _hold), true, -1.0, true)
 			Kind.SWITCH:
 				var e := clampf(_shown, -0.12, 1.12)
 				var on := clampf(_shown, 0.0, 1.0)
@@ -1565,7 +1631,15 @@ class SetRow extends UIButton:
 ## A run opens with the pieces arriving in turn (`begin_intro`). There is
 ## no pause button: a double-tap on the field (or Back) pauses.
 class TopBar extends Control:
+	signal record_broken
+	signal wave_record
 	const DRUMS_MIN := 5
+	const NEAR := 0.8              # from here on the counter says how far to the record
+	# The string's colour follows the tension: cool brass while slack, gold
+	# as it builds, amber toward the finale, hot gold when it sings.
+	const T_COOL := Color("9C8C69")
+	const T_WARM := Color("EC9A3C")
+	const T_HOT := Color("FFC266")
 	const CELL := 34.0             # one drum's width
 	const PLATE_H := 62.0
 	const ROPE := Color("C4BBA8")
@@ -1592,6 +1666,14 @@ class TopBar extends Control:
 	var hot := false               # overload: the dial blazes
 	var glint := 0.0               # a big gain: the bezel flashes
 	var intro_t := 99.0            # time into the run's opening
+	var best := 0                  # the record to beat this run (0: none yet)
+	var best_wave := 0
+	var daily := false
+	var _broken := false
+	var _record_t := -1.0          # the NEW RECORD stamp's time (<0: not yet)
+	var _wave_crown := false
+	var _wave_new_t := 9.0
+	var _front: Control            # above the drums: stamp, crown, tag
 	var _clock := 0.0
 	var _taps: Array[int] = []
 	var _last_score := 0
@@ -1622,6 +1704,10 @@ class TopBar extends Control:
 		_drums.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_drums.draw.connect(_draw_drums)
 		add_child(_drums)
+		_front = Control.new()
+		_front.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_front.draw.connect(_draw_front)
+		add_child(_front)
 		_bezel = StyleBoxFlat.new()
 		_bezel.set_corner_radius_all(18)
 		_bezel.shadow_color = Color(0, 0, 0, 0.45)
@@ -1666,6 +1752,35 @@ class TopBar extends Control:
 		_gain = 0
 		_gain_t = 9.0
 		_last_score = score
+		_broken = false
+		_record_t = -1.0
+		_wave_crown = false
+		_wave_new_t = 9.0
+
+	## Where the string's colour sits for progress `pr`.
+	func tension_col(pr: float) -> Color:
+		if pr >= 1.0:
+			return T_HOT
+		if pr < 0.4:
+			return T_COOL.lerp(Tok.PRIMARY, pr / 0.4)
+		if pr < finale_at:
+			return Tok.PRIMARY.lerp(T_WARM, (pr - 0.4) / maxf(0.01, finale_at - 0.4))
+		return T_WARM.lerp(T_HOT, 0.4 * _beat())
+
+	## 1 on the music's beat, falling to 0 before the next.
+	func _beat() -> float:
+		var b := Music.beat()
+		return pow(1.0 - fposmod(b, 1.0), 3.0) if b >= 0.0 else 0.5 + 0.5 * sin(_clock * 6.0)
+
+	## A medallion's metal by wave: bronze, silver, gold, then ember gold.
+	static func tier(wave: int) -> Array:
+		if wave <= 3:
+			return [Color("5E3A1E"), Color("B07A45"), Color("E6B484")]
+		if wave <= 6:
+			return [Color("4E555F"), Color("A7AFBA"), Color("EEF2F6")]
+		if wave <= 9:
+			return [Tok.PRIMARY_LO, Tok.PRIMARY, Tok.PRIMARY_HI]
+		return [Color("7A3A12"), Color("E08A2E"), Color("FFD08A")]
 
 	func knots_rect() -> Rect2:
 		var l := hud.l
@@ -1713,6 +1828,17 @@ class TopBar extends Control:
 			_gain_t = 0.0
 		_last_score = score
 		_gain_t += rd
+		if best > 0 and not _broken and score > best and intro_t > 1.0:
+			_broken = true
+			_record_t = 0.0
+			record_broken.emit()
+		if _record_t >= 0.0:
+			_record_t += rd
+		if best_wave > 0 and not _wave_crown and phase > best_wave:
+			_wave_crown = true
+			_wave_new_t = 0.0
+			wave_record.emit()
+		_wave_new_t += rd
 		var diff := float(score) - shown_score
 		if absf(diff) > 0.01:
 			shown_score += signf(diff) * maxf(absf(diff) * Pal.damp(0.18, rd), minf(absf(diff), 60.0 * rd))
@@ -1829,14 +1955,18 @@ class TopBar extends Control:
 				var m := maxi(2, int(ceil(N * pr)))
 				for k in m + 1:
 					fill.append(_string_at(a, b, sag, amp, pr * k / float(m)))
-				draw_polyline(fill, Tok.PRIMARY_LO, 3.6, true)
-				draw_polyline(fill, Tok.PRIMARY, 2.4, true)
+				var col := tension_col(pr)
+				if pr >= finale_at:
+					# The finale: the whole wound length glows on the beat.
+					draw_polyline(fill, Color(col, 0.1 + 0.12 * _beat()), 9.0, true)
+				draw_polyline(fill, col.darkened(0.45), 3.6, true)
+				draw_polyline(fill, col, 2.4, true)
 				for k in fill.size():
 					fill[k] += Vector2(0, -0.8)
-				draw_polyline(fill, Color(Tok.PRIMARY_HI, 0.8), 0.9, true)
+				draw_polyline(fill, Color(col.lightened(0.4), 0.8), 0.9, true)
 				var tip := _string_at(a, b, sag, amp, pr)
-				draw_circle(tip, 9.0, Color(Tok.PRIMARY, 0.14), true, -1.0, true)
-				draw_circle(tip, 3.6, Tok.PRIMARY_HI, true, -1.0, true)
+				draw_circle(tip, 9.0, Color(col, 0.16), true, -1.0, true)
+				draw_circle(tip, 3.6, col.lightened(0.3), true, -1.0, true)
 			# Taut and singing: a light runs along the whole string.
 			if _shimmer >= 0.0:
 				var st := Motion.ease_value(Motion.Ease.STANDARD, clampf(_shimmer / 0.9, 0.0, 1.0))
@@ -1872,7 +2002,7 @@ class TopBar extends Control:
 				txt = ""
 			elif pr >= finale_at - 0.001:
 				txt = Loc.t("hud.finale")
-				col = Tok.PRIMARY_HI
+				col = T_WARM.lerp(T_HOT, 0.5 * _beat())
 			elif remaining > 0:
 				txt = Loc.t("hud.left") % remaining
 			if txt != "":
@@ -1906,28 +2036,56 @@ class TopBar extends Control:
 		var sx := absf(cos(_flip * PI)) if _flip < 1.0 else 1.0
 		var n := phase if _flip >= 0.5 else _shown_phase
 		sx = maxf(sx, 0.04) * Motion.ease_value(Motion.Ease.EMPHASIZED, k)
+		var m := tier(n)
+		if n >= 10:
+			# Ember: a slow warm glow round the coin.
+			draw_circle(c, r + 8.0, Color(m[1], 0.08 + 0.06 * sin(_clock * 2.5)), true, -1.0, true)
 		draw_set_transform(c + Vector2(2.0, 3.0), 0.0, Vector2(sx, 1.0))
 		draw_circle(Vector2.ZERO, r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
 		draw_set_transform(c, 0.0, Vector2(sx, 1.0))
-		draw_circle(Vector2.ZERO, r, Tok.PRIMARY_LO, true, -1.0, true)
-		draw_circle(Vector2(-0.8, -1.0), r - 2.5, Tok.PRIMARY, true, -1.0, true)
+		draw_circle(Vector2.ZERO, r, m[0], true, -1.0, true)
+		draw_circle(Vector2(-0.8, -1.0), r - 2.5, m[1], true, -1.0, true)
 		# The milled rim, the lit edge, the sunken face.
 		for i in 36:
 			var d := Vector2.from_angle(TAU * i / 36.0)
-			draw_line(d * (r - 5.5), d * (r - 2.5), Color(BRASS_DEEP, 0.55), 1.2, true)
-		draw_arc(Vector2.ZERO, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(Tok.PRIMARY_HI, 0.85), 1.6, true)
+			draw_line(d * (r - 5.5), d * (r - 2.5), Color(m[0], 0.7), 1.2, true)
+		draw_arc(Vector2.ZERO, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(m[2], 0.85), 1.6, true)
 		draw_circle(Vector2.ZERO, r - 7.0, Color("0E1015"), true, -1.0, true)
-		draw_arc(Vector2.ZERO, r - 7.0, PI * 0.1, PI * 0.9, 16, Color(Tok.PRIMARY_HI, 0.25), 1.2, true)
-		draw_arc(Vector2.ZERO, r - 10.0, 0.0, TAU, 40, Color(Tok.PRIMARY_LO, 0.7), 1.0, true)
+		draw_arc(Vector2.ZERO, r - 7.0, PI * 0.1, PI * 0.9, 16, Color(m[2], 0.25), 1.2, true)
+		draw_arc(Vector2.ZERO, r - 10.0, 0.0, TAU, 40, Color(m[0], 0.9), 1.0, true)
 		var num := hud.num_font()
 		var txt := str(n)
 		var fs := 30 if txt.length() < 2 else 25
 		var tw := num.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var base := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
-		draw_string(num, Vector2(-tw * 0.5, base + 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI)
+		draw_string(num, Vector2(-tw * 0.5, base + 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, m[2])
 		draw_set_transform(Vector2.ZERO)
+		# Past the best wave ever: a crown on the coin, and for a moment the
+		# caption says so.
+		if _wave_crown:
+			var ck := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf(_wave_new_t / 0.4, 0.0, 1.0))
+			_crown(c + Vector2(0, -r - 6.0), 1.0 * ck, T_HOT)
 		var body := hud.body_font()
-		draw_string(body, Vector2(c.x - 60.0, c.y + r + 19.0), Loc.t("hud.waveWord"), HORIZONTAL_ALIGNMENT_CENTER, 120.0, 15, Color(Tok.TEXT_SECONDARY, k))
+		var cap := Loc.t("hud.waveWord")
+		var ccol := Color(Tok.TEXT_SECONDARY, k)
+		if _wave_new_t < 3.2:
+			cap = Loc.t("hud.newWave")
+			ccol = Color(T_HOT, minf(1.0, (3.2 - _wave_new_t) / 0.4))
+		draw_string(body, Vector2(c.x - 70.0, c.y + r + 19.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 15, ccol)
+
+	func _crown(c: Vector2, s: float, col: Color, ci: CanvasItem = null) -> void:
+		if s <= 0.01:
+			return
+		var t := ci if ci != null else self
+		var pts := PackedVector2Array()
+		for q in [Vector2(-9, 5), Vector2(-10, -5), Vector2(-4.5, -0.5), Vector2(0, -8), Vector2(4.5, -0.5), Vector2(10, -5), Vector2(9, 5)]:
+			pts.append(c + q * s)
+		var sh := PackedVector2Array()
+		for q in pts:
+			sh.append(q + Vector2(1.2, 2.0))
+		t.draw_colored_polygon(sh, Color(0, 0, 0, 0.4))
+		t.draw_colored_polygon(pts, col)
+		t.draw_line(c + Vector2(-8, 3.5) * s, c + Vector2(8, 3.5) * s, col.darkened(0.35), 1.2 * s, true)
 
 	# ------------------------------------------------ counter and dial
 
@@ -1941,7 +2099,14 @@ class TopBar extends Control:
 		var pw := _plate_w
 		var r := Rect2(w * 0.5 - pw * 0.5, top + 16.0 + drop + nudge, pw, PLATE_H)
 		# The brass bezel, the recessed window, and the drums in it.
-		_bezel.bg_color = Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.35 + 0.65 * glint)
+		# Near the record the bezel breathes; once it is beaten it stays lit.
+		var breath := 0.0
+		if _near():
+			breath = 0.5 + 0.5 * sin(_clock * 3.2)
+		var lit := maxf(glint, 0.5 * breath)
+		if _broken:
+			lit = maxf(lit, 0.55)
+		_bezel.bg_color = Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.35 + 0.65 * lit)
 		draw_style_box(_bezel, r.grow(5.0))
 		draw_line(Vector2(r.position.x + 12.0, r.position.y - 3.6), Vector2(r.end.x - 12.0, r.position.y - 3.6), Color(Tok.PRIMARY_HI, 0.55), 1.2, true)
 		draw_line(Vector2(r.position.x + 12.0, r.end.y + 3.8), Vector2(r.end.x - 12.0, r.end.y + 3.8), Color(BRASS_DEEP, 0.9), 1.4, true)
@@ -1949,12 +2114,72 @@ class TopBar extends Control:
 		_drums.position = r.position + Vector2(10.0, 6.0)
 		_drums.size = Vector2(r.size.x - 20.0, PLATE_H - 12.0)
 		_drums.queue_redraw()
+		_front.position = Vector2.ZERO
+		_front.size = size
+		_front.set_meta("plate", r)
+		_front.queue_redraw()
 		_draw_dial(Vector2(r.end.x + 40.0, r.position.y + PLATE_H * 0.5), _k(0.45, 0.35))
 		# The last gain, rising a little and fading under the counter.
-		if _gain > 0 and _gain_t < 1.1:
+		if _gain > 0 and _gain_t < 1.1 and not _near():
 			var ga := clampf(_gain_t / 0.08, 0.0, 1.0) * (1.0 - clampf((_gain_t - 0.6) / 0.5, 0.0, 1.0))
 			var gy := r.end.y + 28.0 - 6.0 * clampf(_gain_t / 1.1, 0.0, 1.0)
 			draw_string(hud.body_font(), Vector2(0, gy), "+" + Hud._group(_gain), HORIZONTAL_ALIGNMENT_CENTER, w, 18, Color(Tok.PRIMARY_HI, ga))
+
+	func _near() -> bool:
+		return best > 0 and not _broken and score >= best * NEAR and intro_t > 1.0
+
+	## Over the drums: the tag counting down to the record, the NEW RECORD
+	## stamp slamming onto the plate, and then the small crown it leaves.
+	func _draw_front() -> void:
+		if not _front.has_meta("plate") or hud == null:
+			return
+		var r: Rect2 = _front.get_meta("plate")
+		var f := _front
+		var body := hud.body_font()
+		if _near():
+			var txt := Loc.t("record.near") % Hud._group(best - score + 1)
+			var tw := body.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 28.0
+			var tr := Rect2(r.get_center().x - tw * 0.5, r.end.y + 12.0, tw, 26.0)
+			Hud.pill(f, tr.grow(1.5), Tok.PRIMARY_LO)
+			Hud.pill(f, tr, Color("0E1015"))
+			var fb := tr.get_center().y + (body.get_ascent(16) - body.get_descent(16)) * 0.5
+			f.draw_string(body, Vector2(tr.position.x, fb), txt, HORIZONTAL_ALIGNMENT_CENTER, tw, 16, T_HOT.lerp(Tok.PRIMARY, 0.5 - 0.5 * sin(_clock * 3.2)))
+		if not _broken:
+			return
+		var crown_at := Vector2(r.position.x + 4.0, r.position.y - 3.0)
+		var t := _record_t
+		if t < 1.9:
+			# The stamp: slams down from large, holds, then shrinks into the
+			# crown on the bezel's corner.
+			var slam := Motion.ease_value(Motion.Ease.EXIT, clampf(t / 0.16, 0.0, 1.0))
+			var sc := lerpf(2.3, 1.0, slam)
+			var go := clampf((t - 1.45) / 0.45, 0.0, 1.0)
+			var e := Motion.ease_value(Motion.Ease.STANDARD, go)
+			var c := r.get_center().lerp(crown_at, e)
+			sc *= lerpf(1.0, 0.15, e)
+			var a := clampf(t / 0.08, 0.0, 1.0) * (1.0 - go * 0.6)
+			var caps := hud.caps_font()
+			var label := Loc.t("record.daily" if daily else "record.new")
+			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x + 36.0
+			f.draw_set_transform(c, -0.1, Vector2(sc, sc))
+			var sr := Rect2(-lw * 0.5, -24.0, lw, 48.0)
+			f.draw_rect(Rect2(sr.position + Vector2(3, 5), sr.size), Color(0, 0, 0, 0.45 * a))
+			f.draw_rect(sr, Color(Color("1A1206"), 0.92 * a))
+			f.draw_rect(sr.grow(-3.0), Color(T_HOT, a), false, 2.5)
+			f.draw_rect(sr.grow(-8.0), Color(T_HOT, 0.6 * a), false, 1.0)
+			var bb := (caps.get_ascent(24) - caps.get_descent(24)) * 0.5
+			f.draw_string(caps, Vector2(-lw * 0.5, bb), label, HORIZONTAL_ALIGNMENT_CENTER, lw, 24, Color(T_HOT, a))
+			f.draw_set_transform(Vector2.ZERO)
+			# Brass dust knocked off by the slam.
+			if t < 0.6 and not Prefs.reduced_motion:
+				var dk := clampf((t - 0.12) / 0.48, 0.0, 1.0)
+				for i in 14:
+					var d := Vector2.from_angle(i * TAU / 14.0 + 0.3)
+					var p := r.get_center() + d * lerpf(20.0, 120.0, dk) * Vector2(1.5, 0.6)
+					f.draw_circle(p, 2.2 * (1.0 - dk), Color(T_HOT, 1.0 - dk), true, -1.0, true)
+		if t > 1.75:
+			var ck := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf((t - 1.75) / 0.3, 0.0, 1.0))
+			_crown(crown_at, ck, T_HOT.lerp(Tok.PRIMARY_HI, 0.5 + 0.5 * sin(_clock * 2.0)), f)
 
 	## The drums, in the window's own clipped space: each shows its digit
 	## and, while it turns, the next rolling up from below; the edges fall
@@ -2378,6 +2603,14 @@ class Overlay extends Control:
 		var rec := Hud._group(Prefs.daily_record() if hud.daily else Prefs.record)
 		draw_string(num, Vector2(2, y + 61.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.SHADOW, Tok.SHADOW.a * a))
 		draw_string(num, Vector2(0, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.PRIMARY_HI, a))
+		if not hud.daily and Prefs.fresh.get("best", false):
+			# Set last run: a small crown on the record.
+			var rw := num.get_string_size(rec, HORIZONTAL_ALIGNMENT_LEFT, -1, 60).x
+			var cp := Vector2(w * 0.5 + rw * 0.5 + 16.0, y + 14.0)
+			var crown := PackedVector2Array()
+			for q in [Vector2(-9, 5), Vector2(-10, -5), Vector2(-4.5, -0.5), Vector2(0, -8), Vector2(4.5, -0.5), Vector2(10, -5), Vector2(9, 5)]:
+				crown.append(cp + q * 1.2)
+			draw_colored_polygon(crown, Color(TopBar.T_HOT, a))
 		_draw_missions(l, a, y + 112.0)
 		var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 		var py := l.fork_y - 84.0
@@ -2586,24 +2819,62 @@ class GameOver extends Control:
 		if sa > 0.0:
 			draw_string(num, Vector2(3, cy + 3.0), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(0, 0, 0, 0.35 * sa))
 			draw_string(num, Vector2(0, cy), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(Tok.TEXT_PRIMARY, sa))
-		# The hook: how far short of the record, in gold, once the count
-		# has landed. Within a tenth of it, it says so.
+		# Under the score, what it means against the record:
+		#  - a new record: the old one, struck through (the stamp is above);
+		#  - close (85 % or more): "So close!" and a bar filling up to the
+		#    record, with how many points were missing;
+		#  - otherwise: how far short, in gold.
 		var ky := cy + 52.0
+		var land := COUNT_FROM + Motion.dur(COUNT_D)
+		var kg := clampf(Motion.ease_value(Motion.Ease.EMPHASIZED, (_t - land) / Motion.NORMAL), 0.0, 1.2)
 		var gap := _prev - _score
-		if not _record and _prev > 0 and gap > 0:
-			var kg := Motion.ease_value(Motion.Ease.EMPHASIZED, (_t - COUNT_FROM - Motion.dur(COUNT_D)) / Motion.NORMAL)
-			if kg > 0.0:
+		var body := hud.body_font()
+		var ga := minf(kg, 1.0)
+		if _record:
+			if _prev > 0 and ga > 0.0:
+				var line := Loc.t("record.prev") % Hud._group(_prev)
+				var lw := body.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
+				draw_string(body, Vector2(0, ky), line, HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color(Tok.TEXT_SECONDARY, ga))
+				var sx := w * 0.5 - lw * 0.5
+				draw_line(Vector2(sx - 4.0, ky - 7.0), Vector2(sx + (lw + 8.0) * ga - 4.0, ky - 7.0), Color(TopBar.T_WARM, ga), 1.6, true)
+			ky += 30.0
+		elif _prev > 0 and gap > 0 and _score >= _prev * 0.85:
+			if ga > 0.0:
+				var disp := hud.display_font()
+				var gs := lerpf(1.15, 1.0, ga)
+				draw_set_transform(Vector2(w * 0.5, ky + 14.0), 0.0, Vector2(gs, gs))
+				draw_string(disp, Vector2(-w * 0.5 + 2.0, 3.0), Loc.t("gameOver.near"), HORIZONTAL_ALIGNMENT_CENTER, w, 40, Color(0, 0, 0, 0.35 * ga))
+				draw_string(disp, Vector2(-w * 0.5, 0.0), Loc.t("gameOver.near"), HORIZONTAL_ALIGNMENT_CENTER, w, 40, Color(TopBar.T_WARM, ga))
+				draw_set_transform(Vector2.ZERO)
+				# The bar: how much of the record this run reached.
+				var bw := minf(440.0, w - 120.0)
+				var br := Rect2(w * 0.5 - bw * 0.5, ky + 36.0, bw, 14.0)
+				var fk := Motion.ease_value(Motion.Ease.STANDARD, clampf((_t - land - 0.15) / 0.8, 0.0, 1.0))
+				var frac := float(_score) / float(_prev) * fk
+				Hud.pill(self, br.grow(2.0), Color(Tok.PRIMARY_LO, ga))
+				Hud.pill(self, br, Color(Color("0A0C10"), ga))
+				if frac > 0.02:
+					var fr := Rect2(br.position + Vector2(3, 3), Vector2(maxf(8.0, (br.size.x - 6.0) * frac), br.size.y - 6.0))
+					Hud.pill(self, fr, Color(TopBar.T_COOL.lerp(TopBar.T_WARM, frac), ga))
+				# The record at the end of the bar.
+				var cp := Vector2(br.end.x + 4.0, br.get_center().y - 16.0)
+				var crown := PackedVector2Array()
+				for q in [Vector2(-9, 5), Vector2(-10, -5), Vector2(-4.5, -0.5), Vector2(0, -8), Vector2(4.5, -0.5), Vector2(10, -5), Vector2(9, 5)]:
+					crown.append(cp + q)
+				draw_colored_polygon(crown, Color(Tok.PRIMARY_HI, ga))
+				draw_string(body, Vector2(0, ky + 80.0), Loc.t("gameOver.nearSub") % Hud._group(gap), HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color(Tok.TEXT_SECONDARY, ga))
+			ky += 96.0
+		elif _prev > 0 and gap > 0:
+			if ga > 0.0:
 				var line := Loc.t("gameOver.gap") % Hud._group(gap)
-				if gap <= _prev / 10:
-					line = Loc.t("gameOver.close") + "  ·  " + line
-				var gs := lerpf(1.12, 1.0, kg)
+				var gs := lerpf(1.12, 1.0, ga)
 				draw_set_transform(Vector2(w * 0.5, ky), 0.0, Vector2(gs, gs))
-				draw_string(caps, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(0, 0, 0, 0.35 * minf(kg, 1.0)))
-				draw_string(caps, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, minf(kg, 1.0)))
+				draw_string(caps, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(0, 0, 0, 0.35 * ga))
+				draw_string(caps, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, ga))
 				draw_set_transform(Vector2.ZERO)
 			ky += 30.0
 		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
-		if kb > 0.0:
+		if kb > 0.0 and not _record and not (gap > 0 and _score >= _prev * 0.85):
 			var best_line := "%s  %s" % [Loc.t("menu.dailyBest" if _daily else "gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
 			draw_string(caps, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
 		var ks := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.4) / Motion.NORMAL)
@@ -2623,15 +2894,21 @@ class GameOver extends Control:
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)
-			var bk := Motion.ease_value(Motion.Ease.EMPHASIZED, rt / Motion.SLOW)
-			var label := Loc.t("record.new")
-			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 28.0
+			# The stamp slams down, tilted, over the title.
+			var slam := Motion.ease_value(Motion.Ease.EXIT, clampf(rt / 0.16, 0.0, 1.0))
+			var bk := lerpf(2.3, 1.0, slam)
+			var st := clampf(rt / 0.06, 0.0, 1.0)
+			var label := Loc.t("record.daily" if _daily else "record.new")
+			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x + 44.0
 			var bc := Vector2(w * 0.5, cy - 150.0)
-			draw_set_transform(bc, 0.0, Vector2(bk, bk))
-			var rr := Rect2(-lw * 0.5, -15.0, lw, 30.0)
-			draw_rect(Rect2(rr.position + Vector2(2, 2), rr.size), Tok.SHADOW)
-			draw_rect(rr, Tok.PRIMARY)
-			draw_string(caps, Vector2(-lw * 0.5 + 14.0, 5.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Tok.ON_PRIMARY)
+			draw_set_transform(bc, -0.09, Vector2(bk, bk))
+			var rr := Rect2(-lw * 0.5, -28.0, lw, 56.0)
+			draw_rect(Rect2(rr.position + Vector2(3, 5), rr.size), Color(0, 0, 0, 0.45 * st))
+			draw_rect(rr, Color(Color("1A1206"), 0.94 * st))
+			draw_rect(rr.grow(-3.0), Color(TopBar.T_HOT, st), false, 3.0)
+			draw_rect(rr.grow(-9.0), Color(TopBar.T_HOT, 0.6 * st), false, 1.2)
+			var bb := (caps.get_ascent(28) - caps.get_descent(28)) * 0.5
+			draw_string(caps, Vector2(-lw * 0.5, bb), label, HORIZONTAL_ALIGNMENT_CENTER, lw, 28, Color(TopBar.T_HOT, st))
 			draw_set_transform(Vector2.ZERO)
 			if rt < 0.8 and not Prefs.reduced_motion:
 				var e := Motion.ease_value(Motion.Ease.ENTER, rt / 0.8)
