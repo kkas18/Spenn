@@ -3,16 +3,17 @@ extends Control
 ## Launch sequence: dark ground → emblem (fade + 96→100 % with ease-out, the
 ## ball's highlight sweeping into place with a sound accent) → localized
 ## title (per-letter stagger: opacity, tracking, blur→sharp, 8 px rise) →
-## tagline → hold → the ground fades away to reveal the live menu world.
+## tagline → hold → the lamp flickers on (the dark ground blinks twice and
+## lifts) to reveal the live menu world.
 ## Full length on first launch; a short version after that, and a tap skips.
 
 signal exiting                 # the ground starts to fade: bring in the menu
 signal finished
 
 const FULL := {"logo": 0.3, "logo_d": 0.9, "accent": 0.85, "title": 1.2, "title_d": 0.6,
-	"tag": 1.7, "exit": 2.6, "exit_d": 0.55}
+	"tag": 1.7, "exit": 2.6, "exit_d": 1.0}
 const SHORT := {"logo": 0.1, "logo_d": 0.45, "accent": 0.35, "title": 0.25, "title_d": 0.4,
-	"tag": 0.45, "exit": 0.9, "exit_d": 0.4}
+	"tag": 0.45, "exit": 0.9, "exit_d": 0.6}
 
 var hud: Hud
 var _tl: Dictionary = FULL
@@ -20,6 +21,7 @@ var _t := -1.0
 var _skippable := false
 var _accent_done := false
 var _exit_sent := false
+var _clicks := 0
 
 
 func _ready() -> void:
@@ -33,6 +35,7 @@ func play(full: bool) -> void:
 	_t = 0.0
 	_accent_done = false
 	_exit_sent = false
+	_clicks = 0
 	visible = true
 
 
@@ -60,6 +63,11 @@ func _process(delta: float) -> void:
 		_exit_sent = true
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		exiting.emit()
+	# The lamp's switch: a click as each flicker starts.
+	var u: float = (_t - _tl.exit) / _tl.exit_d
+	if _clicks < 2 and u >= [0.0, 0.16][_clicks] and not Prefs.reduced_motion:
+		Sfx.play("click", 0.6 + 0.1 * _clicks, -6.0)
+		_clicks += 1
 	if _t >= _tl.exit + _tl.exit_d:
 		_t = -1.0
 		visible = false
@@ -78,9 +86,11 @@ func _draw() -> void:
 		return
 	var l := hud.l
 	var w := l.size.x
-	var out := _k(_tl.exit, _tl.exit_d, Motion.Ease.EXIT)
-	# The dark ground lifts away at the end, revealing the menu world.
-	draw_rect(Rect2(Vector2.ZERO, l.size), Color(Tok.BACKGROUND, 1.0 - out))
+	var u: float = (_t - _tl.exit) / _tl.exit_d
+	var out := _k(_tl.exit, _tl.exit_d * 0.15, Motion.Ease.EXIT)
+	# The lamp comes on: the dark ground blinks twice and lifts away,
+	# revealing the menu world.
+	draw_rect(Rect2(Vector2.ZERO, l.size), Color(Tok.BACKGROUND, _ground(u)))
 	var fade := 1.0 - out
 	var rise := -14.0 * out
 	# Emblem: the slingshot mark with its gold ball.
@@ -124,6 +134,24 @@ func _draw() -> void:
 	if _skippable and _t > 0.4 and _t < _tl.exit:
 		var hk := minf(1.0, (_t - 0.4) / 0.4) * 0.6
 		draw_string(caps, Vector2(0, l.size.y - l.safe_bottom - 60.0), Loc.t("menu.skip"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.TEXT_FAINT, hk))
+
+
+## Opacity of the dark ground at exit progress `u`: a flicker (dim, back,
+## dimmer, back) and then a slow lift. A plain fade with reduced motion.
+func _ground(u: float) -> float:
+	if u <= 0.0:
+		return 1.0
+	if Prefs.reduced_motion:
+		return 1.0 - Motion.ease_value(Motion.Ease.EXIT, u)
+	if u < 0.08:
+		return 0.5
+	if u < 0.16:
+		return 0.93
+	if u < 0.22:
+		return 0.3
+	if u < 0.3:
+		return 0.8
+	return 0.8 * (1.0 - Motion.ease_value(Motion.Ease.STANDARD, (u - 0.3) / 0.7))
 
 
 ## The mark: fork, band and ball, lit from the upper left. The ball's

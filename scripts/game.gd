@@ -72,6 +72,7 @@ var slingshot: Slingshot
 var hud: Hud
 var fx: Fx
 var backdrop: Backdrop
+var stage: MenuStage
 var targets: Array[Target] = []
 var balls: Array[Ball] = []
 
@@ -134,6 +135,8 @@ func _ready() -> void:
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
 	add_child(backdrop)
+	stage = MenuStage.new()
+	add_child(stage)
 	world = Node2D.new()
 	add_child(world)
 	rail = Rail.new()
@@ -184,6 +187,7 @@ func _ready() -> void:
 	add_child(hud)
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
+	title.caught.connect(_on_letter_caught)
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
 	hud.menu_pressed.connect(_to_menu)
@@ -200,6 +204,9 @@ func _apply_layout() -> void:
 	(fx.shock_rect.material as ShaderMaterial).set_shader_parameter("size", layout.size)
 	slingshot.setup(layout)
 	hud.setup(layout)
+	stage.setup(layout)
+	var ry := hud.menu_record_y()
+	stage.avoid = Rect2(layout.size.x * 0.16, ry - 150.0, layout.size.x * 0.68, layout.fork_y - ry + 60.0)
 
 
 func _on_resize() -> void:
@@ -273,7 +280,10 @@ func _to_menu() -> void:
 		hud.scrim_to(0.0, Motion.NORMAL)
 		hud.fade_hud(0.0, Motion.FAST)
 	_clear_field()
-	title.setup(layout, hud.display_font())
+	# The title falls in on its strings and the dark comes alive.
+	title.setup(layout, hud.display_font(), true)
+	stage.avoid_pts = title.rest_points()
+	stage.show_stage(1.4 if not from_game else 0.8)
 	hud.show_menu()
 	Music.set_mode(Music.Mode.MENU)
 	Motion.after(Motion.NORMAL, func() -> void: hud.locked = false)
@@ -325,6 +335,7 @@ func _start_run() -> void:
 	hud.hide_menu_ui()
 	hud.reveal_hud()
 	title.release()
+	_menu_exit()
 	# No pause button: the first few runs say how to pause instead.
 	Prefs.runs += 1
 	Prefs.save()
@@ -334,6 +345,32 @@ func _start_run() -> void:
 	Motion.after(0.5, func() -> void:
 		if state == State.STARTING:
 			_set_state(State.PLAYING))
+
+
+## A title letter's string snapped taut as it fell in: a puff of dust at
+## the knot, the rail flexes; the gold one lands with a flash and a ring.
+func _on_letter_caught(_i: int, pos: Vector2, gold: bool) -> void:
+	var knot := pos + Vector2(0, -TitleLetters.FS * 0.62)
+	fx.puff(knot, Pal.INK, 3, 16.0, 0.12)
+	rail.flex(pos.x, 5.0 if gold else 3.0)
+	if gold:
+		fx.flash(pos, 60.0, Pal.GOLD_LIGHT)
+		fx.ring(pos, Pal.GOLD, 70.0)
+		Sfx.haptic(18, 0.4)
+
+
+## Leaving the menu for a run: the watchers rush the camera, the light goes
+## out and a spark of light runs along the rail from left to right.
+func _menu_exit() -> void:
+	if not stage.visible:
+		return
+	stage.rush()
+	Sfx.play("whoosh", 0.8, -2.0)
+	for i in 7:
+		var x := layout.size.x * (0.06 + i * 0.147)
+		fx.after(0.04 * i, func() -> void:
+			fx.flash(Vector2(x, layout.rail_y), 26.0, Pal.GOLD_LIGHT)
+			rail.flex(x, 2.0))
 
 
 ## Restart: the button answers at once, results fade, the scrim lifts and
@@ -486,6 +523,8 @@ func _process(delta: float) -> void:
 	_update_eyes()
 	# Menu: new players (and anyone idle for a while) see how to shoot.
 	slingshot.demo = state == State.MAIN_MENU and _touch == -1 and (Prefs.runs < 3 or _state_t > 6.0) and not hud.modal_open()
+	stage.look = slingshot.pouch
+	stage.tense = slingshot.power if slingshot.is_aiming() else 0.0
 	if state == State.PLAYING or state == State.STARTING:
 		_run_intros()
 		_overload_tick(delta)
@@ -544,6 +583,7 @@ func _update_tilt(delta: float) -> void:
 	var v := Vector2(-_tilt.x, _tilt.y) * TILT_PX * layout.scale
 	fx.view = v
 	backdrop.view = v
+	stage.view = v
 	var lean := Vector2(-_tilt.x, _tilt.y)
 	Target.set_view(lean)
 	slingshot.set_view(lean)
@@ -970,6 +1010,8 @@ func _step(dt: float) -> void:
 		if not b.step(dt, layout):
 			_finish_ball(b)
 			continue
+		if stage.visible:
+			stage.flinch(b.pos)
 		if title.active and title.knock(b.pos, b.vel, Ball.RADIUS) and _knock_sfx_cd <= 0.0:
 			_knock_sfx_cd = 0.1
 			Sfx.play("knock", randf_range(0.8, 1.0), -6.0)

@@ -36,6 +36,8 @@ var _play: AudioStreamPlayer
 var _menu_db := SILENT_DB
 var _play_db := SILENT_DB
 var _cut := 800.0
+var _spec: AudioEffectSpectrumAnalyzerInstance
+var _level := 0.0
 var _started := false
 # Headless runs (CI smoke test) have no audio output; a stream left playing
 # there is still held by the dummy driver at exit and reported as a leak.
@@ -51,6 +53,9 @@ func _ready() -> void:
 	_lp = AudioEffectLowPassFilter.new()
 	_lp.cutoff_hz = 800.0
 	AudioServer.add_bus_effect(_bus, _lp)
+	# Read by the menu, whose light breathes with the music.
+	AudioServer.add_bus_effect(_bus, AudioEffectSpectrumAnalyzer.new())
+	_spec = AudioServer.get_bus_effect_instance(_bus, 1) as AudioEffectSpectrumAnalyzerInstance
 	_menu = _player("res://assets/music/menu.ogg")
 	_play = _player("res://assets/music/play.ogg")
 	Prefs.changed.connect(_apply_volume)
@@ -85,6 +90,12 @@ func start() -> void:
 func duck(db: float, hold := 0.5) -> void:
 	_duck = maxf(_duck, db)
 	_duck_hold = maxf(_duck_hold, hold)
+
+
+## How loud the music is right now, 0..1 (lows and mids, smoothed: quick
+## to rise, slow to fall). Zero without audio output.
+func level() -> float:
+	return _level
 
 
 func set_mode(m: Mode) -> void:
@@ -132,6 +143,10 @@ func _process(delta: float) -> void:
 	_lp.cutoff_hz = _cut
 	_drive(_menu, _menu_db, menu_t)
 	_drive(_play, _play_db, play_t)
+	if _spec:
+		var m := _spec.get_magnitude_for_frequency_range(40.0, 2000.0).length()
+		var want := clampf((linear_to_db(maxf(m, 0.00001)) + 42.0) / 30.0, 0.0, 1.0)
+		_level = lerpf(_level, want, 1.0 - exp(-rd / (0.06 if want > _level else 0.5)))
 
 
 func _approach(cur: float, target: float, rd: float, tc: float) -> float:

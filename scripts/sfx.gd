@@ -180,14 +180,14 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 
 ## Step `i` of the note ladder (clamped; steps past the top wrap to its
 ## last octave so long runs keep climbing within reach).
-func note(i: int, volume_db := 0.0) -> void:
+func note(i: int, volume_db := 0.0, pitch := 1.0) -> void:
 	if _headless or Prefs.sfx_volume == 0 or _notes.is_empty():
 		return
 	if i >= NOTE_COUNT:
 		i = NOTE_COUNT - 4 + (i - NOTE_COUNT) % 4
 	var p := _players[_voice()]
 	p.stream = _notes[maxi(i, 0)]
-	p.pitch_scale = 1.0
+	p.pitch_scale = pitch
 	p.volume_db = NOTE_DB + minf(volume_db, 0.0)
 	p.play()
 	_started[_players.find(p)] = Time.get_ticks_msec() / 1000.0

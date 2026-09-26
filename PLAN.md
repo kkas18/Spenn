@@ -1657,3 +1657,25 @@ To rene feilrettinger er beholdt:
 - **Menymusikk:** «Dreamy Flashback» (Kevin MacLeod, CC BY 4.0) erstatter «Envision». Spillmusikken
   («Mesmerizing Galaxy») er uendret, så C-moll-tonestigen og 124 BPM gjelder fortsatt.
 - Kreditter (CREDITS.md og kredittskjermen) oppdatert.
+
+## v7.22 – Episk startmeny (spilldesign + motion design)
+
+Mål: startmenyen skal føles som åpningen på en film, rolig og hypnotisk, uten å gjøre
+menyen tregere å bruke. Alt følger «Reduserte animasjoner» og enhetsnivået.
+
+1. **Lyset slås på.** Introen forsvinner ikke lenger med en jevn toning. En lampe flimrer
+   to ganger og tennes, og rommet kommer til syne.
+2. **Bokstavene faller inn.** T-A-U-T faller ned ovenfra på slakke snorer, som strammes og
+   fanger bokstavene med et elastisk sprett. Hver bokstav spiller en tone i musikkens toneart
+   (E-moll), og gullbokstaven kommer sist med et gullglimt og en ring.
+3. **Levende 3D-bokstaver.** Bokstavene har dybde (ekstrudert kant) og vrir seg langsomt på
+   snorene, slik at du ser kanten og den mørkere baksiden. En lysrefleks glir over tittelen
+   av og til.
+4. **Øyne i mørket.** Fiendene venter i skyggene. Par av øyne åpner seg ett for ett, blunker
+   hver for seg, følger sprettertens lomme, blir store når du spenner, og lukkes raskt når en
+   kule suser forbi.
+5. **Lysstråler og støv.** Myke stråler fra lampen svaier langsomt, og gyldne støvkorn
+   glitrer i lyset. Alt pulserer svakt i takt med menymusikken (spektrumanalyse av
+   musikkbussen).
+6. **Starten.** Når du skyter, suser øynene mot kameraet og forsvinner, strålene slukkes, og
+   et lysglimt løper langs skinnen før de første fiendene henges opp.
