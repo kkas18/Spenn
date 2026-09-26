@@ -2254,3 +2254,28 @@ Rettet:
    lander uten sving.
 6. **Pynteøynene i menyen** holder seg utenfor hele feltet med tekst og oppdragslapper, fra vegg
    til vegg.
+
+## v7.48 – Revisjon 3 gjennomført (fem punkter)
+
+1. **Game over:**
+   - Ved ny rekord tar stempelet tittelens plass over tallplaten, slik at det aldri dekker
+     poengsummen.
+   - Innholdet og knappene er nå én gruppe, plassert litt over midten. Knappene ligger rett
+     under innholdet, så det tomme feltet er borte.
+2. **Roligere HUD-topp:**
+   - «N igjen» står ved kronen som den teller ned mot. Er det ikke plass, havner teksten til
+     høyre for kronen.
+   - Fordelsikonene i brettet er dempet og lyser bare opp når en ny fordel lander.
+   - «Bølge» under medaljongen toner ut ca. 3 s etter at bølgen starter. «Ny beste bølge»
+     vises fortsatt.
+3. **Nivåmåler for lyd:** stolpene er 26 px brede med 18 px mellomrom, altså en kolonne på
+   44 px per nivå. Trykkflaten er 60 px høy.
+4. **Lappene i menyen:** dempingen er økt fra 1,1 til 5,0 (ζ ≈ 0,75), så svingen dør ut på
+   under ett sekund. Landingsdyttet er litt sterkere, så det fortsatt synes.
+5. **Oppstartsskjermen:**
+   - Emblemet er en messingmedaljong med gravert gaffel, ravgul strikk og gullkule. Et glimt
+     går rundt kanten når aksenten slår inn.
+   - Det er mer luft mellom emblem og tittel.
+   - Taglinen står i blandet skrift under en kort messinglinje, og «Trykk for å hoppe over»
+     har samme stil.
+   - `Hud.brass_disc` har fått en valgfri alfa-parameter for inntoning.

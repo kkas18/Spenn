@@ -1001,19 +1001,19 @@ static func lever(ci: CanvasItem, plate: Rect2, a: float, labels: Array, f: Font
 
 ## A brass medallion: cast shadow, milled rim lit from the top left and a
 ## sunken dark face (radius `r`, centred on `c`).
-static func brass_disc(ci: CanvasItem, c: Vector2, r: float, face := Color("0E1015")) -> void:
-	ci.draw_circle(c + Vector2(2.0, 3.5), r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
-	ci.draw_circle(c, r, Tok.PRIMARY_LO, true, -1.0, true)
-	ci.draw_circle(c + Vector2(-0.8, -1.0), r - 2.5, Tok.PRIMARY, true, -1.0, true)
+static func brass_disc(ci: CanvasItem, c: Vector2, r: float, face := Color("0E1015"), a := 1.0) -> void:
+	ci.draw_circle(c + Vector2(2.0, 3.5), r + 1.0, Color(0, 0, 0, 0.45 * a), true, -1.0, true)
+	ci.draw_circle(c, r, Color(Tok.PRIMARY_LO, a), true, -1.0, true)
+	ci.draw_circle(c + Vector2(-0.8, -1.0), r - 2.5, Color(Tok.PRIMARY, a), true, -1.0, true)
 	var ridges := int(clampf(r * 1.1, 18.0, 56.0))
 	for i in ridges:
 		var d := Vector2.from_angle(TAU * i / ridges)
-		ci.draw_line(c + d * (r - 5.5), c + d * (r - 2.5), Color(Color("5E4620"), 0.55), 1.2, true)
-	ci.draw_arc(c, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(Tok.PRIMARY_HI, 0.85), 1.6, true)
+		ci.draw_line(c + d * (r - 5.5), c + d * (r - 2.5), Color(Color("5E4620"), 0.55 * a), 1.2, true)
+	ci.draw_arc(c, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(Tok.PRIMARY_HI, 0.85 * a), 1.6, true)
 	var fr := r - maxf(7.0, r * 0.2)
-	ci.draw_circle(c, fr, face, true, -1.0, true)
-	ci.draw_arc(c, fr, PI * 0.1, PI * 0.9, 16, Color(Tok.PRIMARY_HI, 0.25), 1.2, true)
-	ci.draw_arc(c, fr, PI * 1.1, PI * 1.9, 16, Color(0, 0, 0, 0.5), 1.6, true)
+	ci.draw_circle(c, fr, Color(face, face.a * a), true, -1.0, true)
+	ci.draw_arc(c, fr, PI * 0.1, PI * 0.9, 16, Color(Tok.PRIMARY_HI, 0.25 * a), 1.2, true)
+	ci.draw_arc(c, fr, PI * 1.1, PI * 1.9, 16, Color(0, 0, 0, 0.5 * a), 1.6, true)
 
 
 ## The UI's line icons, drawn on a 24-unit grid centred on `c`; `s` is the
@@ -1549,8 +1549,8 @@ class LangPill extends UIButton:
 class SetRow extends UIButton:
 	enum Kind {SWITCH, STEPS, LANG, HOLD}
 	const HOLD_TIME := 1.5
-	const BAR_W := 15.0
-	const BAR_GAP := 10.0
+	const BAR_W := 26.0
+	const BAR_GAP := 18.0   # bar + gap = a 44 px column per level
 	signal picked(v: int)
 	var hud: Hud
 	var kind := Kind.SWITCH
@@ -1587,7 +1587,7 @@ class SetRow extends UIButton:
 				return Rect2(size.x - 156.0, cy - 30.0, 156.0, 60.0)
 			Kind.STEPS:
 				var w := 3.0 * BAR_W + 2.0 * BAR_GAP
-				return Rect2(size.x - w, cy - 20.0, w, 40.0)
+				return Rect2(size.x - w, cy - 30.0, w, 60.0)
 		return Rect2(size.x - 156.0, cy - 30.0, 156.0, 60.0)
 
 	func _on_press() -> void:
@@ -1601,7 +1601,7 @@ class SetRow extends UIButton:
 				picked.emit(1 - v)
 			Kind.STEPS:
 				var nv := (v + 1) % 4
-				if x >= r.position.x - 14.0:
+				if x >= r.position.x - 18.0:
 					var i := clampi(int((x - r.position.x + BAR_GAP * 0.5) / (BAR_W + BAR_GAP)), 0, 2)
 					nv = i + 1
 					if nv == v:
@@ -1693,9 +1693,9 @@ class SetRow extends UIButton:
 				var wb := cy + (f.get_ascent(21) - f.get_descent(21)) * 0.5
 				draw_string(f, Vector2(r.position.x - 18.0 - ww, wb), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Tok.PRIMARY_HI if v > 0 else Tok.TEXT_FAINT)
 				var lvl := clampf(_shown, 0.0, 3.2)
-				var bottom := cy + 21.0
+				var bottom := cy + 23.0
 				for i in 3:
-					var h := 20.0 + i * 11.0
+					var h := 26.0 + i * 10.0
 					var x := r.position.x + i * (BAR_W + BAR_GAP)
 					var fill := clampf(lvl - i, 0.0, 1.0)
 					var br := Rect2(x, bottom - h, BAR_W, h)
@@ -1707,7 +1707,7 @@ class SetRow extends UIButton:
 						if fill > 0.9:
 							draw_rect(br.grow(5.0), Color(Tok.PRIMARY, 0.1))
 						draw_rect(Rect2(x + 3.0, bottom - 3.0 - fh, BAR_W - 6.0, fh), Tok.PRIMARY)
-						draw_rect(Rect2(x + 3.0, bottom - 3.0 - fh, 2.0, fh), Color(Tok.PRIMARY_HI, 0.8))
+						draw_rect(Rect2(x + 3.0, bottom - 3.0 - fh, 3.0, fh), Color(Tok.PRIMARY_HI, 0.8))
 			Kind.LANG:
 				Hud.lever(self, r, lerpf(-0.62, 0.62, clampf(_shown, -0.15, 1.15)), ["NO", "EN"], f)
 
@@ -1771,6 +1771,7 @@ class TopBar extends Control:
 	var _record_t := -1.0          # the NEW RECORD stamp's time (<0: not yet)
 	var _wave_crown := false
 	var _wave_new_t := 9.0
+	var _cap_t := 0.0   # since the wave caption last appeared
 	var _front: Control            # above the drums: stamp, crown, tag
 	var _clock := 0.0
 	var _taps: Array[int] = []
@@ -1854,6 +1855,7 @@ class TopBar extends Control:
 		_record_t = -1.0
 		_wave_crown = false
 		_wave_new_t = 9.0
+		_cap_t = 0.0
 
 	## A kill's energy arrived (see Backdrop): the string takes it, quivers.
 	func energy() -> void:
@@ -1955,6 +1957,7 @@ class TopBar extends Control:
 			_wave_new_t = 0.0
 			wave_record.emit()
 		_wave_new_t += rd
+		_cap_t += rd
 		var diff := float(score) - shown_score
 		if absf(diff) > 0.01:
 			shown_score += signf(diff) * maxf(absf(diff) * Pal.damp(0.18, rd), minf(absf(diff), 60.0 * rd))
@@ -2005,6 +2008,7 @@ class TopBar extends Control:
 		# The medallion turns over to a new wave's number.
 		if phase != _shown_phase and _flip >= 1.0:
 			_flip = 0.0
+			_cap_t = 0.0
 		if _flip < 1.0:
 			_flip = minf(1.0, _flip + rd / 0.65)
 			if _flip >= 1.0:
@@ -2105,9 +2109,9 @@ class TopBar extends Control:
 		if peg > 0.0:
 			_peg(a, 9.0 * peg, 0.0, false)
 			_peg(b, 10.0 * peg, _wind, true)
-		# How many are left, engraved beside the tuning peg.
+		# How many are left, engraved beside the crown they count down to.
 		var la := _k(0.7, 0.3)
-		if la > 0.0:
+		if la > 0.0 and drawn >= 1.0:
 			var body := hud.body_font()
 			var txt := ""
 			var col := Tok.TEXT_SECONDARY
@@ -2119,7 +2123,13 @@ class TopBar extends Control:
 			elif remaining > 0:
 				txt = Loc.t("hud.left") % remaining
 			if txt != "":
-				draw_string(body, Vector2(0, ys - 12.0), txt, HORIZONTAL_ALIGNMENT_RIGHT, w - 44.0, 19, Color(col, la))
+				var fp := _string_at(a, b, sag, 0.0, finale_at)
+				var tw := body.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
+				# Left of the crown; if there is no room, right of it.
+				var tx := fp.x - 18.0 - tw
+				if tx < l.margin:
+					tx = fp.x + 18.0
+				draw_string(body, Vector2(tx, fp.y - 14.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(col, la))
 
 	func _peg(c: Vector2, r: float, ang: float, teeth: bool) -> void:
 		if r <= 0.5:
@@ -2180,11 +2190,13 @@ class TopBar extends Control:
 			_crown(c + Vector2(0, -r - 6.0), 1.0 * ck, T_HOT)
 		var body := hud.body_font()
 		var cap := Loc.t("hud.waveWord")
-		var ccol := Color(Tok.TEXT_SECONDARY, k)
+		# The caption names the coin as a wave opens, then leaves it be.
+		var ccol := Color(Tok.TEXT_SECONDARY, k * (1.0 - Motion.ease_value(Motion.Ease.EXIT, clampf((_cap_t - 3.0) / 0.6, 0.0, 1.0))))
 		if _wave_new_t < 3.2:
 			cap = Loc.t("hud.newWave")
 			ccol = Color(T_HOT, minf(1.0, (3.2 - _wave_new_t) / 0.4))
-		draw_string(body, Vector2(c.x - 70.0, c.y + r + 21.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 19, ccol)
+		if ccol.a > 0.0:
+				draw_string(body, Vector2(c.x - 70.0, c.y + r + 21.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 19, ccol)
 
 	func _crown(c: Vector2, s: float, col: Color, ci: CanvasItem = null) -> void:
 		if s <= 0.01:
@@ -2533,8 +2545,9 @@ class Overlay extends Control:
 			var land := clampf(1.0 - (toast_t - 1.95) / 0.35, 0.0, 1.0) if id == toast_id else 0.0
 			var r := 16.0 + 3.0 * land
 			draw_circle(p, r, Tok.SURFACE_LO, true, -1.0, true)
-			draw_arc(p, r, 0.0, TAU, 32, Color(Tok.PRIMARY, 0.35 + 0.6 * land), 1.0, true)
-			Perks.draw_icon(self, id, p, 1.0, 0.48)
+			draw_arc(p, r, 0.0, TAU, 32, Color(Tok.PRIMARY, 0.22 + 0.7 * land), 1.0, true)
+			# Held quietly in the tray; bright only as a new one lands.
+			Perks.draw_icon(self, id, p, 0.6 + 0.4 * land, 0.48)
 			var lv := int(hud.perk_levels.get(id, 1))
 			if lv > 1:
 				Pal.disc(self, p + Vector2(11, 10), 6.0, Tok.PRIMARY)
@@ -2736,9 +2749,9 @@ class Overlay extends Control:
 			if not _card_down[i] and _menu_t > 0.35 + 0.13 * i + 0.5:
 				_card_down[i] = true
 				if not Prefs.reduced_motion:
-					_card_w[i] += randf_range(0.8, 1.2) * (1.0 if i % 2 == 0 else -1.0)
+					_card_w[i] += randf_range(1.0, 1.4) * (1.0 if i % 2 == 0 else -1.0)
 			var air := 0.0 if Prefs.reduced_motion else sin(_clock * 0.8 + i * 2.1) * 0.12
-			_card_w[i] += (-11.0 * sin(_card_ang[i]) - 1.1 * _card_w[i] + air) * rd
+			_card_w[i] += (-11.0 * sin(_card_ang[i]) - 5.0 * _card_w[i] + air) * rd   # ζ ≈ 0.75: settles in under a second
 			_card_ang[i] += _card_w[i] * rd
 
 
@@ -2868,6 +2881,7 @@ class GameOver extends Control:
 	var _ticked := 0.0
 	var _record_done := false
 	var _box: VBoxContainer
+	var _cy := 0.0
 	var _retry: UIButton
 	var _menu: UIButton
 
@@ -2895,8 +2909,44 @@ class GameOver extends Control:
 		for b in [_retry, _menu]:
 			b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
 		var bw := maxf(320.0, 48.0 * l.dp)
-		_box.position = Vector2(l.size.x * 0.5 - bw * 0.5, l.size.y * 0.7)
+		_box.position = Vector2(l.size.x * 0.5 - bw * 0.5, _place())
 		_box.size = Vector2(bw, 0)
+
+	## How far below the score line (`_cy`) the drawn content reaches, for
+	## this run's state (record / close / short, feats, missions).
+	func _content_depth() -> float:
+		var d := 70.0
+		var near := _prev > 0 and _prev - _score > 0 and _score >= _prev * 0.85
+		if _record:
+			d += 30.0
+		elif near:
+			d += 96.0
+		elif _prev > 0 and _prev - _score > 0:
+			d += 30.0
+		if not _record and not near:
+			d += 14.0
+		# Tiles end at +126; the lines below them start at +166.
+		var line := 166.0
+		var bottom := 126.0
+		if _feats() != "":
+			bottom = line + 6.0
+			line += 30.0
+		if not _done.is_empty():
+			bottom = line + (_done.size() - 1) * 28.0 + 6.0
+		return d + bottom
+
+	## Centres title, score, tiles and buttons as one group (a little above
+	## the middle) and returns where the buttons go. Sets `_cy`.
+	func _place() -> float:
+		var l := hud.l
+		const ABOVE := 172.0   # title cap height above the score line
+		const GAP := 44.0      # content to buttons
+		var box_h := 2.0 * maxf(60.0, Tok.TOUCH_MIN_DP * l.dp) + Tok.SPACE_MD
+		var group := ABOVE + _content_depth() + GAP + box_h
+		var room := l.size.y - l.safe_top - l.safe_bottom
+		var top := l.safe_top + maxf(16.0, (room - group) * 0.42)
+		_cy = top + ABOVE
+		return minf(_cy + _content_depth() + GAP, l.size.y - l.safe_bottom - box_h - 24.0)
 
 	func refresh_text() -> void:
 		_retry.text = Loc.t("gameOver.restart")
@@ -2921,7 +2971,7 @@ class GameOver extends Control:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		_box.modulate.a = 0.0
 		_box.visible = true
-		var base_y := hud.l.size.y * 0.7
+		var base_y := _place()
 		_box.position.y = base_y + 10.0
 		Motion.to(_box, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
 		Motion.to(_box, "position:y", base_y, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
@@ -2966,11 +3016,17 @@ class GameOver extends Control:
 		var w := l.size.x
 		var caps := hud.caps_font()
 		var num := hud.num_font()
-		var cy := l.size.y * 0.34
+		var cy := _cy
 		var ka := Motion.ease_value(Motion.Ease.ENTER, _t / Motion.NORMAL)
 		var disp0 := hud.display_font()
 		var title := Hud.sentence(Loc.t("menu.daily" if _daily else "gameOver.title"))
-		draw_string(disp0, Vector2(0, cy - 126.0 + (1.0 - ka) * 8.0), title, HORIZONTAL_ALIGNMENT_CENTER, w, 46, Color(Tok.PRIMARY_HI if _daily else Tok.TEXT_PRIMARY, ka))
+		# On a record the stamp takes the title's place, so the title steps
+		# aside as it lands and nothing ever covers the score.
+		var ta := ka
+		if _record and _record_done:
+			ta *= 1.0 - clampf((_t - COUNT_FROM - Motion.dur(COUNT_D)) / 0.08, 0.0, 1.0)
+		if ta > 0.0:
+			draw_string(disp0, Vector2(0, cy - 126.0 + (1.0 - ka) * 8.0), title, HORIZONTAL_ALIGNMENT_CENTER, w, 46, Color(Tok.PRIMARY_HI if _daily else Tok.TEXT_PRIMARY, ta))
 		var k := Motion.ease_value(Motion.Ease.ENTER, clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0))
 		var shown := Hud._group(int(round(_score * k)))
 		var sa := minf(1.0, (_t - COUNT_FROM) / 0.15)
@@ -3110,13 +3166,13 @@ class GameOver extends Control:
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)
-			# The stamp slams down, tilted, over the title.
+			# The stamp slams down, tilted, where the title was.
 			var slam := Motion.ease_value(Motion.Ease.EXIT, clampf(rt / 0.16, 0.0, 1.0))
 			var bk := lerpf(2.3, 1.0, slam)
 			var st := clampf(rt / 0.06, 0.0, 1.0)
 			var label := Loc.t("record.daily" if _daily else "record.new")
 			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x + 44.0
-			var bc := Vector2(w * 0.5 + pw * 0.5 - 30.0, cy - 88.0)
+			var bc := Vector2(w * 0.5, cy - 148.0)
 			draw_set_transform(bc, -0.09, Vector2(bk, bk))
 			var rr := Rect2(-lw * 0.5, -28.0, lw, 56.0)
 			draw_rect(Rect2(rr.position + Vector2(3, 5), rr.size), Color(0, 0, 0, 0.45 * st))
