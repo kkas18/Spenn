@@ -2234,3 +2234,23 @@ Rettet:
 5. Lappene med oppdrag svinger bare halvparten så mye når de lander.
 6. Fordelsbrettet har større ikoner (r 16) og mer luft.
 7. Spilletid vises som «37 min» eller «2 t 5 min».
+
+## v7.47 – Revisjon 2 gjennomført (seks punkter)
+
+1. **Paneler med messingramme:** pause, statistikk, kuler og innstillinger har mørk plate i en
+   messingramme (3 px), en fin gravert innerlinje og en messingnagle i hvert hjørne på de store
+   panelene. Glass-kortene er borte.
+2. **Navn på fordelene:** trykk på fordelsbrettet øverst til venstre, så henger en lapp med
+   ikon, navn og nivå under brettet i ca. 3 s.
+3. **Tilpasning til skjerm:**
+   - Et panel som er høyere enn skjermen, skaleres ned og midtstilles mellom de trygge
+     kantene.
+   - Testet på 720×1600 (20:9), 720×1280 (16:9) og 900×1200 (nettbrett). Innstillinger får nå
+     plass på alle tre.
+4. **Blandet skrift overalt:** hendelseskort, fiendeintroer og popup-tekster i spillet vises i
+   blandet skrift med Nunito. Små etiketter med sperring (seksjonsnavn, «BØLGE» over
+   bølgetallet) er versaler med vilje.
+5. **Reduserte animasjoner:** myntene i menyen dukker opp uten fall og sving, og lappene
+   lander uten sving.
+6. **Pynteøynene i menyen** holder seg utenfor hele feltet med tekst og oppdragslapper, fra vegg
+   til vegg.

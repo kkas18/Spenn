@@ -398,6 +398,8 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
 	p.t = 0.0
+	# Callouts read in the same sentence case as the rest of the game.
+	text = Hud.sentence(text)
 	p.text = text
 	p.col = col
 	p.size = size

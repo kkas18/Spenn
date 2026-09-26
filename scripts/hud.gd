@@ -55,6 +55,7 @@ var _m_lang: Lever
 var _m_stats: Token
 var _m_skins: Token
 var _m_daily: IconBtn
+var _inner: StyleBoxFlat
 var run_secs := 0              # the run's time so far, for the pause summary
 var daily := false             # the menu's mode: the next run is the daily challenge
 var flow := 0.0                # the flow meter, 0..1 (set by the game)
@@ -266,9 +267,22 @@ func _open_panel(p: Control, box: Control, delay: float) -> void:
 	p.modulate.a = 0.0
 	var body: Control = box.get_parent() if box.get_parent() is PanelContainer else box
 	body.pivot_offset = body.size * 0.5
-	body.scale = Vector2(0.97, 0.97)
+	# On a short screen (16:9 phones, tablets held upright) a tall panel is
+	# scaled down to fit between the safe areas instead of running off it.
+	var fit := 1.0
+	if l != null:
+		var room := l.size.y - l.safe_top - l.safe_bottom - 32.0
+		var need := body.get_combined_minimum_size().y
+		if need > room:
+			fit = room / need
+			# A panel taller than the screen is laid out from the top, not
+			# centred: pick the pivot so the scaled panel sits centred
+			# between the safe areas.
+			var want_top := l.safe_top + 16.0 + (room - need * fit) * 0.5
+			body.pivot_offset = Vector2(body.size.x * 0.5, (want_top - body.position.y) / (1.0 - fit))
+	body.scale = Vector2(0.97, 0.97) * fit
 	Motion.to(p, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, delay)
-	Motion.to(body, "scale", Vector2.ONE, Motion.NORMAL, Motion.Ease.ENTER, delay)
+	Motion.to(body, "scale", Vector2.ONE * fit, Motion.NORMAL, Motion.Ease.ENTER, delay)
 	# The rows arrive one after another, each fading up from a little
 	# below: the panel reads top to bottom instead of popping in whole.
 	if not Prefs.reduced_motion:
@@ -338,17 +352,17 @@ func clear_cards() -> void:
 func card(title: String, sub: String, hold := 1.0) -> void:
 	if overlay.card_busy():
 		if overlay.card_queue.size() < 3:
-			overlay.card_queue.append([title, sub, hold])
+			overlay.card_queue.append([sentence(title), sentence(sub), hold])
 		return
-	overlay.card_title = title
-	overlay.card_sub = sub
+	overlay.card_title = sentence(title)
+	overlay.card_sub = sentence(sub)
 	overlay.card_hold = hold
 	overlay.card_t = 0.0
 
 
 ## "New enemy" card near the bottom of the field.
 func intro(name: String, desc: String) -> void:
-	overlay.intro_name = name
+	overlay.intro_name = sentence(name)
 	overlay.intro_desc = desc
 	overlay.intro_t = 0.0
 
@@ -497,9 +511,9 @@ func _box(bg: Color, border: Color, width := 1) -> StyleBoxFlat:
 ## drop shadow, over the blurred scrim.
 func _glass(radius := Tok.RADIUS_XL) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Tok.GLASS
-	s.border_color = Tok.BORDER
-	s.set_border_width_all(2)
+	s.bg_color = Color("12151B")
+	s.border_color = Tok.PRIMARY_LO
+	s.set_border_width_all(3)
 	s.set_corner_radius_all(radius)
 	s.shadow_color = Color(0, 0, 0, 0.4)
 	s.shadow_size = 28
@@ -509,11 +523,33 @@ func _glass(radius := Tok.RADIUS_XL) -> StyleBoxFlat:
 	return s
 
 
+## A panel: a dark plate in a brass frame. The large ones (pause, stats,
+## balls) also get a fine engraved inner line and a brass rivet in each
+## corner, like the instruments in the top bar.
 func _card(radius := Tok.RADIUS_XL) -> PanelContainer:
 	var c := PanelContainer.new()
 	c.add_theme_stylebox_override("panel", _glass(radius))
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if radius >= Tok.RADIUS_XL:
+		c.draw.connect(func() -> void: _frame(c, radius))
 	return c
+
+
+func _frame(c: Control, radius: int) -> void:
+	if _inner == null:
+		_inner = StyleBoxFlat.new()
+		_inner.draw_center = false
+		_inner.border_color = Color(Tok.PRIMARY_LO, 0.45)
+		_inner.set_border_width_all(1)
+		_inner.anti_aliasing = true
+	_inner.set_corner_radius_all(maxi(4, radius - 9))
+	c.draw_style_box(_inner, Rect2(Vector2(9, 9), c.size - Vector2(18, 18)))
+	var inset := float(radius) * 0.42 + 6.0
+	for corner in [Vector2(inset, inset), Vector2(c.size.x - inset, inset), Vector2(inset, c.size.y - inset), Vector2(c.size.x - inset, c.size.y - inset)]:
+		c.draw_circle(corner + Vector2(0.8, 1.4), 4.2, Color(0, 0, 0, 0.5), true, -1.0, true)
+		c.draw_circle(corner, 4.2, Tok.PRIMARY_LO, true, -1.0, true)
+		c.draw_circle(corner + Vector2(-0.6, -0.6), 2.9, Tok.PRIMARY, true, -1.0, true)
+		c.draw_circle(corner + Vector2(-1.2, -1.2), 1.1, Color(Tok.PRIMARY_HI, 0.9), true, -1.0, true)
 
 
 func label(size: int, col: Color, font: Font) -> Label:
@@ -1372,9 +1408,9 @@ class Token extends UIButton:
 		_ang = randf_range(-0.08, 0.08)
 
 	func enter(delay: float) -> void:
-		_drop_wait = delay
+		_drop_wait = 0.0 if Prefs.reduced_motion else delay
 		_drop_t = 0.0
-		_drop = 0.0
+		_drop = 1.0 if Prefs.reduced_motion else 0.0
 
 	func _process(delta: float) -> void:
 		var dt := minf(delta, 1.0 / 30.0)
@@ -1388,7 +1424,8 @@ class Token extends UIButton:
 				_drop = clampf(_drop_t / 0.45, 0.0, 1.0)
 				if was < 1.0 and _drop >= 1.0:
 					# The cord catches it: a jolt and a swing.
-					_w += randf_range(-2.2, 2.2)
+					if not Prefs.reduced_motion:
+						_w += randf_range(-2.2, 2.2)
 					Sfx.play("tick", randf_range(1.1, 1.3), -12.0)
 		var air := 0.0 if Prefs.reduced_motion else sin(_clock * 0.9 + _phase) * 0.35
 		_w += (-K * sin(_ang) - C * _w + air) * dt
@@ -1854,9 +1891,21 @@ class TopBar extends Control:
 		var x0 := l.size.x - l.margin - 160.0
 		return Rect2(x0, l.safe_top, l.size.x - x0, h * 0.6)
 
+	## Where the perk tray sits (its slots are drawn by the Overlay).
+	func tray_rect() -> Rect2:
+		var l := hud.l
+		var rows := maxi(1, (hud.perk_order.size() + 2) / 3)
+		return Rect2(l.margin + 80.0, l.safe_top + 8.0, 3 * 36.0 + 12.0, rows * 36.0 + 8.0)
+
 	func _gui_input(e: InputEvent) -> void:
 		var press: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed)
 		if not press or modulate.a < 0.5:
+			return
+		if not hud.perk_order.is_empty() and tray_rect().has_point(e.position):
+			# Tapped the tray: a tag lists the perks by name and level.
+			accept_event()
+			hud.overlay.names_t = 0.0
+			Sfx.play("click", 1.1, -6.0)
 			return
 		if knots_rect().has_point(e.position):
 			accept_event()
@@ -1869,7 +1918,9 @@ class TopBar extends Control:
 				show_fps = not show_fps
 
 	func _has_point(p: Vector2) -> bool:
-		return hud != null and hud.l != null and visible and knots_rect().has_point(p)
+		if hud == null or hud.l == null or not visible:
+			return false
+		return knots_rect().has_point(p) or (not hud.perk_order.is_empty() and tray_rect().has_point(p))
 
 	## 0..1 over [t0, t0 + d] of the opening.
 	func _k(t0: float, d: float) -> float:
@@ -2411,6 +2462,7 @@ class Overlay extends Control:
 	var wave_sub := ""
 	var wave_col := Tok.PRIMARY
 	var toast_t := 99.0
+	var names_t := 99.0            # the perk names tag (tap on the tray)
 	var toast_id := ""
 	var _toast_box: StyleBoxFlat
 	var menu_a := 0.0
@@ -2487,6 +2539,41 @@ class Overlay extends Control:
 			if lv > 1:
 				Pal.disc(self, p + Vector2(11, 10), 6.0, Tok.PRIMARY)
 				draw_string(hud.caps_font(), Vector2(p.x + 8.0, p.y + 14.0), str(lv), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Tok.ON_PRIMARY)
+
+	## Tapped the tray: a small plate hangs under it naming each perk and its
+	## level, for a few seconds.
+	func _draw_names(l: Layout) -> void:
+		const HOLD := 2.8
+		if names_t >= HOLD or hud.perk_order.is_empty():
+			return
+		var a := minf(1.0, names_t / 0.15) * (1.0 - clampf((names_t - HOLD + 0.3) / 0.3, 0.0, 1.0))
+		var body := hud.body_font()
+		var lines: Array[String] = []
+		var wmax := 0.0
+		for id in hud.perk_order:
+			var lv := int(hud.perk_levels.get(id, 1))
+			var t := Loc.t("perk." + id) + ("  ×%d" % lv if lv > 1 else "")
+			lines.append(t)
+			wmax = maxf(wmax, body.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x)
+		var tr := hud.bar.tray_rect()
+		var r := Rect2(tr.position.x, tr.end.y + 6.0, wmax + 66.0, 14.0 + lines.size() * 30.0)
+		if _names_box == null:
+			_names_box = StyleBoxFlat.new()
+			_names_box.set_corner_radius_all(14)
+			_names_box.set_border_width_all(2)
+			_names_box.shadow_size = 10
+			_names_box.shadow_offset = Vector2(0, 4)
+			_names_box.anti_aliasing = true
+		_names_box.bg_color = Color(Color("12151B"), 0.96 * a)
+		_names_box.border_color = Color(Tok.PRIMARY_LO, a)
+		_names_box.shadow_color = Color(0, 0, 0, 0.4 * a)
+		draw_style_box(_names_box, r)
+		for i in lines.size():
+			var y := r.position.y + 12.0 + i * 30.0 + 15.0
+			Perks.draw_icon(self, hud.perk_order[i], Vector2(r.position.x + 22.0, y), a, 0.36)
+			draw_string(body, Vector2(r.position.x + 44.0, y + 7.0), lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(Tok.TEXT_PRIMARY, a))
+
+	var _names_box: StyleBoxFlat
 
 	## The perk just won: a card pops up over the floor, holds, then shrinks
 	## into its icon and flies to its slot in the tray.
@@ -2648,7 +2735,8 @@ class Overlay extends Control:
 		for i in 3:
 			if not _card_down[i] and _menu_t > 0.35 + 0.13 * i + 0.5:
 				_card_down[i] = true
-				_card_w[i] += randf_range(0.8, 1.2) * (1.0 if i % 2 == 0 else -1.0)
+				if not Prefs.reduced_motion:
+					_card_w[i] += randf_range(0.8, 1.2) * (1.0 if i % 2 == 0 else -1.0)
 			var air := 0.0 if Prefs.reduced_motion else sin(_clock * 0.8 + i * 2.1) * 0.12
 			_card_w[i] += (-11.0 * sin(_card_ang[i]) - 1.1 * _card_w[i] + air) * rd
 			_card_ang[i] += _card_w[i] * rd
@@ -2692,6 +2780,7 @@ class Overlay extends Control:
 			card_t = 0.0
 		wave_t += rd
 		toast_t += rd
+		names_t += rd
 		intro_t += rd
 		count_t += rd
 		_clock += rd
@@ -2712,6 +2801,7 @@ class Overlay extends Control:
 			return
 		_draw_wave_intro(l, caps, disp)
 		_draw_tray(l)
+		_draw_names(l)
 		_draw_toast(l, caps, disp)
 		_draw_flow(l, caps)
 		if intro_t < Hud.INTRO_TIME and intro_name != "":

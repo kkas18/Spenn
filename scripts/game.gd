@@ -279,7 +279,7 @@ func _ready() -> void:
 	vignette_layer.add_child(vignette)
 	hud = Hud.new()
 	add_child(hud)
-	fx.font = hud.caps_font()
+	fx.font = hud.body_font()
 	slingshot.launched.connect(_on_launched)
 	title.caught.connect(_on_letter_caught)
 	hud.resume_pressed.connect(_resume)
@@ -303,7 +303,9 @@ func _apply_layout() -> void:
 	hud.setup(layout)
 	stage.setup(layout)
 	var ry := hud.menu_record_y()
-	stage.avoid = Rect2(layout.size.x * 0.16, ry - 150.0, layout.size.x * 0.68, layout.fork_y - ry + 60.0)
+	# The eyes keep out of the whole band with the menu's text and the
+	# mission tickets, wall to wall.
+	stage.avoid = Rect2(0.0, ry - 190.0, layout.size.x, layout.fork_y - ry + 110.0)
 
 
 func _on_resize() -> void:
