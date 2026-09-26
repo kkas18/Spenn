@@ -19,7 +19,9 @@ func start_wave()->void:
   var target:=Target.new()
   target.position=Vector2(90.0+float(i)*(540.0/max(1.0,float(count-1))),245.0+float(i%3)*92.0)
   target.target_color=colors[i%colors.size()]
-  target.points=100+wave*15
+  target.kind=(i+wave)%4
+  target.radius=30.0+float((i+wave)%3)*4.0
+  target.points=100+wave*15+(50 if target.kind==SpennTarget.Kind.ARMORED else 0)
   target.destroyed.connect(_on_target_destroyed)
   target.struck.connect(func(at:Vector2,color:Color): target_struck.emit(at,color))
   spawn_parent.add_child(target)
