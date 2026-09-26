@@ -690,8 +690,9 @@ func _build_pause() -> void:
 		_pause_icon_caps.append(k)
 		icons.add_child(c)
 	col.add_child(icons)
-	_pause_hint = label(21, Tok.TEXT_FAINT, _font_body)
-	_pause_box.add_child(_pause_hint)
+	# The double-tap tip sits inside the panel, as its quiet last line.
+	_pause_hint = label(19, Tok.TEXT_FAINT, _font_body)
+	col.add_child(_pause_hint)
 
 
 ## Settings: a header with a back button, then grouped glass cards
@@ -927,6 +928,40 @@ func _fill_skins(box: VBoxContainer) -> void:
 		t.custom_minimum_size = Vector2(172, 212)
 		grid.add_child(t)
 	box.add_child(grid)
+	# What the points are working toward: the next ball, how far off, and a
+	# thin brass gauge; once every ball is won, a quiet line says so.
+	box.add_child(_spacer(Tok.SPACE_SM))
+	var next := -1
+	for i in Meta.SKINS.size():
+		if not Meta.skin_unlocked(i, Prefs.skin_points):
+			next = i
+			break
+	var goal := label(21, Tok.TEXT_SECONDARY, _font_body_b)
+	if next < 0:
+		goal.text = Loc.t("skins.all")
+		box.add_child(goal)
+	else:
+		var need: int = Meta.SKINS[next][1]
+		var prev: int = Meta.SKINS[next - 1][1] if next > 0 else 0
+		goal.text = Loc.t("skins.next") % [sentence(Loc.t(Meta.SKINS[next][0])), _group(need - Prefs.skin_points)]
+		box.add_child(goal)
+		var gauge := NextGauge.new()
+		gauge.frac = clampf(float(Prefs.skin_points - prev) / maxf(1.0, need - prev), 0.0, 1.0)
+		gauge.custom_minimum_size = Vector2(0, 18)
+		box.add_child(gauge)
+
+
+## The thin brass gauge under the ball gallery (progress to the next ball).
+class NextGauge extends Control:
+	var frac := 0.0
+
+	func _draw() -> void:
+		var w := minf(size.x, 420.0)
+		var r := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 - 5.0, w, 10.0)
+		Hud.pill(self, r.grow(1.5), Tok.PRIMARY_LO)
+		Hud.pill(self, r, Color("0A0C10"))
+		if frac > 0.02:
+			Hud.pill(self, Rect2(r.position + Vector2(2, 2), Vector2(maxf(6.0, (r.size.x - 4.0) * frac), r.size.y - 4.0)), Tok.PRIMARY)
 
 
 ## A small lit ball for a skin button (drawn into a texture once).
@@ -1695,7 +1730,7 @@ class SetRow extends UIButton:
 				var lvl := clampf(_shown, 0.0, 3.2)
 				var bottom := cy + 23.0
 				for i in 3:
-					var h := 26.0 + i * 10.0
+					var h := 20.0 + i * 13.0
 					var x := r.position.x + i * (BAR_W + BAR_GAP)
 					var fill := clampf(lvl - i, 0.0, 1.0)
 					var br := Rect2(x, bottom - h, BAR_W, h)
@@ -1793,6 +1828,10 @@ class TopBar extends Control:
 	var _wind := 0.0               # the right peg turns as the string tightens
 	var _lamps := [0.0, 0.0, 0.0]
 	var _bezel: StyleBoxFlat
+	# Shapes are collected in `_i` and sent as one triangle array per run
+	# between texts and style boxes (see _flush), in the same order.
+	var _i := Ink.new()
+	var _nx := Transform2D.IDENTITY
 	var _window: StyleBoxFlat
 	var _drums: Control            # the window the drums turn in (clipped)
 
@@ -2024,7 +2063,32 @@ class TopBar extends Control:
 		glint = maxf(0.0, glint - rd / 0.5)
 		queue_redraw()
 
+
+	## Sends the shapes collected so far (already transformed) as one draw
+	## call, before a text or style box that must go over them.
+	func _flush() -> void:
+		if _i.idx.is_empty():
+			return
+		var ci := get_canvas_item()
+		RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
+		_i.flush(ci)
+		RenderingServer.canvas_item_add_set_transform(ci, _nx)
+		_i.reset_buffers()
+
+	## draw_set_transform for both the native draws and the collected shapes.
+	func _tf(p: Vector2, rot := 0.0, sc := Vector2.ONE) -> void:
+		_nx = Transform2D(rot, sc, 0.0, p)
+		_i.draw_set_transform_matrix(_nx)
+		draw_set_transform_matrix(_nx)
+
 	func _draw() -> void:
+		_i.clear()
+		_nx = Transform2D.IDENTITY
+		_draw_bar()
+		_flush()
+		_tf(Vector2.ZERO)
+
+	func _draw_bar() -> void:
 		if hud == null or hud.l == null:
 			return
 		var l := hud.l
@@ -2038,6 +2102,7 @@ class TopBar extends Control:
 			var sg := hud._game_sensor()
 			var gy := Input.get_gyroscope()
 			var fps := "%d FPS  ·  G %.1f %.1f %.1f  ·  GYRO %.2f %.2f %.2f" % [Engine.get_frames_per_second(), sg.x, sg.y, sg.z, gy.x, gy.y, gy.z]
+			_flush()
 			draw_string(hud.caps_font(), Vector2(0, top + 12.0), fps, HORIZONTAL_ALIGNMENT_RIGHT, l.size.x - l.margin, 11, Tok.TEXT_FAINT)
 
 	# ------------------------------------------------ the tension string
@@ -2065,8 +2130,8 @@ class TopBar extends Control:
 				var p := _string_at(a, b, sag, amp, drawn * k / float(N))
 				line.append(p)
 				sh.append(p + Vector2(1.0, 2.5))
-			draw_polyline(sh, Color(0, 0, 0, 0.35), 2.4, true)
-			draw_polyline(line, Color("7F8590"), 2.0, true)
+			_i.draw_polyline(sh, Color(0, 0, 0, 0.35), 2.4, true)
+			_i.draw_polyline(line, Color("7F8590"), 2.0, true)
 			if pr > 0.003 and drawn >= 1.0:
 				var fill := PackedVector2Array()
 				var m := maxi(2, int(ceil(N * pr)))
@@ -2075,33 +2140,33 @@ class TopBar extends Control:
 				var col := tension_col(pr)
 				if pr >= finale_at:
 					# The finale: the whole wound length glows on the beat.
-					draw_polyline(fill, Color(col, 0.1 + 0.12 * _beat()), 9.0, true)
-				draw_polyline(fill, col.darkened(0.45), 3.6, true)
-				draw_polyline(fill, col, 2.4, true)
+					_i.draw_polyline(fill, Color(col, 0.1 + 0.12 * _beat()), 9.0, true)
+				_i.draw_polyline(fill, col.darkened(0.45), 3.6, true)
+				_i.draw_polyline(fill, col, 2.4, true)
 				for k in fill.size():
 					fill[k] += Vector2(0, -0.8)
-				draw_polyline(fill, Color(col.lightened(0.4), 0.8), 0.9, true)
+				_i.draw_polyline(fill, Color(col.lightened(0.4), 0.8), 0.9, true)
 				var tip := _string_at(a, b, sag, amp, pr)
-				draw_circle(tip, 9.0, Color(col, 0.16), true, -1.0, true)
-				draw_circle(tip, 3.6, col.lightened(0.3), true, -1.0, true)
+				_i.draw_circle(tip, 9.0, Color(col, 0.16), true, -1.0, true)
+				_i.draw_circle(tip, 3.6, col.lightened(0.3), true, -1.0, true)
 			# Taut and singing: a light runs along the whole string.
 			if _shimmer >= 0.0:
 				var st := Motion.ease_value(Motion.Ease.STANDARD, clampf(_shimmer / 0.9, 0.0, 1.0))
 				var sp := _string_at(a, b, sag, amp, st)
 				var sa := sin(PI * clampf(_shimmer / 1.1, 0.0, 1.0))
-				draw_circle(sp, 16.0, Color(Tok.PRIMARY_HI, 0.12 * sa), true, -1.0, true)
-				draw_circle(sp, 6.0, Color(1, 1, 1, 0.5 * sa), true, -1.0, true)
+				_i.draw_circle(sp, 16.0, Color(Tok.PRIMARY_HI, 0.12 * sa), true, -1.0, true)
+				_i.draw_circle(sp, 6.0, Color(1, 1, 1, 0.5 * sa), true, -1.0, true)
 			# The fret where the finale comes, with its crown.
 			if drawn >= 1.0:
 				var reached := pr >= finale_at - 0.001
 				var fp := _string_at(a, b, sag, amp, finale_at)
 				var col := Tok.PRIMARY_HI if reached else Tok.PRIMARY_LO
-				draw_line(fp + Vector2(1, -6), fp + Vector2(1, 8), Color(0, 0, 0, 0.4), 3.0, true)
-				draw_line(fp + Vector2(0, -7), fp + Vector2(0, 7), col, 3.0, true)
+				_i.draw_line(fp + Vector2(1, -6), fp + Vector2(1, 8), Color(0, 0, 0, 0.4), 3.0, true)
+				_i.draw_line(fp + Vector2(0, -7), fp + Vector2(0, 7), col, 3.0, true)
 				var cp := fp + Vector2(0, -19.0)
 				if reached:
-					draw_circle(cp + Vector2(0, 1), 12.0, Color(Tok.PRIMARY, 0.1 + 0.08 * sin(_clock * 4.0)), true, -1.0, true)
-				draw_colored_polygon(PackedVector2Array([
+					_i.draw_circle(cp + Vector2(0, 1), 12.0, Color(Tok.PRIMARY, 0.1 + 0.08 * sin(_clock * 4.0)), true, -1.0, true)
+				_i.draw_colored_polygon(PackedVector2Array([
 					cp + Vector2(-8, 5), cp + Vector2(-9, -4), cp + Vector2(-4, 0), cp + Vector2(0, -7),
 					cp + Vector2(4, 0), cp + Vector2(9, -4), cp + Vector2(8, 5)]), col)
 		# The pegs: a brass knob at the left end, a toothed tuning peg at the
@@ -2129,22 +2194,23 @@ class TopBar extends Control:
 				var tx := fp.x - 18.0 - tw
 				if tx < l.margin:
 					tx = fp.x + 18.0
+				_flush()
 				draw_string(body, Vector2(tx, fp.y - 14.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(col, la))
 
 	func _peg(c: Vector2, r: float, ang: float, teeth: bool) -> void:
 		if r <= 0.5:
 			return
-		draw_circle(c + Vector2(1.5, 2.5), r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		_i.draw_circle(c + Vector2(1.5, 2.5), r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
 		if teeth:
 			for k in 8:
 				var d := Vector2.from_angle(ang + TAU * k / 8.0)
-				draw_line(c + d * (r - 1.0), c + d * (r + 3.0), Tok.PRIMARY_LO, 3.2, true)
-		draw_circle(c, r, Tok.PRIMARY_LO, true, -1.0, true)
-		draw_circle(c + Vector2(-0.8, -0.8), r - 2.0, Tok.PRIMARY, true, -1.0, true)
-		draw_arc(c, r - 2.5, PI * 1.05, PI * 1.6, 10, Color(Tok.PRIMARY_HI, 0.9), 1.4, true)
-		draw_circle(c, r * 0.3, BRASS_DEEP, true, -1.0, true)
+				_i.draw_line(c + d * (r - 1.0), c + d * (r + 3.0), Tok.PRIMARY_LO, 3.2, true)
+		_i.draw_circle(c, r, Tok.PRIMARY_LO, true, -1.0, true)
+		_i.draw_circle(c + Vector2(-0.8, -0.8), r - 2.0, Tok.PRIMARY, true, -1.0, true)
+		_i.draw_arc(c, r - 2.5, PI * 1.05, PI * 1.6, 10, Color(Tok.PRIMARY_HI, 0.9), 1.4, true)
+		_i.draw_circle(c, r * 0.3, BRASS_DEEP, true, -1.0, true)
 		if teeth:
-			draw_line(c - Vector2.from_angle(ang) * r * 0.3, c + Vector2.from_angle(ang) * r * 0.3, Color(0, 0, 0, 0.5), 1.4, true)
+			_i.draw_line(c - Vector2.from_angle(ang) * r * 0.3, c + Vector2.from_angle(ang) * r * 0.3, Color(0, 0, 0, 0.5), 1.4, true)
 
 	# ------------------------------------------------ medallion
 
@@ -2162,27 +2228,28 @@ class TopBar extends Control:
 		var m := tier(n)
 		if n >= 10:
 			# Ember: a slow warm glow round the coin.
-			draw_circle(c, r + 8.0, Color(m[1], 0.08 + 0.06 * sin(_clock * 2.5)), true, -1.0, true)
-		draw_set_transform(c + Vector2(2.0, 3.0), 0.0, Vector2(sx, 1.0))
-		draw_circle(Vector2.ZERO, r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
-		draw_set_transform(c, 0.0, Vector2(sx, 1.0))
-		draw_circle(Vector2.ZERO, r, m[0], true, -1.0, true)
-		draw_circle(Vector2(-0.8, -1.0), r - 2.5, m[1], true, -1.0, true)
+			_i.draw_circle(c, r + 8.0, Color(m[1], 0.08 + 0.06 * sin(_clock * 2.5)), true, -1.0, true)
+		_tf(c + Vector2(2.0, 3.0), 0.0, Vector2(sx, 1.0))
+		_i.draw_circle(Vector2.ZERO, r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		_tf(c, 0.0, Vector2(sx, 1.0))
+		_i.draw_circle(Vector2.ZERO, r, m[0], true, -1.0, true)
+		_i.draw_circle(Vector2(-0.8, -1.0), r - 2.5, m[1], true, -1.0, true)
 		# The milled rim, the lit edge, the sunken face.
 		for i in 36:
 			var d := Vector2.from_angle(TAU * i / 36.0)
-			draw_line(d * (r - 5.5), d * (r - 2.5), Color(m[0], 0.7), 1.2, true)
-		draw_arc(Vector2.ZERO, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(m[2], 0.85), 1.6, true)
-		draw_circle(Vector2.ZERO, r - 7.0, Color("0E1015"), true, -1.0, true)
-		draw_arc(Vector2.ZERO, r - 7.0, PI * 0.1, PI * 0.9, 16, Color(m[2], 0.25), 1.2, true)
-		draw_arc(Vector2.ZERO, r - 10.0, 0.0, TAU, 40, Color(m[0], 0.9), 1.0, true)
+			_i.draw_line(d * (r - 5.5), d * (r - 2.5), Color(m[0], 0.7), 1.2, true)
+		_i.draw_arc(Vector2.ZERO, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(m[2], 0.85), 1.6, true)
+		_i.draw_circle(Vector2.ZERO, r - 7.0, Color("0E1015"), true, -1.0, true)
+		_i.draw_arc(Vector2.ZERO, r - 7.0, PI * 0.1, PI * 0.9, 16, Color(m[2], 0.25), 1.2, true)
+		_i.draw_arc(Vector2.ZERO, r - 10.0, 0.0, TAU, 40, Color(m[0], 0.9), 1.0, true)
 		var num := hud.num_font()
 		var txt := str(n)
 		var fs := 30 if txt.length() < 2 else 25
 		var tw := num.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var base := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+		_flush()
 		draw_string(num, Vector2(-tw * 0.5, base + 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, m[2])
-		draw_set_transform(Vector2.ZERO)
+		_tf(Vector2.ZERO)
 		# Past the best wave ever: a crown on the coin, and for a moment the
 		# caption says so.
 		if _wave_crown:
@@ -2196,6 +2263,7 @@ class TopBar extends Control:
 			cap = Loc.t("hud.newWave")
 			ccol = Color(T_HOT, minf(1.0, (3.2 - _wave_new_t) / 0.4))
 		if ccol.a > 0.0:
+				_flush()
 				draw_string(body, Vector2(c.x - 70.0, c.y + r + 21.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 19, ccol)
 
 	func _crown(c: Vector2, s: float, col: Color, ci: CanvasItem = null) -> void:
@@ -2232,9 +2300,11 @@ class TopBar extends Control:
 		if _broken:
 			lit = maxf(lit, 0.55)
 		_bezel.bg_color = Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.35 + 0.65 * lit)
+		_flush()
 		draw_style_box(_bezel, r.grow(5.0))
-		draw_line(Vector2(r.position.x + 12.0, r.position.y - 3.6), Vector2(r.end.x - 12.0, r.position.y - 3.6), Color(Tok.PRIMARY_HI, 0.55), 1.2, true)
-		draw_line(Vector2(r.position.x + 12.0, r.end.y + 3.8), Vector2(r.end.x - 12.0, r.end.y + 3.8), Color(BRASS_DEEP, 0.9), 1.4, true)
+		_i.draw_line(Vector2(r.position.x + 12.0, r.position.y - 3.6), Vector2(r.end.x - 12.0, r.position.y - 3.6), Color(Tok.PRIMARY_HI, 0.55), 1.2, true)
+		_i.draw_line(Vector2(r.position.x + 12.0, r.end.y + 3.8), Vector2(r.end.x - 12.0, r.end.y + 3.8), Color(BRASS_DEEP, 0.9), 1.4, true)
+		_flush()
 		draw_style_box(_window, r)
 		_drums.position = r.position + Vector2(10.0, 6.0)
 		_drums.size = Vector2(r.size.x - 20.0, PLATE_H - 12.0)
@@ -2248,6 +2318,7 @@ class TopBar extends Control:
 		if _gain > 0 and _gain_t < 1.1 and not _near():
 			var ga := clampf(_gain_t / 0.08, 0.0, 1.0) * (1.0 - clampf((_gain_t - 0.6) / 0.5, 0.0, 1.0))
 			var gy := r.end.y + 28.0 - 6.0 * clampf(_gain_t / 1.1, 0.0, 1.0)
+			_flush()
 			draw_string(hud.body_font(), Vector2(0, gy), "+" + Hud._group(_gain), HORIZONTAL_ALIGNMENT_CENTER, w, 18, Color(Tok.PRIMARY_HI, ga))
 
 	func _near() -> bool:
@@ -2357,30 +2428,31 @@ class TopBar extends Control:
 		if k <= 0.0:
 			return
 		var s := Motion.ease_value(Motion.Ease.EMPHASIZED, k) * (1.0 + 0.2 * sin(badge_pop * PI))
-		draw_set_transform(c, 0.0, Vector2(s, s))
+		_tf(c, 0.0, Vector2(s, s))
 		var on := mult > 1
 		if hot:
 			var glow := 0.5 + 0.5 * sin(_clock * 14.0)
 			for g in 3:
-				draw_circle(Vector2.ZERO, 30.0 + g * 5.0, Color(Tok.PRIMARY, (0.12 - g * 0.035) * (0.6 + 0.4 * glow)), true, -1.0, true)
-		draw_circle(Vector2(1.5, 2.5), 26.0, Color(0, 0, 0, 0.45), true, -1.0, true)
-		draw_circle(Vector2.ZERO, 26.0, Tok.PRIMARY_LO, true, -1.0, true)
-		draw_circle(Vector2(-0.8, -0.8), 23.5, Tok.PRIMARY, true, -1.0, true)
-		draw_arc(Vector2.ZERO, 24.5, PI * 1.05, PI * 1.6, 12, Color(Tok.PRIMARY_HI, 0.85), 1.4, true)
-		draw_circle(Vector2.ZERO, 18.0, WINDOW, true, -1.0, true)
+				_i.draw_circle(Vector2.ZERO, 30.0 + g * 5.0, Color(Tok.PRIMARY, (0.12 - g * 0.035) * (0.6 + 0.4 * glow)), true, -1.0, true)
+		_i.draw_circle(Vector2(1.5, 2.5), 26.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		_i.draw_circle(Vector2.ZERO, 26.0, Tok.PRIMARY_LO, true, -1.0, true)
+		_i.draw_circle(Vector2(-0.8, -0.8), 23.5, Tok.PRIMARY, true, -1.0, true)
+		_i.draw_arc(Vector2.ZERO, 24.5, PI * 1.05, PI * 1.6, 12, Color(Tok.PRIMARY_HI, 0.85), 1.4, true)
+		_i.draw_circle(Vector2.ZERO, 18.0, WINDOW, true, -1.0, true)
 		for i in 3:
 			var d := Vector2.from_angle(-PI * 0.5 + (i - 1) * 0.72) * 21.0
 			var lv: float = _lamps[i]
 			if lv > 0.01:
-				draw_circle(d, 6.5, Color(Tok.PRIMARY_HI, 0.25 * lv), true, -1.0, true)
-			draw_circle(d, 3.0, BRASS_DEEP.lerp(Color("FFF3D1"), lv), true, -1.0, true)
+				_i.draw_circle(d, 6.5, Color(Tok.PRIMARY_HI, 0.25 * lv), true, -1.0, true)
+			_i.draw_circle(d, 3.0, BRASS_DEEP.lerp(Color("FFF3D1"), lv), true, -1.0, true)
 		var num := hud.num_font()
 		var mt := "×%d" % mult
 		var fs := 19
 		var tw := num.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var base := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+		_flush()
 		draw_string(num, Vector2(-tw * 0.5, base + 3.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI if on else Tok.TEXT_FAINT)
-		draw_set_transform(Vector2.ZERO)
+		_tf(Vector2.ZERO)
 
 	# ------------------------------------------------ knots
 
@@ -2400,14 +2472,14 @@ class TopBar extends Control:
 		var pts := PackedVector2Array()
 		for k in 25:
 			pts.append(_rope(a, len * ra, sag * ra, k / 24.0) + Vector2(1.5, 2.5))
-		draw_polyline(pts, Color(0, 0, 0, 0.35), 3.5, true)
+		_i.draw_polyline(pts, Color(0, 0, 0, 0.35), 3.5, true)
 		for k in 25:
 			pts[k] -= Vector2(1.5, 2.5)
-		draw_polyline(pts, ROPE_DARK, 3.5, true)
+		_i.draw_polyline(pts, ROPE_DARK, 3.5, true)
 		var tx := 3.0
 		while tx < len * ra:
 			var p := _rope(a, len * ra, sag * ra, tx / (len * ra))
-			draw_line(p + Vector2(-1.2, -1.7), p + Vector2(1.2, 1.7), Color(ROPE_LIGHT, 0.35), 1.0, true)
+			_i.draw_line(p + Vector2(-1.2, -1.7), p + Vector2(1.2, 1.7), Color(ROPE_LIGHT, 0.35), 1.0, true)
 			tx += 6.0
 		if ra < 1.0:
 			return
@@ -2423,7 +2495,7 @@ class TopBar extends Control:
 				var sc := lerpf(1.6, 1.0, Motion.ease_value(Motion.Ease.EMPHASIZED, k))
 				_knot(c, ang, sc, k)
 			else:
-				draw_arc(c, 9.0, 0.0, TAU, 28, Color(Tok.TEXT_FAINT, 0.5), 1.5, true)
+				_i.draw_arc(c, 9.0, 0.0, TAU, 28, Color(Tok.TEXT_FAINT, 0.5), 1.5, true)
 				if t < 0.6:
 					var e := t / 0.6
 					_knot(c + Vector2(0, -12.0 * e), ang, 1.0 + 0.5 * e, 1.0 - e)
@@ -2433,7 +2505,7 @@ class TopBar extends Control:
 	func _knot(c: Vector2, ang: float, s: float, a: float) -> void:
 		if a <= 0.0:
 			return
-		draw_set_transform(c, ang, Vector2(s, s))
+		_tf(c, ang, Vector2(s, s))
 		var body := PackedVector2Array()
 		for k in 24:
 			var th := TAU * k / 24.0
@@ -2441,18 +2513,18 @@ class TopBar extends Control:
 		var sh := PackedVector2Array()
 		for p in body:
 			sh.append(p + Vector2(1.5, 2.5))
-		draw_colored_polygon(sh, Color(0, 0, 0, 0.4 * a))
-		draw_colored_polygon(body, Color(ROPE, a))
+		_i.draw_colored_polygon(sh, Color(0, 0, 0, 0.4 * a))
+		_i.draw_colored_polygon(body, Color(ROPE, a))
 		for k in 3:
 			var x := -6.0 + k * 6.0
 			var g := PackedVector2Array([Vector2(x - 3.5, 8.0), Vector2(x - 1.0, 0.0), Vector2(x + 3.5, -8.0)])
-			draw_polyline(g, Color(ROPE_DARK, a), 2.2, true)
+			_i.draw_polyline(g, Color(ROPE_DARK, a), 2.2, true)
 			var hl := PackedVector2Array()
 			for q in g:
 				hl.append(q + Vector2(-1.6, 0.0))
-			draw_polyline(hl, Color(ROPE_LIGHT, 0.55 * a), 1.0, true)
-		draw_arc(Vector2.ZERO, 10.2, PI * 1.05, PI * 1.55, 10, Color(1, 1, 1, 0.35 * a), 1.6, true)
-		draw_set_transform(Vector2.ZERO)
+			_i.draw_polyline(hl, Color(ROPE_LIGHT, 0.55 * a), 1.0, true)
+		_i.draw_arc(Vector2.ZERO, 10.2, PI * 1.05, PI * 1.55, 10, Color(1, 1, 1, 0.35 * a), 1.6, true)
+		_tf(Vector2.ZERO)
 
 
 # ---------------------------------------------------------------- overlay

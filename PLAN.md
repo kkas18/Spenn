@@ -2366,3 +2366,41 @@ Rettet:
    - `perf.gd` måler tegnekall og ytelse.
    - `run.sh` kjører import, oppstart, soak og bot, og feiler ved alle skript- og motorfeil.
    - CI kjører `run.sh` med frø 1 og 2 før APK-en bygges.
+
+## v7.51 – Revisjon 6 gjennomført (fem punkter)
+
+1. **Pendelen ved veggen:** veggbegrensningen regner med kapselens halve lengde langs aksen
+   (etter hvor mye den peker sidelengs), så Pendelen stikker ikke lenger ut av skjermen.
+2. **Travle felt:**
+   - Fiender bak dempes tydeligere: mørkere, kjøligere og flatere (0,40 mot 0,28 før).
+   - Ringene, den vanligste typen, spres mer i fargetone (×1,6) og lyshet (×1,8), fortsatt
+     klar av Pendelens fiolett.
+   - En liten popup-tekst som ikke finner en ledig plass, droppes i stedet for å skrives over et
+     ansikt. Store tekster vises alltid.
+3. **Toppbaren via Ink:** figurene i toppbaren samles i `Ink` og sendes som ett kall per rekke
+   mellom tekster og stilbokser, i samme rekkefølge som før. Tegnekallene i sluttspillscenen
+   gikk fra 338 til 197.
+   - `Ink` tegner nå små sirkler (under 6 px) som en vifte med en myk kant på 1 px, så de blir
+     runde. Små buer har minst 12 segmenter per omdreining.
+4. **Småpuss:**
+   - Emblemet på oppstartsskjermen er spillets eget U-formede åk med skinnvikling på skaftet,
+     ikke en Y.
+   - «Dobbelttrykk for pause» står inne i pausepanelet.
+   - Stolpene i nivåmåleren er 20, 33 og 46 px høye, altså tydeligere trinn.
+   - Kuler viser neste mål, for eksempel «Neste: Jade om 28 000 poeng», med en tynn
+     messinglinje. Når alle er vunnet, står det «Alle kulene er dine».
+5. **Kodestruktur:** fiendekoden, som var én fil på 3 700 linjer, er delt i tre lag som arver
+   av hverandre:
+
+   | Fil | Linjer | Innhold |
+   |---|---|---|
+   | `target_body.gd` | 2 200 | tilstand, fysikk og oppførsel |
+   | `target_look.gd` | 780 | kropp, tau, kjetting og farger |
+   | `target.gd` | 740 | ansiktet |
+
+   - `Target` er klassenavnet på det øverste laget, så resten av koden er uendret. Alle 456
+     symboler er med.
+   - Kontaktfysikken (fiender mot hverandre, tau, knusing og kuler) er flyttet fra `game.gd`
+     til `scripts/contacts.gd` (klassen `Contacts`, med en typet referanse til `Game`).
+   - `game.gd` har fått klassenavnet `Game`.
+   - Testpakken (soak og bot på to frø) passerer.

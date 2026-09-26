@@ -33,6 +33,15 @@ func clear() -> void:
 	_ident = true
 
 
+## Empties the buffers but keeps the current transform (for drawing code
+## that flushes between runs of shapes, see Hud.TopBar).
+func reset_buffers() -> void:
+	pts.clear()
+	uvs.clear()
+	cols.clear()
+	idx.clear()
+
+
 ## Submits everything collected to canvas item `ci` (one draw call).
 func flush(ci: RID) -> void:
 	if idx.is_empty():
@@ -64,9 +73,34 @@ func _quad(a: Vector2, b: Vector2, c: Vector2, d: Vector2, ua: Vector2, ub: Vect
 func disc(c: Vector2, r: float, col: Color) -> void:
 	if col.a <= 0.0 or r <= 0.0:
 		return
+	var px := r * (1.0 if _ident else xf.get_scale().x)
+	if px < 6.0:
+		_small_disc(c, r, col, px)
+		return
 	var e := r + 0.45
 	_quad(c + Vector2(-e, -e), c + Vector2(e, -e), c + Vector2(e, e), c + Vector2(-e, e),
 		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1), col)
+
+
+## A tiny disc sampled from the texture would come from a coarse mip and
+## look square; it is built instead as a fan with a one-pixel feather ring
+## that fades out, which is round and soft at any size.
+func _small_disc(c: Vector2, r: float, col: Color, px: float) -> void:
+	const SEG := 12
+	var feather := r / maxf(px, 0.5)   # one pixel, in local units
+	var inner := maxf(r - feather * 0.5, r * 0.3)
+	var outer := r + feather * 0.5
+	var clear := Color(col, 0.0)
+	var base := pts.size()
+	_vert(c, SOLID, col)
+	for i in SEG:
+		var d := Vector2.from_angle(TAU * i / SEG)
+		_vert(c + d * inner, SOLID, col)
+		_vert(c + d * outer, SOLID, clear)
+	for i in SEG:
+		var a := base + 1 + i * 2
+		var b := base + 1 + ((i + 1) % SEG) * 2
+		idx.append_array([base, a, b, a, a + 1, b + 1, a, b + 1, b])
 
 
 func draw_circle(c: Vector2, r: float, col: Color, filled := true, width := -1.0, _aa := false) -> void:
@@ -161,8 +195,10 @@ func draw_arc(c: Vector2, r: float, a0: float, a1: float, segs: int, col: Color,
 	if col.a <= 0.0:
 		return
 	var line := PackedVector2Array()
-	# About one segment per 6 px of arc is smooth at these sizes.
-	segs = clampi(segs, 2, maxi(6, int(r * absf(a1 - a0) / 6.0)))
+	# About one segment per 5 px of arc, and never fewer than a dozen for a
+	# whole turn, keeps even small rings round.
+	var turn := absf(a1 - a0) / TAU
+	segs = clampi(segs, 2, maxi(int(12.0 * turn) + 2, int(r * absf(a1 - a0) / 5.0)))
 	for i in segs + 1:
 		line.append(c + Vector2.from_angle(lerpf(a0, a1, float(i) / segs)) * r)
 	draw_polyline(line, col, width)

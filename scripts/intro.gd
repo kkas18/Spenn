@@ -166,14 +166,16 @@ func _emblem(c: Vector2, s: float, a: float) -> void:
 	draw_set_transform(c, 0.0, Vector2(s, s))
 	const R := 58.0
 	Hud.brass_disc(self, Vector2.ZERO, R, Color("0E1015"), a)
-	# The fork: a Y in brass, set in a dark groove.
+	# The fork: the game's own yoke, a U in brass (arms rising from a round
+	# bottom) on a straight shaft, set in a dark groove.
 	var fork := PackedVector2Array()
-	for i in 13:
-		var t := float(i) / 12.0
-		var x := lerpf(-24.0, 24.0, t)
-		fork.append(Vector2(x, -26.0 + 30.0 * (1.0 - pow(2.0 * t - 1.0, 2.0))))
+	fork.append(Vector2(-22, -30))
+	for i in 11:
+		var ang := PI - PI * i / 10.0
+		fork.append(Vector2(cos(ang) * 22.0, -12.0 + sin(ang) * 16.0))
+	fork.append(Vector2(22, -30))
 	var top := Vector2(0, 4)
-	var foot := Vector2(0, 34)
+	var foot := Vector2(0, 36)
 	for layer in 3:
 		var off: Vector2 = [Vector2(2, 3), Vector2.ZERO, Vector2(-0.6, -0.6)][layer]
 		var col: Color = [Color(0, 0, 0, 0.5 * a), Color(Hud.TopBar.BRASS_DEEP, a), Color(Tok.PRIMARY, a)][layer]
@@ -185,11 +187,15 @@ func _emblem(c: Vector2, s: float, a: float) -> void:
 		draw_line(top + off, foot + off, col, wd + 1.0, true)
 		draw_circle(foot + off, (wd + 1.0) * 0.5, col, true, -1.0, true)
 	draw_polyline(fork.slice(0, 7), Color(Tok.PRIMARY_HI, 0.7 * a), 1.3, true)
-	for tip in [fork[0], fork[12]]:
+	# Leather wrapped round the grip.
+	for k in 3:
+		var y := 16.0 + k * 5.5
+		draw_line(Vector2(-4.5, y), Vector2(4.5, y + 2.0), Color(Pal.POUCH.lightened(0.15), a), 3.2, true)
+	for tip in [fork[0], fork[fork.size() - 1]]:
 		draw_circle(tip, 4.2, Color(Tok.PRIMARY_HI, a), true, -1.0, true)
 	# The band, drawn back to the ball.
 	var bc := Vector2(0, -12)
-	for tip in [fork[0], fork[12]]:
+	for tip in [fork[0], fork[fork.size() - 1]]:
 		draw_line(tip + Vector2(0.8, 1.5), bc + Vector2(0.8, 1.5), Color(0, 0, 0, 0.4 * a), 2.6, true)
 		draw_line(tip, bc, Color(Pal.BAND, a), 3.0, true)
 	draw_circle(bc + Vector2(2, 2.5), 9.5, Color(0, 0, 0, 0.4 * a), true, -1.0, true)

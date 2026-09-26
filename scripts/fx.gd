@@ -445,8 +445,9 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 	# Keep clear of the enemies: a callout printed over a body hides the
 	# face you are aiming at. It moves to just above the body in the way
 	# (it rises from there), or just below when there is no room above.
-	for pass_i in 4:
-		var block: Target = null
+	var block: Target = null
+	for pass_i in 5:
+		block = null
 		for t in targets:
 			if not t.is_hittable():
 				continue
@@ -455,7 +456,7 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 			if absf(t.pos.x - x) < half + tr and t.pos.y + tr > y - size - POPUP_RISE and t.pos.y - tr < y + 4.0:
 				block = t
 				break
-		if block == null:
+		if block == null or pass_i == 4:
 			break
 		var br := block.radius * block.depth_scale() + 8.0
 		var above := block.pos.y - br
@@ -463,6 +464,11 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 			y = above
 		else:
 			y = block.pos.y + br + size + POPUP_RISE
+	if block != null and not accent and size <= 18:
+		# A crowded field with no clear spot: a minor callout is dropped
+		# rather than printed over a face (the big ones always show).
+		p.t = -1.0
+		return
 	y = clampf(y, top, l.size.y - l.margin)
 	p.pos = Vector2(x, y)
 

@@ -1,3 +1,4 @@
+class_name Game
 extends Node2D
 ## Game root: an endless survival run. Targets keep hanging in from the
 ## rail at a pace that only rises; events (formation, rush, boss) punctuate
@@ -165,12 +166,10 @@ var title: TitleLetters
 var slingshot: Slingshot
 var hud: Hud
 var fx: Fx
+var contacts: Contacts   # the contact physics (scripts/contacts.gd)
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
-var _hang: Array[Target] = []     # contact broad phase: hanging bodies,
-var _reach: Array[float] = []     # how far each one's shape reaches,
-var _pushers: Array[Target] = []  # and the bodies that push strings aside
 var balls: Array[Ball] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -228,6 +227,7 @@ var _jolt_cd := 0.0
 
 
 func _ready() -> void:
+	contacts = Contacts.new(self)
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
@@ -1055,38 +1055,6 @@ func _update_ball_light() -> void:
 	slingshot.set_lights(_lights, lc)
 
 
-## Balls in flight knock into each other (a triple fan, or a fresh shot
-## meeting a bouncing one): equal masses, a lively bounce, friction spin.
-func _ball_contacts() -> void:
-	for i in balls.size():
-		var a := balls[i]
-		if not a.active or a.hit_rail:
-			continue
-		for j in range(i + 1, balls.size()):
-			var c := balls[j]
-			if not c.active or c.hit_rail:
-				continue
-			var d := c.pos - a.pos
-			var dist := d.length()
-			if dist >= Ball.RADIUS * 2.0 or dist < 0.001:
-				continue
-			var n := d / dist
-			var pen := Ball.RADIUS * 2.0 - dist
-			a.pos -= n * pen * 0.5
-			c.pos += n * pen * 0.5
-			var vn := (a.vel - c.vel).dot(n)
-			if vn <= 0.0:
-				continue
-			var jn := (1.0 + 0.85) * vn * 0.5
-			a.vel -= n * jn
-			c.vel += n * jn
-			a.friction(-n, c.vel, jn, 0.15, 1.0)
-			c.friction(n, a.vel, jn, 0.15, 1.0)
-			a.impact(-n)
-			c.impact(n)
-			Sfx.play("clank", randf_range(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0)
-
-
 ## Pupils follow the nearest ball in flight (or the pouch while aiming).
 ## Every target reads the predicted shot: how squarely the path crosses it,
 ## which side of the path it is on, and whether a ball already in flight
@@ -1308,11 +1276,11 @@ func _step(dt: float) -> void:
 				worst = maxf(worst, t.danger)
 	backdrop.danger = worst
 	backdrop.descent = descent
-	_target_contacts()
+	contacts.target_contacts()
 	if state == State.PLAYING or state == State.STARTING:
-		_falling_contacts()
+		contacts.falling_contacts()
 	slingshot.step(dt)
-	_ball_contacts()
+	contacts.ball_contacts()
 	for b in balls:
 		if not b.active:
 			continue
@@ -1337,7 +1305,7 @@ func _step(dt: float) -> void:
 		if title.active and title.knock(b.pos, b.vel, Ball.RADIUS) and _knock_sfx_cd <= 0.0:
 			_knock_sfx_cd = 0.1
 			Sfx.play("knock", randf_range(0.8, 1.0), -6.0)
-		_collide(b)
+		contacts.collide(b)
 	if state == State.PLAYING or state == State.STARTING:
 		for t in targets:
 			if t.is_hittable() and t.bottom_y() >= layout.danger_y:
@@ -1366,138 +1334,6 @@ func _interpolate(k: float) -> void:
 ## the field, enough for hanging targets to sway at rest.
 func _breeze(x: float) -> float:
 	return (sin(_time * 0.37 + x * 0.004) * 0.65 + sin(_time * 0.91 + x * 0.013 + 1.7) * 0.35) * 9.0 * layout.scale
-
-
-## Soft contacts between hanging targets: overlap is pushed apart by
-## inverse mass and the closing speed is exchanged with low restitution,
-## so a struck target can nudge its neighbours.
-func _target_contacts() -> void:
-	var sc := layout.scale
-	# Broad phase: the hanging bodies once, each with how far its shape can
-	# reach from its centre, so far-apart pairs are dropped on two
-	# subtractions before any closest-point work.
-	_hang.clear()
-	_reach.clear()
-	for t in targets:
-		if t.phase != Target.Phase.OFF:
-			t.update_rope_box()
-		if t.is_hittable():
-			_hang.append(t)
-			_reach.append(t.shape_radius() + (Target.ROD_HALF if t.kind == Target.Kind.ROD else 0.0))
-	var n := _hang.size()
-	for i in n:
-		var a := _hang[i]
-		var ra: float = _reach[i]
-		for j in range(i + 1, n):
-			var c := _hang[j]
-			var rsum: float = ra + _reach[j]
-			if absf(a.pos.x - c.pos.x) >= rsum or absf(a.pos.y - c.pos.y) >= rsum:
-				continue
-			# Shapes: circles, and a capsule for the Pendel (closest points on
-			# its segment), so a rod is struck along its whole length.
-			var pa := a.closest_point(c.pos)
-			var pc := c.closest_point(pa)
-			pa = a.closest_point(pc)
-			var d := pc - pa
-			var rr := a.shape_radius() + c.shape_radius()
-			var dist := d.length()
-			if dist >= rr or dist < 0.001:
-				continue
-			var nrm := d / dist
-			var ia := 1.0 / a.mass()
-			var ic := 1.0 / c.mass()
-			# Push apart past a small slop, most of the way: stacked bodies
-			# settle instead of jittering.
-			var pen := maxf(0.0, rr - dist - 0.5) * 0.8
-			var corr := nrm * pen / (ia + ic)
-			a.pos -= corr * ia
-			c.pos += corr * ic
-			var contact := pa + nrm * a.shape_radius()
-			var rel := a.vel - c.vel
-			var closing := rel.dot(nrm)
-			if closing <= 0.0:
-				continue
-			# Restitution by material: jelly on jelly barely bounces (it
-			# squashes), shell on shell clacks apart, mixed in between.
-			var e := 0.15 if (a.soft and c.soft) else (0.55 if not a.soft and not c.soft else 0.32)
-			var j_imp := minf(closing * (1.0 + e) / (ia + ic), 520.0)
-			# Friction along the contact: a glancing blow sets them spinning.
-			var tan := rel - nrm * closing
-			var f_imp := Vector2.ZERO
-			if tan.length() > 1.0:
-				f_imp = -tan.normalized() * minf(tan.length() / (ia + ic), j_imp * 0.35)
-			a.push(-nrm * j_imp + f_imp, contact)
-			c.push(nrm * j_imp - f_imp, contact)
-			a.dent(contact, closing * 0.8)
-			c.dent(contact, closing * 0.8)
-			a.bump(-nrm, closing)
-			c.bump(nrm, closing)
-			# Billiards: a target sent flying by a hit takes a neighbour with it.
-			if closing > KNOCK_SPEED * sc and (a.struck_t > 0.0 or c.struck_t > 0.0) and (state == State.PLAYING or state == State.STARTING):
-				var striker := a if a.struck_t >= c.struck_t else c
-				var victim := c if striker == a else a
-				striker.struck_t = 0.0
-				var dir := nrm if striker == a else -nrm
-				_chain_hit(victim, dir * j_imp * 0.5, contact, closing, striker.chain_depth + 1)
-				continue
-			if closing > 110.0 and _knock_sfx_cd <= 0.0:
-				_knock_sfx_cd = 0.07
-				var loud := linear_to_db(clampf(closing / 600.0, 0.15, 0.75))
-				if a.soft and c.soft:
-					Sfx.play("squish", randf_range(1.05, 1.25), loud - 4.0)
-				elif not a.soft and not c.soft:
-					Sfx.play("clank", randf_range(1.1, 1.3), loud - 3.0)
-				else:
-					Sfx.play("knock", randf_range(0.9, 1.1), loud)
-				Sfx.haptic(6, 0.2)
-	# Ropes slide around the bodies they meet instead of passing through,
-	# and bodies keep inside the walls.
-	# Only bodies inside a string's bounding box can touch it.
-	_pushers.clear()
-	for o in targets:
-		if o.is_solid() or o.is_crushing(0.0):
-			_pushers.append(o)
-	for i in n:
-		var t := _hang[i]
-		t.keep_in(layout.size.x)
-		var box := t.rope_box
-		for o in _pushers:
-			if o == t:
-				continue
-			var r := o.shape_radius() + (Target.ROD_HALF if o.kind == Target.Kind.ROD else 0.0) + 2.0
-			if o.pos.x + r < box.position.x or o.pos.x - r > box.end.x or o.pos.y + r < box.position.y or o.pos.y - r > box.end.y:
-				continue
-			# Hanging bodies and falling ones alike push strings aside.
-			t.rope_avoid(o)
-		for j in range(i + 1, n):
-			var o := _hang[j]
-			if box.intersects(o.rope_box.grow(6.0)):
-				t.rope_rope(o)
-
-
-## A killed shell or a cut target falls; whatever still hangs in its way is
-## knocked off its string (or loses a point of health) and falls in turn.
-func _falling_contacts() -> void:
-	var min_speed := CRUSH_SPEED * layout.scale
-	for f in targets:
-		if not f.is_crushing(min_speed):
-			continue
-		for t in targets:
-			if t == f or not t.is_solid() or f.crushed.has(t.get_instance_id()):
-				continue
-			var cp := t.closest_point(f.pos)
-			var rr := f.contact_radius() * 0.85 + (t.radius if t.kind != Target.Kind.ROD else t.radius * 0.6)
-			if f.pos.distance_squared_to(cp) >= rr * rr:
-				continue
-			f.crushed.append(t.get_instance_id())
-			var n := (cp - f.pos).normalized()
-			var closing := (f.vel - t.vel).dot(n)
-			if closing < min_speed * 0.6:
-				continue
-			# The faller gives up much of its speed and glances off.
-			f.vel -= n * closing * 0.6
-			f.spin *= -0.6
-			_chain_hit(t, n * closing * f.mass() * 0.9, cp - n * t.radius * 0.5, closing, f.chain_depth + 1)
 
 
 ## A target struck by another body, not by a ball: scored like a hit, and a
@@ -1623,64 +1459,6 @@ func _spawn_minions() -> void:
 
 
 # ---------------------------------------------------------------- hits
-
-func _collide(b: Ball) -> void:
-	var cut_speed := CUT_SPEED * layout.scale * (0.8 if perk("edge") > 0 else 1.0)
-	var cut_r := 9.0 if perk("edge") > 0 else 5.0
-	if b.hit_rail:
-		# Spent against the rail: it drops out of play instead of raining
-		# back down through the field.
-		return
-	for t in targets:
-		if not t.is_hittable():
-			continue
-		# A fast ball severs the string it crosses; a slower one plucks it.
-		# Cut: the ball's centre (±5 px) crosses the string near its hook on
-		# the way up, fast, before touching the rail. A precision shot.
-		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(b.pos, cut_r):
-			b.cut_any = true
-			if perk("edge") > 0 or t.strike_string(b.pos):
-				_on_cut(b, t)
-			else:
-				fx.sparks(b.pos, Pal.INK_DIM, 6)
-				Sfx.play("twang", 1.2, -6.0)
-				Sfx.haptic(8, 0.2)
-			continue
-		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:
-			_break_charm(t)
-		var rdv := t.rope_contact(b.pos, b.pos - b.vel * SUBSTEP, b.vel, Ball.RADIUS)
-		if rdv != Vector2.ZERO:
-			b.vel += rdv
-			# The string rubs the ball: a touch of spin from the drag.
-			b.w += clampf(rdv.cross(b.vel.normalized()) * 0.004, -6.0, 6.0)
-			if t.consume_pluck():
-				Sfx.haptic(5, 0.15)
-		if not b.can_touch(t.get_instance_id()) or not t.is_solid():
-			continue
-		var cp := t.closest_point(b.pos)
-		var d := b.pos - cp
-		var rr := Ball.RADIUS + t.radius
-		if t.kind == Target.Kind.SHIELD:
-			rr += 5.0
-		elif t.kind == Target.Kind.BOSS:
-			rr += 11.0
-		var dist := d.length()
-		if dist >= rr:
-			# Near miss: the target flinches and its eye pops wide.
-			if dist < rr + 34.0 and b.vel.length() > 500.0:
-				t.startle(b.pos)
-				t.annoy(0.25)
-			continue
-		var n := d / dist if dist > 0.001 else -b.vel.normalized()
-		if t.kind == Target.Kind.MIRROR and not b.special and b.banks == 0 and b.hits == 0:
-			_on_mirror(b, t, n, cp, rr)
-		elif not b.special and t.blocks(n):
-			_on_block(b, t, n, cp, rr)
-		else:
-			_on_hit(b, t, n, cp, rr)
-		if not b.special:
-			return
-
 
 ## Impulse-based contact against a moving body of mass `m` (target units).
 ## Updates the ball; returns the impulse to hand the target (its `hit` and
