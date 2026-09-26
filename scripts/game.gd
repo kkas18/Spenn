@@ -40,6 +40,13 @@ const REVENGE := 300
 # Pendulum hit: a target struck as it swings fast through the bottom of its arc.
 const SWING_ANGLE := 0.14
 const SWING_SPEED := 150.0
+# Cunning tricks and the wave each starts at.
+const EMPTY_WAVE := 2           # an empty rack: the nearest to the line pounce
+const PLAYDEAD_WAVE := 3
+const SNEAK_WAVE := 4           # while you aim at one, another sneaks down
+const SWAP_WAVE := 6            # two neighbours trade places under your aim
+const SNEAK_EVERY := 7.0
+const SWAP_EVERY := 8.0
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 5
@@ -92,7 +99,6 @@ var flow := 0.0                 # 0..1: the meter, or what is left of flow
 var flow_t := 0.0               # real seconds of flow left
 var flows := 0                  # flow streaks this run
 var perks := {}                 # upgrades picked this run: id -> level
-var _perk_pending := false      # a wave was cleared; the cards are coming
 var _aim_start := -1.0          # game time the current pull began
 var _release_hold := -1.0       # how long the last pull was held
 var _tactic_told := 0
@@ -115,6 +121,11 @@ var _nemesis_kind := -1         # the kind that got through, waiting to return
 var _nemesis_lv := 0
 var _nemesis_in := -1.0
 var revenges := 0
+var _told := {}                 # cunning tricks already named this run
+var _empty_seen := false
+var _sneak_cd := 0.0
+var _swap_cd := 0.0
+var _swap_aim: Target = null
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
@@ -243,7 +254,6 @@ func _ready() -> void:
 	add_child(hud)
 	fx.font = hud.caps_font()
 	slingshot.launched.connect(_on_launched)
-	hud.perks.chosen.connect(_on_perk)
 	title.caught.connect(_on_letter_caught)
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
@@ -289,8 +299,8 @@ func _clear_field() -> void:
 	_shots.clear()
 	_intro_queue.clear()
 	perks.clear()
-	_perk_pending = false
-	hud.perks.visible = false
+	hud.perk_order.clear()
+	hud.perk_levels = {}
 	_apply_perks()
 	ammo.clear()
 	for i in _ammo_cap():
@@ -390,6 +400,10 @@ func _start_run() -> void:
 	_nemesis_lv = 0
 	_nemesis_in = -1.0
 	revenges = 0
+	_told = {}
+	_empty_seen = false
+	_sneak_cd = 4.0
+	_swap_cd = 4.0
 	_acro_t = 8.0
 	_last_hazard = Hazard.NONE
 	_rhythm_told = false
@@ -612,6 +626,7 @@ func _process(delta: float) -> void:
 		_hazard_tick(delta)
 		_acro_tick(delta)
 		_nemesis_tick(delta)
+		_cunning_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -834,24 +849,24 @@ func _wave_tick(delta: float) -> void:
 			if alive == 0 and _rush_left == 0:
 				_clear_wave()
 		Director.Wave.BREAK:
-			if _perk_pending or hud.perks.visible:
-				return
 			director.wave_break -= delta
 			if director.wave_break <= 0.0:
 				director.next_wave()
 				_spawn_t = 0.3
 				# A new wave, a new colour theme, eased in.
 				Pal.next_theme()
-				fx.popup(Loc.t("hud.wave") % director.wave, Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.28), Pal.INK, 26)
+				hud.wave_intro(director.wave)
+				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
 				Sfx.play("streak", 0.85)
+				Sfx.play("whoosh", 0.6, -4.0)
 				_schedule_hazard()
 				if director.wave == ACRO_WAVE and not _acro_told:
 					_acro_told = true
-					fx.after(0.9, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
+					fx.after(1.8, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
 				var tac := director.tactic()
 				if tac > _tactic_told:
 					_tactic_told = tac
-					fx.after(0.9, func() -> void: _announce_tactic(tac))
+					fx.after(1.8, func() -> void: _announce_tactic(tac))
 
 
 func _clear_wave() -> void:
@@ -861,10 +876,16 @@ func _clear_wave() -> void:
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
 	fx.shock(mid, 8.0, 380.0, 0.6)
-	# Final-kill camera: widescreen bars close in, the camera leans in on
-	# the last one and time all but stops, then the next wave breaks loose.
+	# Final-kill camera: the camera leans in on the last one and time all
+	# but stops; a gold ring runs out through the light fibres from the kill
+	# and a spark races along the rail.
 	var calm := Prefs.reduced_motion
-	hud.cinematic(0.9)
+	backdrop.ripple(_last_kill, Pal.GOLD_LIGHT, 2.0)
+	for i in 9:
+		var x := layout.size.x * (0.04 + i * 0.115)
+		fx.after(0.05 + 0.035 * i, func() -> void:
+			fx.flash(Vector2(x, layout.rail_y), 30.0, Pal.GOLD_LIGHT)
+			rail.flex(x, 2.5))
 	fx.focus(_last_kill, 0.05 if calm else 0.1, 1.4)
 	fx.aberrate(2.0 if calm else 4.0)
 	fx.slowmo(0.4 if calm else 0.2, 0.5 if calm else 0.8)
@@ -875,8 +896,7 @@ func _clear_wave() -> void:
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
-	_perk_pending = true
-	fx.after(1.3, _offer_perks)
+	fx.after(1.4, _grant_perk)
 
 
 ## Pupils follow the nearest ball in flight (or the pouch while aiming).
@@ -1477,6 +1497,11 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
 	var hit_at := t.pos
+	if t.playdead > 0.0:
+		# Caught faking: no fooling you.
+		t.playdead = 0.0
+		fx.popup(Loc.t("cunning.busted"), t.pos + Vector2(0, -t.radius - 30.0), Pal.GOLD_LIGHT, 18)
+		_add_score(50 * _mult(), t.pos)
 	if perk("heavy") > 0 and t.hp >= 2 and not b.special:
 		# Heavy balls: armour takes two blows' worth.
 		t.hp -= 1
@@ -1588,7 +1613,7 @@ func _charge(v: float) -> void:
 		return
 	var was := charge
 	if v > 0.0:
-		v *= 1.0 + 0.3 * perk("charge")
+		v *= 1.0 + 0.25 * perk("charge")
 	charge = clampf(charge + v, 0.0, 1.0)
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
@@ -2222,23 +2247,25 @@ func _flow_time() -> float:
 	return FLOW_TIME + 2.5 * perk("flow")
 
 
-## Three cards once the cleared wave's moment has played out.
-func _offer_perks() -> void:
-	_perk_pending = false
+## A cleared wave wins the run one perk at random (never past its cap);
+## it pops up and flies into the tray without stopping play.
+func _grant_perk() -> void:
 	if state != State.PLAYING and state != State.STARTING:
 		return
 	var ids := Perks.offer(perks, lives < LIVES, _rng)
-	if not ids.is_empty():
-		hud.perks.open(ids, perks)
-
-
-func _on_perk(id: String) -> void:
+	if ids.is_empty():
+		return
+	var id := ids[0]
 	perks[id] = perk(id) + 1
 	if id == "knot" and lives < LIVES:
 		lives += 1
 		hud.bar.lives = lives
 		hud.bar.knot_shake = 1.0
 	_apply_perks()
+	hud.perk_toast(id, perks[id])
+	Sfx.play("clear", 1.25, -4.0)
+	Sfx.phrase([2, 4, 7], 0.06, -5.0)
+	Sfx.haptic_pattern("light")
 
 
 func _apply_perks() -> void:
@@ -2291,6 +2318,88 @@ func _nemesis_tick(delta: float) -> void:
 	fx.after(0.6, func() -> void:
 		if is_instance_valid(t) and t.is_hittable():
 			t.taunt())
+
+
+# ---------------------------------------------------------------- cunning
+
+## Four tricks, unlocked wave by wave; each is named once, the first time it
+## is pulled, so the player learns to read it.
+func _cunning_tick(delta: float) -> void:
+	var w := director.wave
+	Target.play_dead_on = w >= PLAYDEAD_WAVE
+	for t in targets:
+		if t.surprised:
+			t.surprised = false
+			_name_trick("cunning.dead", t.pos)
+	# An empty rack: the ones nearest the line see their chance.
+	if w >= EMPTY_WAVE and ammo.is_empty() and not _empty_seen:
+		_empty_seen = true
+		var list: Array[Target] = []
+		for t in targets:
+			if t.is_hittable() and t.kind != Target.Kind.BOSS and t.playdead <= 0.0 and not t.golden:
+				list.append(t)
+		list.sort_custom(func(a: Target, b: Target) -> bool: return a.danger > b.danger)
+		for i in mini(2, list.size()):
+			list[i].order_plunge(30.0, 0.25)
+			list[i].smug = 1.0
+			if i == 0:
+				_name_trick("cunning.empty", list[i].pos)
+	elif not ammo.is_empty():
+		_empty_seen = false
+	_sneak_cd -= delta
+	_swap_cd -= delta
+	var aimed: Target = null
+	for t in targets:
+		if t.aimed:
+			aimed = t
+			break
+	if aimed == null:
+		_swap_aim = null
+		return
+	# Sneak: you have been on one target a while; another slips down.
+	if w >= SNEAK_WAVE and _sneak_cd <= 0.0 and Target.aim_hold > 0.6:
+		var best: Target = null
+		for t in targets:
+			if t == aimed or not t.is_hittable() or t.threat_lvl > 0.0 or t.kind == Target.Kind.BOSS or t.golden or t.playdead > 0.0:
+				continue
+			if t.pos.distance_to(aimed.pos) < 220.0 * layout.scale:
+				continue
+			if best == null or t.danger > best.danger:
+				best = t
+		if best:
+			_sneak_cd = SNEAK_EVERY * _rng.randf_range(0.8, 1.3)
+			best.sneak(45.0)
+			_name_trick("cunning.sneak", best.pos)
+	# Swap: a neighbour at the same height trades places with your target.
+	if w >= SWAP_WAVE and _swap_cd <= 0.0 and Target.aim_hold > 0.35 and aimed != _swap_aim:
+		_swap_aim = aimed
+		if _rng.randf() > 0.35 or not _free_mover(aimed):
+			return
+		for t in targets:
+			if t == aimed or not _free_mover(t):
+				continue
+			if absf(t.anchor.x - aimed.anchor.x) < 130.0 * layout.scale and absf(t.pos.y - aimed.pos.y) < 70.0 * layout.scale:
+				_swap_cd = SWAP_EVERY * _rng.randf_range(0.8, 1.3)
+				var sp := 420.0 * layout.scale
+				var ax := aimed.anchor.x
+				aimed.slide_now(t.anchor.x, sp)
+				t.slide_now(ax, sp)
+				_name_trick("cunning.swap", aimed.pos.lerp(t.pos, 0.5))
+				break
+
+
+func _free_mover(t: Target) -> bool:
+	return t.is_hittable() and t.kind != Target.Kind.BOSS and t.leader == null and not t.is_leader \
+		and t.rope_host == null and t.guard_of == null and t.acro == Target.Acro.NONE and t.playdead <= 0.0 and not t.golden
+
+
+## Names a trick the first time it is pulled this run.
+func _name_trick(key: String, at: Vector2) -> void:
+	if _told.has(key):
+		return
+	_told[key] = true
+	fx.popup(Loc.t(key), at + Vector2(0, -60.0), Pal.CORAL, 18)
+	Sfx.play("tease", 0.95, -4.0)
 
 
 # ---------------------------------------------------------------- flow

@@ -209,6 +209,13 @@ var rescued := false            # ... and it was a rescue
 # Nemesis: the one that got through comes back later in the run, scarred,
 # smug and tougher (level: how many times it has got through).
 var nemesis := 0
+# Cunning: an armoured one hit but not beaten may play dead, hanging limp
+# and still (one wary peek), then drop on you by surprise.
+static var play_dead_on := false
+const PLAY_DEAD_KINDS := [Kind.HEAVY, Kind.SHIELD, Kind.MIRROR]
+var playdead := 0.0             # seconds of the act left
+var _peek_at := 0.0
+var surprised := false          # the act ended in a drop (the game says so)
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -412,6 +419,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	grabbed = false
 	rescued = false
 	nemesis = 0
+	playdead = 0.0
+	surprised = false
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -780,6 +789,9 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 	struck_t = 0.45
 	hp -= 1
 	if hp > 0:
+		if play_dead_on and kind in PLAY_DEAD_KINDS and playdead <= 0.0 and leader == null and not is_leader and randf() < 0.45:
+			_play_dead()
+			return false
 		if kind == Kind.HEAVY and not enraged:
 			# Bulwark rage: throws itself down and sinks faster from now on.
 			enraged = true
@@ -883,6 +895,8 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 					length = maxf(60.0 * (_screen_h / 1280.0), length - 35.0 * dt)
 				elif golden:
 					_gold_step(dt)
+				elif playdead > 0.0:
+					_dead_step(dt)
 				else:
 					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * dt
 				goal_length = length
@@ -893,6 +907,8 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_order_drop = 0.0
 				_dodge_cd = maxf(_dodge_cd, 0.5)
 				acro = Acro.NONE
+			elif playdead > 0.0:
+				pass
 			elif acro == Acro.PUMP:
 				_pump_step(dt)
 			elif rope_host != null:
@@ -1237,6 +1253,53 @@ func _evolve_step(dt: float) -> void:
 	squash_t = 0.0
 	startle_t = 0.4
 	evolved = true
+
+
+func _play_dead() -> void:
+	playdead = randf_range(2.6, 4.0)
+	_peek_at = playdead * randf_range(0.35, 0.6)
+	_closed_t = 0.3
+	voice("down", -4.0)
+	ang_vel += (1.0 if randf() < 0.5 else -1.0) * 4.0
+
+
+## Limp and still, eye shut; one quick peek; then the surprise drop.
+func _dead_step(dt: float) -> void:
+	var was := playdead
+	playdead -= dt
+	var peeking := playdead < _peek_at and playdead > _peek_at - 0.35
+	if not peeking:
+		_closed_t = maxf(_closed_t, 0.1)
+	if was >= _peek_at and playdead < _peek_at:
+		_pupil = Vector2(signf(randf() - 0.5), 0.2)
+	# Hangs a little askew, like something lifeless.
+	ang_vel += (0.45 - ang_off) * 3.0 * dt
+	if playdead <= 0.0:
+		playdead = 0.0
+		_closed_t = 0.0
+		startle_t = 0.4
+		smug = 1.0
+		_lunge_left += 75.0 * (_screen_h / 1280.0)
+		surprised = true
+		voice("taunt")
+		Sfx.play("whoosh", 0.9, -4.0)
+
+
+## Slides the hook straight to `x` (past neighbours: a deliberate move).
+func slide_now(x: float, speed: float) -> void:
+	_slide_to = clampf(x, radius + 12.0, field_w - radius - 12.0)
+	_slide_speed = speed
+	_queued_x = NAN
+	startle_t = 0.25
+	Sfx.play("slide", randf_range(0.95, 1.1))
+
+
+## Sneaking down while you are busy aiming at someone else: silent, a
+## sideways look at the slingshot.
+func sneak(drop: float) -> void:
+	_lunge_left += drop * (_screen_h / 1280.0)
+	squint = true
+	_watch_t = 0.0
 
 
 ## Starts a swing across to `host`'s rope.

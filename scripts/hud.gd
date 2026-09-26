@@ -56,7 +56,8 @@ var _m_skins: UIButton
 var _m_daily: UIButton
 var daily := false             # the menu's mode: the next run is the daily challenge
 var flow := 0.0                # the flow meter, 0..1 (set by the game)
-var perks: PerkPanel           # upgrade cards between waves
+var perk_order: Array[String] = []  # perks won this run, in order (the tray)
+var perk_levels := {}
 var flow_hot := false          # flow is on
 var _stats: Control
 var _stats_box: VBoxContainer
@@ -87,9 +88,6 @@ func _ready() -> void:
 	overlay = Overlay.new()
 	overlay.hud = self
 	add_child(overlay)
-	perks = PerkPanel.new()
-	perks.hud = self
-	add_child(perks)
 	_build_menu_bar()
 	_build_pause()
 	_build_settings()
@@ -113,7 +111,7 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, perks, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
 		c.position = Vector2.ZERO
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
@@ -294,10 +292,19 @@ func hide_game_over() -> void:
 
 
 ## Big centred card: an event name and a line under it.
-## Widescreen bars close in for a cinematic moment, held `hold` seconds.
-func cinematic(hold: float) -> void:
-	overlay.cine_t = 0.0
-	overlay.cine_hold = hold
+## A new wave opens: its number comes in large while light sweeps the field.
+func wave_intro(n: int) -> void:
+	overlay.wave_n = n
+	overlay.wave_t = 0.0
+
+
+## A perk won: its card pops up, then flies into the tray (top left).
+func perk_toast(id: String, level: int) -> void:
+	if not perk_order.has(id):
+		perk_order.append(id)
+	perk_levels[id] = level
+	overlay.toast_id = id
+	overlay.toast_t = 0.0
 
 
 func card(title: String, sub: String, hold := 1.0) -> void:
@@ -823,8 +830,11 @@ class Overlay extends Control:
 	var card_sub := ""
 	var card_t := 99.0
 	var card_hold := 1.0
-	var cine_t := 99.0
-	var cine_hold := 1.0
+	var wave_t := 99.0
+	var wave_n := 1
+	var toast_t := 99.0
+	var toast_id := ""
+	var _toast_box: StyleBoxFlat
 	var menu_a := 0.0
 	var intro_name := ""
 	var intro_desc := ""
@@ -838,16 +848,108 @@ class Overlay extends Control:
 
 	var _flow_a := 0.0
 
-	func _draw_cine(l: Layout) -> void:
-		var total := 0.25 + cine_hold + 0.45
-		if cine_t >= total:
+	## Wave intro: "WAVE" in small caps over a large numeral that settles
+	## from 130 % with fine gold rules drawing outward, while a band of light
+	## sweeps down the field from the rail to the line.
+	func _draw_wave_intro(l: Layout, caps: Font, disp: Font) -> void:
+		const TOTAL := 1.75
+		if wave_t >= TOTAL:
 			return
-		var k := Motion.ease_value(Motion.Ease.ENTER, cine_t / 0.25)
-		if cine_t > 0.25 + cine_hold:
-			k = 1.0 - Motion.ease_value(Motion.Ease.EXIT, (cine_t - 0.25 - cine_hold) / 0.45)
-		var h := l.size.y * 0.085 * k
-		draw_rect(Rect2(0, 0, l.size.x, h), Color(0, 0, 0, 0.92))
-		draw_rect(Rect2(0, l.size.y - h, l.size.x, h), Color(0, 0, 0, 0.92))
+		var w := l.size.x
+		var sweep := Motion.ease_value(Motion.Ease.STANDARD, clampf(wave_t / 0.95, 0.0, 1.0))
+		if wave_t < 0.95:
+			var by := lerpf(l.rail_y, l.danger_y, sweep)
+			var fade := sin(PI * sweep)
+			for k in 12:
+				var d := (k - 5.5) * 9.0
+				var g := exp(-d * d / 900.0)
+				draw_rect(Rect2(0, by + d - 4.5, w, 9.0), Color(Pal.GOLD_LIGHT, 0.075 * g * fade))
+		var kin := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf(wave_t / 0.4, 0.0, 1.0))
+		var a := kin
+		if wave_t > 1.25:
+			a *= 1.0 - Motion.ease_value(Motion.Ease.EXIT, (wave_t - 1.25) / 0.5)
+		if a <= 0.0:
+			return
+		var y := l.rail_y + l.play_h * 0.33
+		var sc := lerpf(1.3, 1.0, kin)
+		var num := str(wave_n)
+		var fs := 124
+		var tw := disp.get_string_size(num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		draw_set_transform(Vector2(w * 0.5, y), 0.0, Vector2(sc, sc))
+		draw_string(disp, Vector2(-tw * 0.5 + 4.0, 4.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.35 * a))
+		draw_string(disp, Vector2(-tw * 0.5, 0.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, a))
+		draw_set_transform(Vector2.ZERO)
+		draw_string(caps, Vector2(0, y - 104.0), Loc.t("hud.waveLabel"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, a))
+		var span := w * 0.3 * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.1) / 0.6, 0.0, 1.0))
+		for yy in [y - 96.0 - 6.0, y + 30.0]:
+			draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.5 * a), 1.0, true)
+
+	## Where tray slot `i` sits: a row of small discs at the top left.
+	func _slot(l: Layout, i: int) -> Vector2:
+		return Vector2(l.margin + 18.0 + i * 36.0, l.safe_top + (l.top_bar_h - l.safe_top) * 0.42)
+
+	func _draw_tray(l: Layout) -> void:
+		if menu_a > 0.0 or hud.perk_order.is_empty() or not hud.bar.visible:
+			return
+		for i in hud.perk_order.size():
+			var id: String = hud.perk_order[i]
+			if id == toast_id and toast_t < 1.95:
+				continue
+			var p := _slot(l, i)
+			var land := clampf(1.0 - (toast_t - 1.95) / 0.35, 0.0, 1.0) if id == toast_id else 0.0
+			var r := 15.0 + 3.0 * land
+			draw_circle(p, r, Tok.SURFACE_LO, true, -1.0, true)
+			draw_arc(p, r, 0.0, TAU, 32, Color(Tok.PRIMARY, 0.35 + 0.6 * land), 1.0, true)
+			Perks.draw_icon(self, id, p, 1.0, 0.42)
+			var lv := int(hud.perk_levels.get(id, 1))
+			if lv > 1:
+				Pal.disc(self, p + Vector2(11, 10), 6.0, Tok.PRIMARY)
+				draw_string(hud.caps_font(), Vector2(p.x + 8.0, p.y + 14.0), str(lv), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Tok.ON_PRIMARY)
+
+	## The perk just won: a card pops up over the floor, holds, then shrinks
+	## into its icon and flies to its slot in the tray.
+	func _draw_toast(l: Layout, caps: Font, disp: Font) -> void:
+		if toast_t >= 1.95 or toast_id == "":
+			return
+		if _toast_box == null:
+			_toast_box = StyleBoxFlat.new()
+			_toast_box.bg_color = Tok.SURFACE_HI
+			_toast_box.border_color = Tok.PRIMARY_LO
+			_toast_box.set_border_width_all(1)
+			_toast_box.set_corner_radius_all(Tok.RADIUS_M)
+			_toast_box.shadow_color = Color(0, 0, 0, 0.45)
+			_toast_box.shadow_size = 12
+			_toast_box.anti_aliasing = true
+		var home := Vector2(l.center_x, l.danger_y - 150.0)
+		var size := Vector2(minf(420.0, l.size.x - 40.0), 96)
+		var pop := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf(toast_t / 0.3, 0.0, 1.0))
+		var text_a := pop * (1.0 - clampf((toast_t - 1.35) / 0.15, 0.0, 1.0))
+		var icon0 := home + Vector2(-size.x * 0.5 + 48.0, 0.0)
+		if text_a > 0.0:
+			var sc := lerpf(0.85, 1.0, pop)
+			draw_set_transform(home, 0.0, Vector2(sc, sc))
+			for b in [[_toast_box, text_a]]:
+				(b[0] as StyleBoxFlat).bg_color.a = b[1]
+				(b[0] as StyleBoxFlat).border_color.a = b[1]
+				(b[0] as StyleBoxFlat).shadow_color.a = 0.45 * b[1]
+			draw_style_box(_toast_box, Rect2(-size * 0.5, size))
+			draw_string(caps, Vector2(-size.x * 0.5 + 92.0, -16.0), Loc.t("perk.new"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(Tok.PRIMARY, text_a))
+			draw_string(disp, Vector2(-size.x * 0.5 + 92.0, 12.0), Loc.t("perk." + toast_id), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(Tok.TEXT_PRIMARY, text_a))
+			var desc := Loc.t("perk." + toast_id + ".d")
+			var dfs := 11
+			while dfs > 8 and caps.get_string_size(desc, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs).x > size.x - 108.0:
+				dfs -= 1
+			draw_string(caps, Vector2(-size.x * 0.5 + 92.0, 34.0), desc, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs, Color(Tok.TEXT_SECONDARY, text_a))
+			draw_set_transform(Vector2.ZERO)
+		# The icon: sits in the card, then flies to the tray.
+		var fly := Motion.ease_value(Motion.Ease.STANDARD, clampf((toast_t - 1.4) / 0.55, 0.0, 1.0))
+		var slot := _slot(l, maxi(0, hud.perk_order.find(toast_id)))
+		var mid := icon0.lerp(slot, 0.5) + Vector2(0, -120.0)
+		var p := icon0.lerp(mid, fly).lerp(mid.lerp(slot, fly), fly)
+		var r := lerpf(30.0, 15.0, fly) * lerpf(0.85, 1.0, pop)
+		draw_circle(p, r, Color(Tok.SURFACE_LO, pop), true, -1.0, true)
+		draw_arc(p, r, 0.0, TAU, 40, Color(Tok.PRIMARY, 0.8 * pop), 1.2, true)
+		Perks.draw_icon(self, toast_id, p, pop, lerpf(0.85, 0.42, fly))
 
 	## The flow meter: a fine bar on the floor just under the danger line.
 	## Hot, it fills white-cyan, glows and beats with the music.
@@ -874,7 +976,8 @@ class Overlay extends Control:
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
 		card_t += rd
-		cine_t += rd
+		wave_t += rd
+		toast_t += rd
 		intro_t += rd
 		count_t += rd
 		_clock += rd
@@ -911,7 +1014,9 @@ class Overlay extends Control:
 			draw_string(caps, Vector2(0, l.fork_y - 70.0), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(Tok.PRIMARY, p))
 		if hud.modal_open():
 			return
-		_draw_cine(l)
+		_draw_wave_intro(l, caps, disp)
+		_draw_tray(l)
+		_draw_toast(l, caps, disp)
 		_draw_flow(l, caps)
 		if intro_t < Hud.INTRO_TIME and intro_name != "":
 			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))

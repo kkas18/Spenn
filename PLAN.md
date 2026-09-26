@@ -1787,3 +1787,25 @@ Fra bølge 5 (varslet med kortet «DE SVINGER»):
 - **Pendeltreff:** treffer du en fiende i bunnen av en rask sving (vinkel < 0,14 rad, fart over
   150 px/s), får du skillet PENDELTREFF (+50, egen tone). Det belønner timing, ikke bare sikte.
 - Bot (6 frø): median ca. 214 s, som før, så balansen er uendret.
+
+## v7.29 – Flytende oppgraderinger, ny bølgeovergang og lure fiender
+
+- **Tilfeldige oppgraderinger uten pause:** valgpanelet er fjernet. Hver klarert bølge gir én
+  tilfeldig fordel (aldri over taket), vist som et lite kort som dukker opp og flyr inn i en
+  ikonrad øverst til venstre. Ikonraden viser alle fordelene i runden, med nivåtall.
+  Superlading er nå maks ett nivå (+25 %).
+- **Ny bølgeovergang (ingen svarte barer):**
+  - Siste drap: zoom og sakte film, en gullring gjennom lysfibrene fra drapet og en gnist
+    langs bjelken.
+  - Deretter «BØLGE N KLARERT».
+  - Ny bølge: stort tall som setter seg fra 130 %, «BØLGE» over, gullinjer ut til sidene og
+    et lysbånd som feier ned over feltet. Taktikk-kortet kommer etter.
+- **Lure fiender:**
+  - **Tom for kuler (bølge 2):** når stativet er tomt, stuper de to nærmest linjen og gliser.
+  - **Spiller død (bølge 3):** tunge fiender, Vokter og Speil kan, når de blir truffet uten å
+    dø, henge slappe og stille med lukket øye. De kikker én gang og stuper så 75 px.
+    Treffer du den mens den spiller død: AVSLØRT! +50.
+  - **Snik (bølge 4):** mens du sikter lenge på én, sniker en annen langt unna seg ned.
+  - **Bytter plass (bølge 6):** to naboer i samme høyde bytter plass under siktet ditt.
+  - Hvert triks navngis første gang det brukes.
+- Bot (6 frø): median ca. 182 s, lengste 341 s.
