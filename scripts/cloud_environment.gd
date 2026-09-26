@@ -2,23 +2,23 @@ extends Node2D
 ## Lightweight procedural 2.5D cloud environment for Spenn.
 ## Keeps gameplay 2D while creating depth with layered motion and atmosphere.
 
-@export var drift_speed := 7.0
-var t := 0.0
+@export var drift_speed: float = 7.0
+var t: float = 0.0
 
 const SKY_TOP := Color("#69BFE7")
 const SKY_MID := Color("#A9DCF0")
 const SKY_HORIZON := Color("#F6D5B4")
 const SUN := Color("#FFF0BE")
 
-var far_clouds := [
+var far_clouds: Array = [
 	[Vector2(90, 255), 0.70], [Vector2(420, 320), 0.90], [Vector2(680, 230), 0.62],
 	[Vector2(250, 455), 0.78], [Vector2(590, 510), 0.72]
 ]
-var mid_clouds := [
+var mid_clouds: Array = [
 	[Vector2(30, 610), 1.05], [Vector2(355, 690), 1.18], [Vector2(700, 620), 1.0],
 	[Vector2(160, 865), 1.12], [Vector2(560, 900), 1.25]
 ]
-var front_clouds := [
+var front_clouds: Array = [
 	[Vector2(-40, 1080), 1.65], [Vector2(285, 1160), 1.85], [Vector2(700, 1090), 1.55]
 ]
 
