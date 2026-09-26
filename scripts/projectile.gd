@@ -1,9 +1,9 @@
 extends Area2D
 class_name SpennProjectile
 
-var velocity := Vector2.ZERO
-var active := false
-var radius := 13.0
+var velocity: Vector2 = Vector2.ZERO
+var active: bool = false
+var radius: float = 13.0
 
 func _ready() -> void:
 	collision_layer = 1
