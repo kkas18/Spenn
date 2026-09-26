@@ -1918,3 +1918,35 @@ Rettet:
   - *Kjempering* (dypblå): stor, tåler to treff og er tregere.
 - Hver variant introduseres første gang med navn og forklaring.
 - Bot (6 frø): ca. 45 sek per bølge (en vanlig spiller får lengre bølger), rundene ender rundt bølge 3–5, og median overlevelse er ca. 165 sek, som før.
+
+## v7.34 – Løft: fysikk, utseende, levende oppførsel og vanskelighet
+
+1. **Fysikk mellom fiender:**
+   - Riktige former: kapsel for Pendel, sirkel for resten.
+   - Sprett per materiale: gelé mot gelé er mykt og klissete, skall mot skall klirrer og
+     spretter.
+   - Friksjon ved skrå treff gir spinn.
+   - Posisjonskorrigering med toleranse, så fiendene ikke dirrer.
+   - Tau glir rundt andre kropper i stedet for gjennom dem.
+   - Kroppene holder seg innenfor skjermkantene.
+   - Kollisjonslyden følger materiale og kraft.
+2. **Utseende:**
+   - Kronen (mester og leder) sitter på kroppen, følger rotasjonen og er i proporsjon.
+   - Mesterens glorie er en tynn gullring med et lys som glir rundt, og et gyllent skjær
+     på kanten.
+   - Subtil pust på alle, og en klemt reaksjon ved kollisjoner.
+3. **Levende oppførsel:**
+   - Hver fiende har en tilstand som skifter underveis, med farge og oppførsel som
+     følger:
+     - *Rolig*
+     - *Vaktsom* (sett i siktet flere ganger: blekere, reagerer raskere)
+     - *Rasende* (venn drept eller selv truffet: varmere farge, synker raskere, stuper)
+     - *Veteran* (overlevd lenge: dypere farge, ett ekstra liv, smartere)
+   - Hver bølge trekker en egen stil per fiendetype, så samme type oppfører seg ulikt fra
+     bølge til bølge.
+4. **Vanskeligere bølger:**
+   - Kvoten er 30 + 10 per bølge (maks 120).
+   - Hver fiende som slipper gjennom, gir 4 ekstra i kvoten.
+   - Mesteren kommer med to eskorter.
+   - Tempo og aggressivitet øker med bølgenummeret, ikke bare med tiden.
+- Bot (6 frø): median overlevelse ca. 173 s, som før, men bølgene krever 30–50 drap. Rundene ender typisk ved bølge 3–4, der de før endte ved 4–5.

@@ -58,6 +58,10 @@ var hold_n := 0
 var cols := PackedFloat32Array()
 var wave_mood := WaveMood.NORMAL
 var finale_done := false
+var extra_quota := 0             # enemies that got through this wave (x4)
+# Each wave's style per kind: kind -> the variant or mood it leans to, so a
+# kind acts one way in one wave and another way in the next.
+var style := {}
 var pulse := Pulse.BUILD
 var pulse_t := 12.0
 var pulse_len := 12.0
@@ -78,6 +82,8 @@ func reset() -> void:
 	wave_killed = 0
 	wave_break = 0.0
 	finale_done = false
+	extra_quota = 0
+	style.clear()
 	side_bias = 0.0
 	hold_avg = 0.0
 	hold_dev = 0.0
@@ -214,7 +220,7 @@ func tactic() -> Tactic:
 
 ## Kills needed to win the wave.
 func wave_quota() -> int:
-	return mini(24 + 8 * (wave - 1), 90)
+	return mini(30 + 10 * (wave - 1), 120) + extra_quota
 
 
 func count_spawn(n := 1) -> void:
@@ -229,6 +235,17 @@ func update_wave(alive: int) -> void:
 		wave_state = Wave.CLEARING
 	elif wave_state == Wave.CLEARING and alive == 0 and wave_killed < wave_quota():
 		wave_state = Wave.SPAWNING
+
+
+## A new wave's style: a leaning per kind (variant or mood), chosen at random.
+func roll_style() -> void:
+	style.clear()
+	if wave < 2:
+		return
+	style[Target.Kind.DROP] = ["var", [Target.Var.STD, Target.Var.BOB, Target.Var.TWIN, Target.Var.BIG][_rng.randi() % 4]]
+	style[Target.Kind.RING] = ["var", [Target.Var.STD, Target.Var.HOPPER, Target.Var.BIG][_rng.randi() % 3]]
+	for k in [Target.Kind.HEAVY, Target.Kind.SPLIT, Target.Kind.REEL, Target.Kind.SHIELD, Target.Kind.MEDIC, Target.Kind.MIRROR, Target.Kind.PIPP, Target.Kind.PAKKIS, Target.Kind.SHADE, Target.Kind.ROD]:
+		style[k] = ["mood", [Target.Mood.NEUTRAL, Target.Mood.GRUMPY, Target.Mood.CUTE][_rng.randi() % 3]]
 
 
 func wants_finale() -> bool:
@@ -259,10 +276,13 @@ func next_wave() -> void:
 	wave_spawned = 0
 	wave_killed = 0
 	finale_done = false
+	extra_quota = 0
+	roll_style()
 
 
 func intensity() -> float:
-	return elapsed / 45.0
+	# Time drives it, and each wave reached adds its own weight.
+	return elapsed / 45.0 + (wave - 1) * 0.2
 
 
 ## Displayed phase (1, 2, 3…) and progress toward the next one.

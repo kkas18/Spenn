@@ -256,6 +256,24 @@ var champion := false
 var _bob_off := 0.0
 var _bob_ph := 0.0
 var _hopper_t := 2.5
+# Stance: how it feels right now, read from what happens to it, shown in its
+# colour and a small sign, and felt in how it acts.
+#   CALM     at ease
+#   WARY     aimed at again and again: paler, quicker to dodge, never bold
+#   FURIOUS  a friend fell or it was hit: warmer, sinks faster, lunges once
+#   VETERAN  has hung on a long time: deeper colour, one more life, smarter
+enum Stance { CALM, WARY, FURIOUS, VETERAN }
+const STANCE_TINT := [Color.WHITE, Color("DCE8F4"), Color("FF6F86"), Color("2B2F72")]
+const VETERAN_AT := 24.0
+var stance := Stance.CALM
+var stance_changed := false     # for the game to name (once per run)
+var stance_flash := 0.0
+var _stance_k := 0.0
+var _fury_t := 0.0
+var _aimed_n := 0
+var _was_aimed := false
+var _alive_t := 0.0
+var _veteran_paid := false
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -471,6 +489,15 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	anger = 0.0
 	variant = Var.STD
 	champion = false
+	stance = Stance.CALM
+	stance_changed = false
+	stance_flash = 0.0
+	_stance_k = 0.0
+	_fury_t = 0.0
+	_aimed_n = 0
+	_was_aimed = false
+	_alive_t = 0.0
+	_veteran_paid = false
 	_bob_off = 0.0
 	_bob_ph = randf() * TAU
 	_hopper_t = randf_range(1.5, 3.0)
@@ -759,6 +786,51 @@ func contact_radius() -> float:
 	return ROD_HALF + radius * 0.4 if kind == Kind.ROD else radius
 
 
+## Radius of the collision shape around `closest_point` (a rod's capsule
+## is its half-thickness; everything else a circle).
+func shape_radius() -> float:
+	return radius if kind != Kind.ROD else radius * 0.6
+
+
+## A body pressed in a collision: a quick squash along the blow.
+func bump(n: Vector2, speed: float) -> void:
+	if speed < 60.0:
+		return
+	if soft:
+		if squash_t > 0.1:
+			squash_t = 0.0
+			squash_dir = n
+	elif _ring_t > 0.1:
+		# A shell rings briefly where it was struck.
+		_ring_t = 0.0
+		_ring_dir = n
+
+
+## The screen's sides are walls: a swinging body bounces off them.
+func keep_in(w: float) -> void:
+	var r := shape_radius() + 2.0
+	if pos.x < r:
+		pos.x = r
+		vel.x = absf(vel.x) * 0.45
+	elif pos.x > w - r:
+		pos.x = w - r
+		vel.x = -absf(vel.x) * 0.45
+
+
+## Pushes this rope's free points out of body `o` (the rope bends round it).
+func rope_avoid(o: Target) -> void:
+	if not _attached or rope_alpha <= 0.0:
+		return
+	var r := o.shape_radius() + 1.5
+	for i in range(1, N - 1):
+		var p := _pts[i]
+		var q := o.closest_point(p)
+		var d := p - q
+		var l := d.length()
+		if l < r and l > 0.001:
+			_pts[i] = q + d / l * r
+
+
 ## Closest point of the body's collision shape to `p`.
 func closest_point(p: Vector2) -> Vector2:
 	if kind != Kind.ROD:
@@ -851,6 +923,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 	struck_t = 0.45
 	hp -= 1
 	if hp > 0:
+		enrage(3.0)
 		annoy(0.5)
 		if mood == Mood.CUTE:
 			cry()
@@ -963,7 +1036,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * dt
+					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -982,6 +1055,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_brain(dt)
 			_charm_step(dt)
 			_mood_step(dt)
+			_stance_step(dt)
 			_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
@@ -1201,13 +1275,15 @@ func _evade(dt: float) -> void:
 		react *= 1.6
 	if charm == Charm.SPRING:
 		react *= 0.45
+	if stance == Stance.WARY:
+		react *= 0.7
 	# They know your rhythm: the moment you usually let go, they go.
 	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03
 	if on_beat:
 		_rhythm_used = true
 	elif _aim_t < react:
 		return
-	if temper == Temper.BOLD and not on_beat and charm != Charm.SPRING and randf() < 0.35:
+	if temper == Temper.BOLD and not on_beat and charm != Charm.SPRING and stance != Stance.WARY and randf() < 0.35:
 		# Stands its ground: a defiant flinch, no move (a chance for you).
 		ang_vel -= dodge_dir * 1.5
 		_dodge_cd = lerpf(2.0, 1.0, a)
@@ -1430,6 +1506,72 @@ func make_champion() -> void:
 ## Key for the "new enemy" card: the kind, or its variant.
 func intro_id() -> int:
 	return kind if variant == Var.STD else 100 + kind * 10 + variant
+
+
+## A friend fell nearby, or it was hit: furious for a while.
+func enrage(secs: float) -> void:
+	if phase != Phase.HANGING or kind == Kind.BOSS:
+		return
+	_fury_t = maxf(_fury_t, secs * (1.5 if mood == Mood.GRUMPY else (0.6 if mood == Mood.CUTE else 1.0)))
+
+
+func _stance_step(dt: float) -> void:
+	_alive_t += dt
+	_fury_t = maxf(0.0, _fury_t - dt)
+	stance_flash = maxf(0.0, stance_flash - dt * 1.5)
+	if aimed and not _was_aimed:
+		_aimed_n += 1
+	_was_aimed = aimed
+	var want := Stance.CALM
+	if _fury_t > 0.0:
+		want = Stance.FURIOUS
+	elif _alive_t > VETERAN_AT:
+		want = Stance.VETERAN
+	elif _aimed_n >= 2:
+		want = Stance.WARY
+	if want != stance:
+		stance = want
+		stance_changed = want != Stance.CALM
+		stance_flash = 1.0 if want != Stance.CALM else 0.0
+		match want:
+			Stance.FURIOUS:
+				# Not every furious one throws itself down: the grumpy often do.
+				if kind != Kind.DROP and tele_t <= 0.0 and mood != Mood.CUTE and randf() < (0.6 if mood == Mood.GRUMPY else 0.3):
+					order_plunge(30.0, 0.35)
+				voice("taunt", -4.0)
+			Stance.VETERAN:
+				if not _veteran_paid:
+					_veteran_paid = true
+					hp += 1
+					aggression = minf(1.0, aggression + 0.2)
+					smug = 1.0
+			Stance.WARY:
+				startle_t = 0.3
+	_stance_k = move_toward(_stance_k, 1.0 if stance != Stance.CALM else 0.0, dt / 0.6)
+
+
+## A small sign over the body as the stance changes: ! (wary), a flame
+## (furious), a star (veteran).
+func _draw_stance(f: Node2D) -> void:
+	if stance_flash <= 0.0 or phase != Phase.HANGING:
+		return
+	var a := minf(1.0, stance_flash * 2.0)
+	var p := pos + Vector2(radius * 0.9, -radius * 0.95 - 8.0 * (1.0 - stance_flash))
+	var col: Color = STANCE_TINT[stance].lightened(0.25)
+	f.draw_circle(p, 8.0, Color(Pal.BG, 0.75 * a), true, -1.0, true)
+	f.draw_arc(p, 8.0, 0.0, TAU, 20, Color(col, a), 1.2, true)
+	match stance:
+		Stance.WARY:
+			f.draw_line(p + Vector2(0, -4.5), p + Vector2(0, 1.5), Color(col, a), 2.0, true)
+			Pal.disc(f, p + Vector2(0, 4.2), 1.2, Color(col, a))
+		Stance.FURIOUS:
+			f.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -5.5), p + Vector2(3.5, 1.5), p + Vector2(0, 5.0), p + Vector2(-3.5, 1.5)]), Color(col, a))
+		Stance.VETERAN:
+			var star := PackedVector2Array()
+			for i in 10:
+				var r := 5.0 if i % 2 == 0 else 2.2
+				star.append(p + Vector2.from_angle(-PI * 0.5 + i * TAU / 10.0) * r)
+			f.draw_colored_polygon(star, Color(col, a))
 
 
 ## Sets the mood rolled at spawn (and when a cute one gets upset).
@@ -2126,6 +2268,8 @@ func _base_color() -> Color:
 	var base := Pal.kind_color(kind)
 	if variant != Var.STD:
 		base = base.lerp(VARIANT_TINT[variant], 0.75)
+	if _stance_k > 0.0 and stance != Stance.CALM:
+		base = base.lerp(STANCE_TINT[stance], 0.4 * _stance_k)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
 		# Each individual a shade of its own: hue, saturation and value drift
 		# a little around the theme's colour, never far enough to blur kinds.
@@ -2653,28 +2797,16 @@ func _draw_face() -> void:
 		var wob := 1.0 + 0.03 * sin(_clock * 7.0)
 		f.draw_arc(pos, (radius + 8.0) * wob, 0.0, TAU, 40, Color(Pal.MEDIC_BADGE, 0.55), 2.0, true)
 		f.draw_arc(pos, (radius + 8.0) * wob, -2.4, -1.5, 10, Color(Pal.EYE, 0.6), 2.4, true)
-	if is_leader and phase == Phase.HANGING:
-		# The leader's crown: three gold points over its head.
-		var cp := pos + Vector2(0, -radius - 12.0)
-		var crown := PackedVector2Array()
-		for q: Vector2 in [Vector2(-9, 4), Vector2(-9, -3), Vector2(-4.5, 1), Vector2(0, -6), Vector2(4.5, 1), Vector2(9, -3), Vector2(9, 4)]:
-			crown.append(cp + q * 1.4)
-		var shc := crown.duplicate()
-		for i in shc.size():
-			shc[i] += Vector2(1.5, 1.5)
-		f.draw_colored_polygon(shc, Color(0, 0, 0, 0.35))
-		f.draw_colored_polygon(crown, Pal.GOLD)
 	if champion and phase == Phase.HANGING:
-		# The champion's ring of gold, turning slowly, with a small crown.
-		for i in 16:
-			var a0 := _clock * 0.9 + i * TAU / 16.0
-			f.draw_arc(pos, radius + 13.0, a0, a0 + 0.22, 4, Color(Pal.GOLD, 0.8), 2.0, true)
-		var cp := pos + Vector2(0, -radius - 20.0)
-		var crown := PackedVector2Array()
-		for q: Vector2 in [Vector2(-9, 4), Vector2(-9, -3), Vector2(-4.5, 1), Vector2(0, -6), Vector2(4.5, 1), Vector2(9, -3), Vector2(9, 4)]:
-			crown.append(cp + q * 1.6)
-		f.draw_colored_polygon(crown, Pal.GOLD)
+		# The champion's aura: a fine gold ring close to the body, a bright
+		# glint travelling round it, and a soft warm glow behind.
+		var hr := radius * depth_scale() + 7.0
+		f.draw_arc(pos, hr + 3.0, 0.0, TAU, 48, Color(Pal.GOLD_LIGHT, 0.12), 6.0, true)
+		f.draw_arc(pos, hr, 0.0, TAU, 48, Color(Pal.GOLD, 0.55), 1.4, true)
+		var g0 := _clock * 1.6
+		f.draw_arc(pos, hr, g0, g0 + 0.9, 12, Color(Pal.GOLD_LIGHT, 0.95), 2.2, true)
 	_draw_charm(f)
+	_draw_stance(f)
 	if kind == Kind.BOSS and phase == Phase.HANGING:
 		var hp_max: int = HP[kind]
 		for i in hp_max:
@@ -2685,10 +2817,39 @@ func _draw_face() -> void:
 	col.a *= 1.0 - 0.9 * hidden_amt
 	_details(col)
 	_eye()
+	if (champion or is_leader) and phase == Phase.HANGING:
+		_crown(col.a)
 	if nemesis > 0:
 		_scar(col.a)
 	if crying > 0.0 and phase == Phase.HANGING:
 		_tears(col.a)
+
+
+## A crown set on the top of the body, in its own space, so it turns and
+## squashes with it and is sized to the body (a champion's a little grander).
+func _crown(a: float) -> void:
+	var w := radius * (0.95 if champion else 0.75)
+	var h := w * 0.55
+	var base := -radius * (0.92 if kind != Kind.ROD else 0.9) + 1.0
+	if kind == Kind.ROD:
+		base = -radius
+	var pts := PackedVector2Array([
+		Vector2(-w * 0.5, base), Vector2(-w * 0.55, base - h * 0.75), Vector2(-w * 0.26, base - h * 0.38),
+		Vector2(0.0, base - h), Vector2(w * 0.26, base - h * 0.38), Vector2(w * 0.55, base - h * 0.75),
+		Vector2(w * 0.5, base)])
+	var sh := PackedVector2Array()
+	for p in pts:
+		sh.append(p + Vector2(1.2, 1.4))
+	_face.draw_colored_polygon(sh, Color(0, 0, 0, 0.35 * a))
+	_face.draw_colored_polygon(pts, Color(Pal.GOLD, a))
+	# A band along the base and a highlight on the left points (lamp side).
+	_face.draw_line(Vector2(-w * 0.5, base - 1.2), Vector2(w * 0.5, base - 1.2), Color(Pal.GOLD_DARK, a), 2.4, true)
+	_face.draw_line(pts[1], pts[2], Color(Pal.GOLD_LIGHT, 0.8 * a), 1.2, true)
+	_face.draw_line(pts[2], pts[3], Color(Pal.GOLD_LIGHT, 0.6 * a), 1.2, true)
+	for k in [1, 3, 5]:
+		Pal.disc(_face, pts[k] + Vector2(0, 1.5), 1.6, Color(Pal.GOLD_LIGHT, a))
+	if champion:
+		Pal.disc(_face, Vector2(0, base - h * 0.35), 2.2, Color(Pal.CORAL.lerp(Pal.SHADE, 0.5), a))
 
 
 ## Cute and crying: tears roll from both sides of the eye, over the face.

@@ -1193,6 +1193,7 @@ func _breeze(x: float) -> float:
 ## so a struck target can nudge its neighbours.
 func _target_contacts() -> void:
 	var n := targets.size()
+	var sc := layout.scale
 	for i in n:
 		var a := targets[i]
 		if not a.is_hittable():
@@ -1201,38 +1202,73 @@ func _target_contacts() -> void:
 			var c := targets[j]
 			if not c.is_hittable():
 				continue
-			var d := c.pos - a.pos
-			var rr := a.contact_radius() + c.contact_radius()
+			# Shapes: circles, and a capsule for the Pendel (closest points on
+			# its segment), so a rod is struck along its whole length.
+			var pa := a.closest_point(c.pos)
+			var pc := c.closest_point(pa)
+			pa = a.closest_point(pc)
+			var d := pc - pa
+			var rr := a.shape_radius() + c.shape_radius()
 			var dist := d.length()
 			if dist >= rr or dist < 0.001:
 				continue
 			var nrm := d / dist
 			var ia := 1.0 / a.mass()
 			var ic := 1.0 / c.mass()
-			var corr := nrm * (rr - dist) / (ia + ic)
+			# Push apart past a small slop, most of the way: stacked bodies
+			# settle instead of jittering.
+			var pen := maxf(0.0, rr - dist - 0.5) * 0.8
+			var corr := nrm * pen / (ia + ic)
 			a.pos -= corr * ia
 			c.pos += corr * ic
-			var closing := (a.vel - c.vel).dot(nrm)
+			var contact := pa + nrm * a.shape_radius()
+			var rel := a.vel - c.vel
+			var closing := rel.dot(nrm)
 			if closing <= 0.0:
 				continue
-			var j_imp := minf(closing * 1.35 / (ia + ic), 420.0)
-			var contact := a.pos + nrm * a.contact_radius()
-			a.push(-nrm * j_imp, contact)
-			c.push(nrm * j_imp, contact)
+			# Restitution by material: jelly on jelly barely bounces (it
+			# squashes), shell on shell clacks apart, mixed in between.
+			var e := 0.15 if (a.soft and c.soft) else (0.55 if not a.soft and not c.soft else 0.32)
+			var j_imp := minf(closing * (1.0 + e) / (ia + ic), 520.0)
+			# Friction along the contact: a glancing blow sets them spinning.
+			var tan := rel - nrm * closing
+			var f_imp := Vector2.ZERO
+			if tan.length() > 1.0:
+				f_imp = -tan.normalized() * minf(tan.length() / (ia + ic), j_imp * 0.35)
+			a.push(-nrm * j_imp + f_imp, contact)
+			c.push(nrm * j_imp - f_imp, contact)
 			a.dent(contact, closing * 0.8)
 			c.dent(contact, closing * 0.8)
+			a.bump(-nrm, closing)
+			c.bump(nrm, closing)
 			# Billiards: a target sent flying by a hit takes a neighbour with it.
-			if closing > KNOCK_SPEED * layout.scale and (a.struck_t > 0.0 or c.struck_t > 0.0) and (state == State.PLAYING or state == State.STARTING):
+			if closing > KNOCK_SPEED * sc and (a.struck_t > 0.0 or c.struck_t > 0.0) and (state == State.PLAYING or state == State.STARTING):
 				var striker := a if a.struck_t >= c.struck_t else c
 				var victim := c if striker == a else a
 				striker.struck_t = 0.0
 				var dir := nrm if striker == a else -nrm
 				_chain_hit(victim, dir * j_imp * 0.5, contact, closing, striker.chain_depth + 1)
 				continue
-			if closing > 140.0 and _knock_sfx_cd <= 0.0:
-				_knock_sfx_cd = 0.08
-				Sfx.play("knock", randf_range(0.9, 1.1), linear_to_db(clampf(closing / 600.0, 0.15, 0.7)))
+			if closing > 110.0 and _knock_sfx_cd <= 0.0:
+				_knock_sfx_cd = 0.07
+				var loud := linear_to_db(clampf(closing / 600.0, 0.15, 0.75))
+				if a.soft and c.soft:
+					Sfx.play("squish", randf_range(1.05, 1.25), loud - 4.0)
+				elif not a.soft and not c.soft:
+					Sfx.play("clank", randf_range(1.1, 1.3), loud - 3.0)
+				else:
+					Sfx.play("knock", randf_range(0.9, 1.1), loud)
 				Sfx.haptic(6, 0.2)
+	# Ropes slide around the bodies they meet instead of passing through,
+	# and bodies keep inside the walls.
+	for t in targets:
+		if t.phase == Target.Phase.OFF:
+			continue
+		if t.is_hittable():
+			t.keep_in(layout.size.x)
+			for o in targets:
+				if o != t and o.is_solid() and absf(o.pos.x - t.pos.x) < o.radius + 160.0 * sc:
+					t.rope_avoid(o)
 
 
 ## A killed shell or a cut target falls; whatever still hangs in its way is
@@ -1858,6 +1894,8 @@ func _kill_bonus(t: Target, gained: int) -> int:
 					# A fallen friend: grumpy ones seethe, cute ones cry (and
 					# now and then turn sour).
 					n.annoy(0.35)
+					if d < 160.0 * layout.scale:
+						n.enrage(4.0)
 					if n.mood == Target.Mood.CUTE:
 						n.cry()
 						if _rng.randf() < 0.25:
@@ -1911,6 +1949,8 @@ func _breach(t: Target) -> void:
 	var at := Vector2(t.pos.x, layout.danger_y)
 	if t.is_leader:
 		_break_formation(t, false)
+	# A breach costs the wave: four more to take down before it is won.
+	director.extra_quota += 4
 	# It will be back, and it will remember.
 	if t.kind != Target.Kind.BOSS and not t.golden:
 		_nemesis_kind = t.kind
@@ -2618,6 +2658,11 @@ func _vine_escape(t: Target) -> void:
 func _roll_mood(t: Target) -> void:
 	if director.wave < MOOD_WAVE or t.kind == Target.Kind.BOSS or t.golden:
 		return
+	var st: Array = director.style.get(t.kind, [])
+	if not st.is_empty() and st[0] == "mood" and _rng.randf() < 0.6:
+		if st[1] != Target.Mood.NEUTRAL:
+			t.set_mood(st[1])
+		return
 	var odds := director.mood_odds()
 	var r := _rng.randf()
 	if r < odds.x:
@@ -2636,6 +2681,9 @@ func _mood_tick(delta: float) -> void:
 			backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.INK, 1.0)
 			Sfx.play("rise", 1.5, -12.0)
 	for t in targets:
+		if t.stance_changed:
+			t.stance_changed = false
+			_name_trick("stance.%d" % t.stance, t.pos, Target.STANCE_TINT[t.stance].lightened(0.3))
 		if t.raged:
 			t.raged = false
 			fx.puff(t.pos + Vector2(0, -t.radius), Pal.INK, 3, 14.0, 0.2)
@@ -2677,6 +2725,12 @@ func _answer_cry(t: Target) -> void:
 func _roll_variant(t: Target) -> void:
 	var w := director.wave
 	var r := _rng.randf()
+	# This wave's style for the kind leads most of the time.
+	var st: Array = director.style.get(t.kind, [])
+	if not st.is_empty() and st[0] == "var" and r < 0.65:
+		if st[1] != Target.Var.STD:
+			t.set_variant(st[1])
+		return
 	match t.kind:
 		Target.Kind.DROP:
 			if w >= 2 and r < 0.3:
@@ -2729,6 +2783,12 @@ func _spawn_finale() -> void:
 	t.make_champion()
 	if t.charm == Target.Charm.NONE and t.kind != Target.Kind.PAKKIS:
 		t.set_charm(1 + _rng.randi() % 5)
+	# It never comes alone: two grumpy escorts drop in beside it.
+	for i in 2:
+		var e := _spawn_one(director.pick_kind(_rng), 0.1)
+		if e:
+			e.set_mood(Target.Mood.GRUMPY)
+			e.aggression = minf(1.0, e.aggression + 0.15)
 	hud.card(Loc.t("finale.title"), Loc.t("finale.sub"), 1.6)
 	Sfx.play("boss", 1.3, -4.0)
 	Sfx.voice("taunt", 0.7, 0, -2.0)
