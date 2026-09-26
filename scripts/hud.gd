@@ -10,12 +10,18 @@ var wave_label:Label
 var mult_label:Label
 var toast:Label
 var toast_time:float=0.0
+var combo_bar:ColorRect
 func _ready()->void:
- score_label=_label(Vector2(28,26),32)
- wave_label=_label(Vector2(28,72),18)
- mult_label=_label(Vector2(540,35),22)
- toast=_label(Vector2(240,150),26)
+ score_label=_label(Vector2(28,24),34)
+ wave_label=_label(Vector2(30,70),17)
+ mult_label=_label(Vector2(535,34),22)
+ toast=_label(Vector2(220,150),27)
  toast.modulate.a=0.0
+ combo_bar=ColorRect.new()
+ combo_bar.position=Vector2(535,68)
+ combo_bar.size=Vector2(92,4)
+ combo_bar.color=Color("#FFE39A")
+ add_child(combo_bar)
  var pause:Button=Button.new()
  pause.text="Ⅱ"
  pause.position=Vector2(635,82)
@@ -26,7 +32,7 @@ func _ready()->void:
 func _process(delta:float)->void:
  if toast_time>0.0:
   toast_time-=delta
-  toast.modulate.a=clampf(toast_time*2.0,0.0,1.0)
+  toast.modulate.a=clampf(toast_time*2.2,0.0,1.0)
 func _label(pos:Vector2,size:int)->Label:
  var l:Label=Label.new()
  l.position=pos
@@ -39,13 +45,18 @@ func _label(pos:Vector2,size:int)->Label:
  return l
 func register_hit(v:int)->void:
  multiplier=mini(multiplier+1,5)
- score+=v*multiplier
- _toast("+%d   ×%d"%[v*multiplier,multiplier])
+ var gain:int=v*multiplier
+ score+=gain
+ _toast("+%d   ×%d"%[gain,multiplier])
  refresh()
 func register_miss()->void:
  multiplier=1
  lives=maxi(0,lives-1)
  _toast("BOM   ♥%d"%lives)
+ refresh()
+func add_wave_bonus(v:int)->void:
+ score+=v
+ _toast("KLART!  +%d"%v)
  refresh()
 func set_wave(v:int)->void:
  wave=v
@@ -53,9 +64,11 @@ func set_wave(v:int)->void:
  refresh()
 func _toast(t:String)->void:
  toast.text=t
- toast_time=1.1
+ toast_time=1.15
  toast.modulate.a=1.0
 func refresh()->void:
- score_label.text=str(score)
- wave_label.text="BØLGE %d"%wave
+ score_label.text=str(score).pad_zeros(6)
+ wave_label.text="BØLGE %02d"%wave
  mult_label.text="×%d   ♥%d"%[multiplier,lives]
+ combo_bar.size.x=18.0+float(multiplier-1)*18.5
+ combo_bar.modulate.a=0.35+float(multiplier)*0.13
