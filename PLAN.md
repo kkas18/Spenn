@@ -1998,3 +1998,34 @@ Rettet:
   - Glasspaneler og pilleknapper.
   - Gluten brukes i titler og tall, Nunito i blandet skrift i tekst.
   - Statistikk, kuler og game over bruker samme stil.
+
+## v7.37 – Instrumentet: spenningsstreng, mekanisk teller og ny sprettert
+
+- **Bølgefremdrift som spenningsstreng:**
+  - En streng går over hele toppen mellom to messingskruer. Ved bølgestart henger den slakt, og den
+    strammes for hver kill.
+  - Hvert treff får den til å dirre, og den fylles med gull.
+  - Ved 80 % står et messingbånd med krone, der finalen kommer.
+  - Når bølgen er fullført, synger strengen: den klinger og et lys løper langs den.
+  - Ved ny bølge slippes den slakk igjen.
+  - Stemmeskruen til høyre dreier seg når strengen strammes.
+  - Ved siden av skruen står «N igjen» (eller «Finale!»).
+- **Mekanisk poengteller:**
+  - Valser i et nedfelt vindu bak en messingramme. Hver valse ruller fremover til sifferet
+    sitt, med skygge som på en sylinder og glass over.
+  - Nuller foran tallet er dempet.
+  - Rammen blinker ved store gevinster.
+- **Multiplikatorskive:** «×N» i en messingskive med tre lamper på kanten som tennes etter hvert
+  som rekka bygger seg opp.
+- **Bølgemedaljong:** en riflet messingmynt med bølgenummeret. Den snur seg til det nye tallet
+  ved hver bølge.
+- **Åpningskoreografi:**
+  - Skruene spretter inn og strengen trekkes ut og smeller stramt.
+  - Telleren faller ned med overslag, og valsene ruller til null.
+  - Medaljongen snurrer inn, skiven dukker opp, og knutene knyttes én etter én.
+- **Ny sprettert:**
+  - Ramme i gunmetal med messingbeslag der strikkene festes, og en messingkrage i
+    forgreiningen.
+  - Lærviklet håndtak med søm og messingknott.
+  - Strikker i rav-latex med lys kant, og en lærlomme med søm.
+  - Magasinet er et glassrør med messinglokk.

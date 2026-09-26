@@ -197,15 +197,11 @@ func hide_menu_ui() -> void:
 		_m_daily.visible = false)
 
 
-## In-game bar comes in piece by piece: score, then the rest (+80 ms),
-## each fading and settling 6 px.
+## The in-game bar opens with its own choreography (TopBar.begin_intro).
 func reveal_hud() -> void:
 	bar.visible = true
 	bar.modulate.a = 1.0
-	bar.a_score = 0.0
-	bar.a_right = 0.0
-	Motion.to(bar, "a_score", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.0)
-	Motion.to(bar, "a_right", 1.0, Motion.NORMAL, Motion.Ease.ENTER, Motion.STAGGER)
+	bar.begin_intro()
 
 
 func fade_hud(to: float, d: float, delay := 0.0) -> void:
@@ -1134,16 +1130,30 @@ class SetRow extends UIButton:
 
 # ---------------------------------------------------------------- top bar
 
-## The in-game bar, three zones on one line of sight:
-##  left   – the wave, its progress as a rope that fills with gold toward a
-##           crown (where the finale comes), how many are left, and the
-##           perk tray under it;
-##  centre – the score on rolling digits, the multiplier chip with the
-##           streak's ring round it, and the last gain;
-##  right  – the lives, as knots on a rope.
-## There is no pause button: a double-tap on the field (or Back) pauses.
+## The in-game bar as one crafted instrument, in the slingshot's brass and
+## gunmetal:
+##  - a brass medallion (left) carries the wave number and spins over to
+##    the next one;
+##  - the score runs on a mechanical counter: drums rolling in a recessed
+##    window behind a brass bezel, with the multiplier dial beside it (three
+##    lamps for the streak);
+##  - the lives are knots in a rope (right);
+##  - the wave's progress is a tension string across the whole bar,
+##    between two brass pegs: slack at the start, it pulls tighter with
+##    every kill (and quivers), fills with gold toward the fret with the
+##    crown (the finale), and sings when it is taut.
+## A run opens with the pieces arriving in turn (`begin_intro`). There is
+## no pause button: a double-tap on the field (or Back) pauses.
 class TopBar extends Control:
-	const ROLL := 0.14             # s for one digit to roll over
+	const DRUMS_MIN := 5
+	const CELL := 34.0             # one drum's width
+	const PLATE_H := 62.0
+	const ROPE := Color("C4BBA8")
+	const ROPE_DARK := Color("8C8474")
+	const ROPE_LIGHT := Color("E8E0CF")
+	const BRASS_DEEP := Color("5E4620")
+	const WINDOW := Color("0A0C10")
+	const DRUM := Color("16191F")
 	var hud: Hud
 	var score := 0
 	var shown_score := 0.0
@@ -1153,28 +1163,57 @@ class TopBar extends Control:
 	var phase := 1
 	var progress := 0.0
 	var remaining := 0             # kills still needed this wave
-	var finale_at := 0.8           # where on the rope the crown sits
+	var finale_at := 0.8           # where on the string the fret sits
 	var shown_progress := 0.0
 	var pulse := 0.0
 	var badge_pop := 0.0
 	var knot_shake := 0.0
 	var show_fps := false
-	var hot := false               # overload: the multiplier chip blazes
-	var glint := 0.0               # a big gain: the counter flashes gold
+	var hot := false               # overload: the dial blazes
+	var glint := 0.0               # a big gain: the bezel flashes
+	var intro_t := 99.0            # time into the run's opening
 	var _clock := 0.0
-	var a_score := 1.0             # staggered reveal alphas
-	var a_right := 1.0
 	var _taps: Array[int] = []
 	var _last_score := 0
 	var _gain := 0
 	var _gain_t := 9.0
-	var _ring := 0.0
-	var _digits: Array = []        # per place, units first: [digit, previous, t]
+	var _drum: Array[float] = []   # each place's drum, units first (0..10)
+	var _plate_w := 0.0
 	var _shown_lives := 3
 	var _knot_t := [9.0, 9.0, 9.0] # time since each knot was tied or untied
+	var _pluck := 0.0              # the string's vibration
+	var _pluck_t := 9.0
+	var _slack := 0.0              # extra sag while a new wave lets it go
+	var _last_progress := 0.0
+	var _shimmer := -1.0           # the taut string sings: light runs along it
+	var _twanged := true
+	var _flip := 1.0               # medallion turning over, 0..1
+	var _shown_phase := 1
+	var _wind := 0.0               # the right peg turns as the string tightens
+	var _lamps := [0.0, 0.0, 0.0]
+	var _bezel: StyleBoxFlat
+	var _window: StyleBoxFlat
+	var _drums: Control            # the window the drums turn in (clipped)
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
+		_drums = Control.new()
+		_drums.clip_contents = true
+		_drums.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_drums.draw.connect(_draw_drums)
+		add_child(_drums)
+		_bezel = StyleBoxFlat.new()
+		_bezel.set_corner_radius_all(18)
+		_bezel.shadow_color = Color(0, 0, 0, 0.45)
+		_bezel.shadow_size = 10
+		_bezel.shadow_offset = Vector2(0, 4)
+		_bezel.anti_aliasing = true
+		_window = StyleBoxFlat.new()
+		_window.bg_color = WINDOW
+		_window.set_corner_radius_all(12)
+		_window.border_color = Color(0, 0, 0, 0.8)
+		_window.set_border_width_all(1)
+		_window.anti_aliasing = true
 
 	func set_mult(m: int) -> void:
 		if m != mult:
@@ -1185,11 +1224,34 @@ class TopBar extends Control:
 		lives = n
 		knot_shake = 1.0
 
+	## The run opens: pegs, string, counter, medallion, dial and knots arrive
+	## one after another over about a second.
+	func begin_intro() -> void:
+		intro_t = 0.0
+		_twanged = false
+		_drum.clear()
+		for i in DRUMS_MIN:
+			# Each drum starts a few digits short and rolls forward onto 0.
+			_drum.append(fposmod(-2.2 - i * 1.6, 10.0))
+		_shown_lives = lives
+		for i in 3:
+			_knot_t[i] = -(0.62 + 0.13 * i)
+		_shown_phase = phase
+		_flip = 0.0
+		_last_progress = progress
+		shown_progress = progress
+		_pluck = 0.0
+		_slack = 0.0
+		_shimmer = -1.0
+		_gain = 0
+		_gain_t = 9.0
+		_last_score = score
+
 	func knots_rect() -> Rect2:
 		var l := hud.l
 		var h := l.top_bar_h - l.safe_top
-		var x0 := l.size.x - l.margin - 190.0
-		return Rect2(x0, l.safe_top, l.size.x - x0, h * 0.75)
+		var x0 := l.size.x - l.margin - 160.0
+		return Rect2(x0, l.safe_top, l.size.x - x0, h * 0.6)
 
 	func _gui_input(e: InputEvent) -> void:
 		var press: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed)
@@ -1208,14 +1270,24 @@ class TopBar extends Control:
 	func _has_point(p: Vector2) -> bool:
 		return hud != null and hud.l != null and visible and knots_rect().has_point(p)
 
+	## 0..1 over [t0, t0 + d] of the opening.
+	func _k(t0: float, d: float) -> float:
+		return clampf((intro_t - t0) / d, 0.0, 1.0)
+
 	func _process(delta: float) -> void:
 		var rd := delta / maxf(Engine.time_scale, 0.001)
-		# A new run: the counter and the gain start clean.
+		intro_t += rd
+		_clock += rd
+		if not _twanged and intro_t >= 0.55:
+			_twanged = true
+			_pluck = 5.0
+			_pluck_t = 0.0
+			Sfx.play("twang", 1.3, -9.0)
+		# Score: the last gain, and each drum rolling forward to its digit.
 		if score < _last_score:
 			shown_score = float(score)
 			_gain = 0
 			_gain_t = 9.0
-			_digits.clear()
 		elif score > _last_score:
 			_gain = (_gain if _gain_t < 0.7 else 0) + score - _last_score
 			_gain_t = 0.0
@@ -1224,25 +1296,69 @@ class TopBar extends Control:
 		var diff := float(score) - shown_score
 		if absf(diff) > 0.01:
 			shown_score += signf(diff) * maxf(absf(diff) * Pal.damp(0.18, rd), minf(absf(diff), 60.0 * rd))
-		for d: Array in _digits:
-			d[2] = minf(1.0, d[2] + rd / ROLL)
+		var places := maxi(DRUMS_MIN, str(maxi(score, 0)).length())
+		while _drum.size() < places:
+			_drum.append(0.0)
+		if intro_t > 0.3:
+			var rest := maxi(score, 0)
+			for i in _drum.size():
+				var target := float(rest % 10)
+				rest /= 10
+				var dist := fposmod(target - _drum[i], 10.0)
+				if dist < 0.002 or dist > 9.998:
+					_drum[i] = target
+				else:
+					var step := maxf(dist * Pal.damp(0.075 + 0.03 * i, rd), minf(dist, 2.0 * rd))
+					_drum[i] = fposmod(_drum[i] + step, 10.0)
+		var pw := _drum.size() * CELL + ((_drum.size() - 1) / 3) * 8.0 + 24.0
+		_plate_w = pw if _plate_w <= 0.0 else lerpf(_plate_w, pw, Pal.damp(0.12, rd))
 		# Knots tied (won back) or untied (lost) since last frame.
 		if lives != _shown_lives:
-			var lo := mini(lives, _shown_lives)
-			for i in range(lo, maxi(lives, _shown_lives)):
+			for i in range(mini(lives, _shown_lives), maxi(lives, _shown_lives)):
 				if i < 3:
 					_knot_t[i] = 0.0
 			_shown_lives = lives
 		for i in 3:
 			_knot_t[i] += rd
-		var want := 1.0 if streak >= 9 else (streak % 3) / 3.0
-		_ring = lerpf(_ring, want, Pal.damp(0.12, rd)) if want >= _ring else move_toward(_ring, want, rd * 3.0)
+		# The string: a kill plucks it, the last one makes it sing, a new
+		# wave lets it go slack again.
+		if progress > _last_progress + 0.0001:
+			if progress >= 1.0 and _last_progress < 1.0:
+				_pluck = 4.5
+				_shimmer = 0.0
+				Sfx.play("twang", 1.6, -8.0)
+			else:
+				_pluck = minf(3.0, _pluck * exp(-_pluck_t * 4.5) + 1.4)
+			_pluck_t = 0.0
+		elif progress < _last_progress - 0.2:
+			_slack = 1.0
+			_pluck = 3.0
+			_pluck_t = 0.0
+		_last_progress = progress
+		_pluck_t += rd
+		_slack = move_toward(_slack, 0.0, rd / 0.9)
+		if _shimmer >= 0.0:
+			_shimmer += rd
+			if _shimmer > 1.1:
+				_shimmer = -1.0
+		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, rd))
+		_wind = lerpf(_wind, shown_progress * TAU * 1.5, Pal.damp(0.1, rd))
+		# The medallion turns over to a new wave's number.
+		if phase != _shown_phase and _flip >= 1.0:
+			_flip = 0.0
+		if _flip < 1.0:
+			_flip = minf(1.0, _flip + rd / 0.65)
+			if _flip >= 1.0:
+				_shown_phase = phase
+		# Streak lamps: 0–3 lit; all three flash out when the step is taken.
+		var lit := 3 if streak >= 9 else streak % 3
+		for i in 3:
+			var want := 1.0 if i < lit else 0.0
+			_lamps[i] = move_toward(_lamps[i], want, rd / (0.08 if want > _lamps[i] else 0.35))
 		pulse = maxf(0.0, pulse - rd / 0.18)
 		badge_pop = maxf(0.0, badge_pop - rd / 0.3)
 		knot_shake = maxf(0.0, knot_shake - rd / 0.6)
 		glint = maxf(0.0, glint - rd / 0.5)
-		_clock += rd
-		shown_progress = lerpf(shown_progress, progress, Pal.damp(0.15, rd))
 		queue_redraw()
 
 	func _draw() -> void:
@@ -1251,175 +1367,280 @@ class TopBar extends Control:
 		var l := hud.l
 		var top := l.safe_top
 		var h := l.top_bar_h - top
-		var ry := (1.0 - a_right) * 6.0
-		_draw_score(l, l.score_baseline)
-		_draw_wave(l, l.margin + 4.0, top, h, ry)
-		_draw_knots(l, top, h, ry)
+		_draw_string_gauge(l, top, h)
+		_draw_medallion(l, top)
+		_draw_counter(l, top)
+		_draw_knots(l, top, h)
 		if show_fps:
 			var sg := hud._game_sensor()
 			var gy := Input.get_gyroscope()
 			var fps := "%d FPS  ·  G %.1f %.1f %.1f  ·  GYRO %.2f %.2f %.2f" % [Engine.get_frames_per_second(), sg.x, sg.y, sg.z, gy.x, gy.y, gy.z]
-			draw_string(hud.caps_font(), Vector2(0, l.top_bar_h - 4.0), fps, HORIZONTAL_ALIGNMENT_RIGHT, l.size.x - l.margin, 11, Tok.TEXT_FAINT)
+			draw_string(hud.caps_font(), Vector2(0, top + 12.0), fps, HORIZONTAL_ALIGNMENT_RIGHT, l.size.x - l.margin, 11, Tok.TEXT_FAINT)
 
-	## Score on an odometer: each place rolls up to its new digit on its own,
-	## and its width eases between the two glyphs so the number never jumps
-	## sideways.
-	func _draw_score(l: Layout, base: float) -> void:
-		var num := hud.num_font()
-		var fs := 54
-		var asc := a_score
-		var txt := str(int(round(shown_score)))
-		var n := txt.length()
-		while _digits.size() < n:
-			_digits.append([-1, -1, 1.0])
-		for i in n:
-			var dg := int(txt[n - 1 - i])
-			var d: Array = _digits[i]
-			if d[0] != dg:
-				d[1] = d[0]
-				d[0] = dg
-				d[2] = 0.0 if d[1] >= 0 else 1.0
-		for i in range(n, _digits.size()):
-			_digits[i] = [-1, -1, 1.0]
-		var gap := num.get_string_size("0", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * 0.28
-		var widths: Array[float] = []
-		var total := ((n - 1) / 3) * gap
-		for k in n:
-			var d: Array = _digits[n - 1 - k]
-			var cw := num.get_string_size(str(d[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-			if d[1] >= 0 and d[2] < 1.0:
-				var pw := num.get_string_size(str(d[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-				cw = lerpf(pw, cw, Motion.ease_value(Motion.Ease.STANDARD, d[2]))
-			widths.append(cw)
-			total += cw
-		var s := 1.0 + 0.08 * sin(pulse * PI)
+	# ------------------------------------------------ the tension string
+
+	func _string_at(a: Vector2, b: Vector2, sag: float, amp: float, t: float) -> Vector2:
+		var vib := amp * (sin(PI * t) * sin(_pluck_t * 46.0) + 0.3 * sin(TAU * t) * sin(_pluck_t * 92.0 + 1.0))
+		return a.lerp(b, t) + Vector2(0, sag * sin(PI * t) + vib)
+
+	func _draw_string_gauge(l: Layout, top: float, h: float) -> void:
 		var w := l.size.x
-		draw_set_transform(Vector2(w * 0.5, base + (1.0 - asc) * 6.0), 0.0, Vector2(s, s))
-		var face := Tok.TEXT_PRIMARY.lerp(Tok.PRIMARY_HI, glint)
-		var x := -total * 0.5
-		for k in n:
-			var i := n - 1 - k
-			var d: Array = _digits[i]
-			var e := Motion.ease_value(Motion.Ease.STANDARD, d[2])
-			var roll := fs * 0.5
-			for part in [[d[0], (1.0 - e) * roll, e], [d[1], -e * roll, 1.0 - e]]:
-				if part[0] < 0 or part[2] <= 0.01:
-					continue
-				var ch := str(part[0])
-				var cw := num.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-				var p := Vector2(x + (widths[k] - cw) * 0.5, part[1])
-				draw_string(num, p + Vector2(2, 3), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.SHADOW, Tok.SHADOW.a * asc * part[2]))
-				draw_string(num, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(face, asc * part[2]))
-			x += widths[k]
-			if i > 0 and i % 3 == 0:
-				x += gap
+		var ys := top + h * 0.86
+		var a := Vector2(24.0, ys)
+		var b := Vector2(w - 24.0, ys)
+		var pr := clampf(shown_progress, 0.0, 1.0)
+		var taut := 1.0 - pow(1.0 - pr, 2.0)
+		var sag := lerpf(10.0, 0.5, taut) + 12.0 * _slack + 16.0 * (1.0 - _k(0.5, 0.08))
+		var amp := _pluck * exp(-_pluck_t * 4.5)
+		var drawn := Motion.ease_value(Motion.Ease.STANDARD, _k(0.15, 0.4))
+		var peg := Motion.ease_value(Motion.Ease.EMPHASIZED, _k(0.0, 0.3))
+		const N := 48
+		if drawn > 0.0:
+			var line := PackedVector2Array()
+			var sh := PackedVector2Array()
+			for k in N + 1:
+				var p := _string_at(a, b, sag, amp, drawn * k / float(N))
+				line.append(p)
+				sh.append(p + Vector2(1.0, 2.5))
+			draw_polyline(sh, Color(0, 0, 0, 0.35), 2.4, true)
+			draw_polyline(line, Color("7F8590"), 2.0, true)
+			if pr > 0.003 and drawn >= 1.0:
+				var fill := PackedVector2Array()
+				var m := maxi(2, int(ceil(N * pr)))
+				for k in m + 1:
+					fill.append(_string_at(a, b, sag, amp, pr * k / float(m)))
+				draw_polyline(fill, Tok.PRIMARY_LO, 3.6, true)
+				draw_polyline(fill, Tok.PRIMARY, 2.4, true)
+				for k in fill.size():
+					fill[k] += Vector2(0, -0.8)
+				draw_polyline(fill, Color(Tok.PRIMARY_HI, 0.8), 0.9, true)
+				var tip := _string_at(a, b, sag, amp, pr)
+				draw_circle(tip, 9.0, Color(Tok.PRIMARY, 0.14), true, -1.0, true)
+				draw_circle(tip, 3.6, Tok.PRIMARY_HI, true, -1.0, true)
+			# Taut and singing: a light runs along the whole string.
+			if _shimmer >= 0.0:
+				var st := Motion.ease_value(Motion.Ease.STANDARD, clampf(_shimmer / 0.9, 0.0, 1.0))
+				var sp := _string_at(a, b, sag, amp, st)
+				var sa := sin(PI * clampf(_shimmer / 1.1, 0.0, 1.0))
+				draw_circle(sp, 16.0, Color(Tok.PRIMARY_HI, 0.12 * sa), true, -1.0, true)
+				draw_circle(sp, 6.0, Color(1, 1, 1, 0.5 * sa), true, -1.0, true)
+			# The fret where the finale comes, with its crown.
+			if drawn >= 1.0:
+				var reached := pr >= finale_at - 0.001
+				var fp := _string_at(a, b, sag, amp, finale_at)
+				var col := Tok.PRIMARY_HI if reached else Tok.PRIMARY_LO
+				draw_line(fp + Vector2(1, -6), fp + Vector2(1, 8), Color(0, 0, 0, 0.4), 3.0, true)
+				draw_line(fp + Vector2(0, -7), fp + Vector2(0, 7), col, 3.0, true)
+				var cp := fp + Vector2(0, -19.0)
+				if reached:
+					draw_circle(cp + Vector2(0, 1), 12.0, Color(Tok.PRIMARY, 0.1 + 0.08 * sin(_clock * 4.0)), true, -1.0, true)
+				draw_colored_polygon(PackedVector2Array([
+					cp + Vector2(-8, 5), cp + Vector2(-9, -4), cp + Vector2(-4, 0), cp + Vector2(0, -7),
+					cp + Vector2(4, 0), cp + Vector2(9, -4), cp + Vector2(8, 5)]), col)
+		# The pegs: a brass knob at the left end, a toothed tuning peg at the
+		# right that turns as the string is wound.
+		if peg > 0.0:
+			_peg(a, 9.0 * peg, 0.0, false)
+			_peg(b, 10.0 * peg, _wind, true)
+		# How many are left, engraved beside the tuning peg.
+		var la := _k(0.7, 0.3)
+		if la > 0.0:
+			var body := hud.body_font()
+			var txt := ""
+			var col := Tok.TEXT_SECONDARY
+			if progress >= 1.0:
+				txt = ""
+			elif pr >= finale_at - 0.001:
+				txt = Loc.t("hud.finale")
+				col = Tok.PRIMARY_HI
+			elif remaining > 0:
+				txt = Loc.t("hud.left") % remaining
+			if txt != "":
+				draw_string(body, Vector2(0, ys - 12.0), txt, HORIZONTAL_ALIGNMENT_RIGHT, w - 44.0, 16, Color(col, la))
+
+	func _peg(c: Vector2, r: float, ang: float, teeth: bool) -> void:
+		if r <= 0.5:
+			return
+		draw_circle(c + Vector2(1.5, 2.5), r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		if teeth:
+			for k in 8:
+				var d := Vector2.from_angle(ang + TAU * k / 8.0)
+				draw_line(c + d * (r - 1.0), c + d * (r + 3.0), Tok.PRIMARY_LO, 3.2, true)
+		draw_circle(c, r, Tok.PRIMARY_LO, true, -1.0, true)
+		draw_circle(c + Vector2(-0.8, -0.8), r - 2.0, Tok.PRIMARY, true, -1.0, true)
+		draw_arc(c, r - 2.5, PI * 1.05, PI * 1.6, 10, Color(Tok.PRIMARY_HI, 0.9), 1.4, true)
+		draw_circle(c, r * 0.3, BRASS_DEEP, true, -1.0, true)
+		if teeth:
+			draw_line(c - Vector2.from_angle(ang) * r * 0.3, c + Vector2.from_angle(ang) * r * 0.3, Color(0, 0, 0, 0.5), 1.4, true)
+
+	# ------------------------------------------------ medallion
+
+	func _draw_medallion(l: Layout, top: float) -> void:
+		var k := _k(0.3, 0.4)
+		if k <= 0.0:
+			return
+		var c := Vector2(l.margin + 36.0, top + 48.0)
+		var r := 32.0
+		# Turning over: the disc narrows to its edge and opens on the new
+		# number (on the opening it simply turns in).
+		var sx := absf(cos(_flip * PI)) if _flip < 1.0 else 1.0
+		var n := phase if _flip >= 0.5 else _shown_phase
+		sx = maxf(sx, 0.04) * Motion.ease_value(Motion.Ease.EMPHASIZED, k)
+		draw_set_transform(c + Vector2(2.0, 3.0), 0.0, Vector2(sx, 1.0))
+		draw_circle(Vector2.ZERO, r + 1.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		draw_set_transform(c, 0.0, Vector2(sx, 1.0))
+		draw_circle(Vector2.ZERO, r, Tok.PRIMARY_LO, true, -1.0, true)
+		draw_circle(Vector2(-0.8, -1.0), r - 2.5, Tok.PRIMARY, true, -1.0, true)
+		# The milled rim, the lit edge, the sunken face.
+		for i in 36:
+			var d := Vector2.from_angle(TAU * i / 36.0)
+			draw_line(d * (r - 5.5), d * (r - 2.5), Color(BRASS_DEEP, 0.55), 1.2, true)
+		draw_arc(Vector2.ZERO, r - 1.5, PI * 1.02, PI * 1.62, 16, Color(Tok.PRIMARY_HI, 0.85), 1.6, true)
+		draw_circle(Vector2.ZERO, r - 7.0, Color("0E1015"), true, -1.0, true)
+		draw_arc(Vector2.ZERO, r - 7.0, PI * 0.1, PI * 0.9, 16, Color(Tok.PRIMARY_HI, 0.25), 1.2, true)
+		draw_arc(Vector2.ZERO, r - 10.0, 0.0, TAU, 40, Color(Tok.PRIMARY_LO, 0.7), 1.0, true)
+		var num := hud.num_font()
+		var txt := str(n)
+		var fs := 30 if txt.length() < 2 else 25
+		var tw := num.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var base := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+		draw_string(num, Vector2(-tw * 0.5, base + 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI)
 		draw_set_transform(Vector2.ZERO)
-		var ar := a_right
-		# Multiplier chip, the streak's progress to the next step as a ring.
-		var cc := Vector2(w * 0.5 + total * 0.5 * s + 42.0, base - 18.0 + (1.0 - ar) * 6.0)
-		var bs := 1.0 + 0.22 * sin(badge_pop * PI)
-		draw_set_transform(cc, 0.0, Vector2(bs, bs))
-		var on := mult > 1
-		if hot or mult >= 3:
-			var glow := 0.5 + 0.5 * sin(_clock * (14.0 if hot else 3.0))
-			for g in 3:
-				draw_circle(Vector2.ZERO, 30.0 + g * 4.0, Color(Tok.PRIMARY, (0.12 - g * 0.035) * (0.6 + 0.4 * glow) * ar), true, -1.0, true)
-		draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 48, Color(Tok.BORDER_HI, 0.9 * ar), 3.5, true)
-		if _ring > 0.01:
-			draw_arc(Vector2.ZERO, 27.0, -PI * 0.5, -PI * 0.5 + TAU * _ring, 48, Color(Tok.PRIMARY_HI, ar), 3.5, true)
-		draw_circle(Vector2(1.5, 2.5), 20.0, Color(Tok.SHADOW, Tok.SHADOW.a * ar), true, -1.0, true)
-		draw_circle(Vector2.ZERO, 20.0, Color((Tok.PRIMARY_HI if hot else Tok.PRIMARY) if on else Tok.SURFACE_HI, ar), true, -1.0, true)
-		if not on:
-			draw_arc(Vector2.ZERO, 20.0, 0.0, TAU, 40, Color(Tok.BORDER_HI, ar), 1.5, true)
 		var body := hud.body_font()
-		var mt := "×%d" % mult
-		var mw := body.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
-		draw_string(body, Vector2(-mw * 0.5, 7.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(Tok.ON_PRIMARY if on else Tok.TEXT_SECONDARY, ar))
-		draw_set_transform(Vector2.ZERO)
-		# The last gain, rising a little and fading under the score.
+		draw_string(body, Vector2(c.x - 60.0, c.y + r + 19.0), Loc.t("hud.waveWord"), HORIZONTAL_ALIGNMENT_CENTER, 120.0, 15, Color(Tok.TEXT_SECONDARY, k))
+
+	# ------------------------------------------------ counter and dial
+
+	func _draw_counter(l: Layout, top: float) -> void:
+		var k := _k(0.1, 0.55)
+		if k <= 0.0:
+			return
+		var w := l.size.x
+		var drop := (1.0 - Motion.ease_value(Motion.Ease.EMPHASIZED, k)) * -110.0
+		var nudge := 2.5 * sin(pulse * PI)
+		var pw := _plate_w
+		var r := Rect2(w * 0.5 - pw * 0.5, top + 16.0 + drop + nudge, pw, PLATE_H)
+		# The brass bezel, the recessed window, and the drums in it.
+		_bezel.bg_color = Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.35 + 0.65 * glint)
+		draw_style_box(_bezel, r.grow(5.0))
+		draw_line(Vector2(r.position.x + 12.0, r.position.y - 3.6), Vector2(r.end.x - 12.0, r.position.y - 3.6), Color(Tok.PRIMARY_HI, 0.55), 1.2, true)
+		draw_line(Vector2(r.position.x + 12.0, r.end.y + 3.8), Vector2(r.end.x - 12.0, r.end.y + 3.8), Color(BRASS_DEEP, 0.9), 1.4, true)
+		draw_style_box(_window, r)
+		_drums.position = r.position + Vector2(10.0, 6.0)
+		_drums.size = Vector2(r.size.x - 20.0, PLATE_H - 12.0)
+		_drums.queue_redraw()
+		_draw_dial(Vector2(r.end.x + 40.0, r.position.y + PLATE_H * 0.5), _k(0.45, 0.35))
+		# The last gain, rising a little and fading under the counter.
 		if _gain > 0 and _gain_t < 1.1:
-			var ga := clampf(_gain_t / 0.08, 0.0, 1.0) * (1.0 - clampf((_gain_t - 0.6) / 0.5, 0.0, 1.0)) * asc
-			var gy := base + 30.0 - 6.0 * clampf(_gain_t / 1.1, 0.0, 1.0)
-			draw_string(body, Vector2(0, gy), "+" + Hud._group(_gain), HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color(Tok.PRIMARY_HI, ga))
+			var ga := clampf(_gain_t / 0.08, 0.0, 1.0) * (1.0 - clampf((_gain_t - 0.6) / 0.5, 0.0, 1.0))
+			var gy := r.end.y + 28.0 - 6.0 * clampf(_gain_t / 1.1, 0.0, 1.0)
+			draw_string(hud.body_font(), Vector2(0, gy), "+" + Hud._group(_gain), HORIZONTAL_ALIGNMENT_CENTER, w, 18, Color(Tok.PRIMARY_HI, ga))
+
+	## The drums, in the window's own clipped space: each shows its digit
+	## and, while it turns, the next rolling up from below; the edges fall
+	## into shadow like the curve of a cylinder. Glass lies over them.
+	func _draw_drums() -> void:
+		var sz := _drums.size
+		var num := hud.num_font()
+		var fs := 40
+		var n := _drum.size()
+		var digits := str(maxi(score, 0)).length()
+		var asc := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+		var cy := sz.y * 0.5
+		var pitch := sz.y * 0.92
+		var ci := _drums
+		var x := 2.0
+		for j in n:
+			var i := n - 1 - j
+			var dr := Rect2(x, 0.0, CELL - 2.0, sz.y)
+			ci.draw_rect(dr, DRUM)
+			var v: float = _drum[i]
+			var base := floorf(v)
+			var frac := v - base
+			var dim := 0.3 if i >= digits and v < 0.01 else 1.0
+			for kk in 2:
+				var off := (kk - frac) * pitch
+				if absf(off) >= pitch:
+					continue
+				var ch := str(int(base + kk) % 10)
+				var cw := num.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+				var sq := 1.0 - 0.3 * absf(off) / pitch
+				ci.draw_set_transform(Vector2(dr.position.x + dr.size.x * 0.5, cy + off), 0.0, Vector2(1.0, sq))
+				ci.draw_string(num, Vector2(-cw * 0.5, asc), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, dim))
+			ci.draw_set_transform(Vector2.ZERO)
+			# The cylinder's curve: shade deepening toward top and bottom,
+			# and a fine lit line just above the middle.
+			for s in 7:
+				var sa := 0.62 * pow(1.0 - s / 7.0, 1.4)
+				ci.draw_rect(Rect2(dr.position.x, s * 2.5, dr.size.x, 2.5), Color(0, 0, 0, sa))
+				ci.draw_rect(Rect2(dr.position.x, sz.y - (s + 1) * 2.5, dr.size.x, 2.5), Color(0, 0, 0, sa))
+			ci.draw_rect(Rect2(dr.position.x, cy - 12.0, dr.size.x, 1.0), Color(1, 1, 1, 0.025))
+			x += CELL
+			if i > 0 and i % 3 == 0:
+				x += 8.0
+		ci.draw_colored_polygon(PackedVector2Array([
+			Vector2(0, 0), Vector2(sz.x * 0.55, 0), Vector2(sz.x * 0.42, sz.y * 0.42), Vector2(0, sz.y * 0.42)]), Color(1, 1, 1, 0.04))
+
+	## The multiplier: a small brass dial reading ×N, with three lamps on its
+	## rim that light as the streak builds toward the next step.
+	func _draw_dial(c: Vector2, k: float) -> void:
+		if k <= 0.0:
+			return
+		var s := Motion.ease_value(Motion.Ease.EMPHASIZED, k) * (1.0 + 0.2 * sin(badge_pop * PI))
+		draw_set_transform(c, 0.0, Vector2(s, s))
+		var on := mult > 1
+		if hot:
+			var glow := 0.5 + 0.5 * sin(_clock * 14.0)
+			for g in 3:
+				draw_circle(Vector2.ZERO, 30.0 + g * 5.0, Color(Tok.PRIMARY, (0.12 - g * 0.035) * (0.6 + 0.4 * glow)), true, -1.0, true)
+		draw_circle(Vector2(1.5, 2.5), 26.0, Color(0, 0, 0, 0.45), true, -1.0, true)
+		draw_circle(Vector2.ZERO, 26.0, Tok.PRIMARY_LO, true, -1.0, true)
+		draw_circle(Vector2(-0.8, -0.8), 23.5, Tok.PRIMARY, true, -1.0, true)
+		draw_arc(Vector2.ZERO, 24.5, PI * 1.05, PI * 1.6, 12, Color(Tok.PRIMARY_HI, 0.85), 1.4, true)
+		draw_circle(Vector2.ZERO, 18.0, WINDOW, true, -1.0, true)
+		for i in 3:
+			var d := Vector2.from_angle(-PI * 0.5 + (i - 1) * 0.72) * 21.0
+			var lv: float = _lamps[i]
+			if lv > 0.01:
+				draw_circle(d, 6.5, Color(Tok.PRIMARY_HI, 0.25 * lv), true, -1.0, true)
+			draw_circle(d, 3.0, BRASS_DEEP.lerp(Color("FFF3D1"), lv), true, -1.0, true)
+		var num := hud.num_font()
+		var mt := "×%d" % mult
+		var fs := 19
+		var tw := num.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var base := (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+		draw_string(num, Vector2(-tw * 0.5, base + 3.0), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Tok.PRIMARY_HI if on else Tok.TEXT_FAINT)
+		draw_set_transform(Vector2.ZERO)
+
+	# ------------------------------------------------ knots
 
 	## A point along a rope `len` long from `a`, sagging `sag` in the middle.
 	static func _rope(a: Vector2, len: float, sag: float, t: float) -> Vector2:
 		return a + Vector2(len * t, sag * sin(PI * t))
 
-	## Left zone: the wave number, the rope filling toward the crown and
-	## the count left (or the finale, once the crown is passed).
-	func _draw_wave(l: Layout, x0: float, top: float, h: float, ry: float) -> void:
-		var ar := a_right
-		var body := hud.body_font()
-		var num := hud.num_font()
-		var y1 := top + h * 0.30 + ry
-		var word := Loc.t("hud.waveWord")
-		draw_string(body, Vector2(x0, y1), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(Tok.TEXT_SECONDARY, ar))
-		var ww := body.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-		draw_string(num, Vector2(x0 + ww + 8.0, y1 + 2.0), str(phase), HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color(Tok.TEXT_PRIMARY, ar))
-		var len := minf(210.0, l.size.x * 0.29)
-		var a := Vector2(x0, top + h * 0.50 + ry)
-		var sag := 4.0
-		var seg := 24
-		var track := PackedVector2Array()
-		for k in seg + 1:
-			track.append(_rope(a, len, sag, k / float(seg)))
-		draw_polyline(track, Color(Tok.BORDER_HI, ar), 4.0, true)
-		var pr := clampf(shown_progress, 0.0, 1.0)
-		if pr > 0.005:
-			var fill := PackedVector2Array()
-			var m := maxi(2, int(ceil(seg * pr)))
-			for k in m + 1:
-				fill.append(_rope(a, len, sag, pr * k / float(m)))
-			draw_polyline(fill, Color(Tok.PRIMARY, ar), 4.0, true)
-			# The twist of the strands, as fine ticks along the gold.
-			var tx := 0.0
-			while tx < len * pr - 4.0:
-				var p := _rope(a, len, sag, tx / len)
-				draw_line(p + Vector2(-1.5, -1.6), p + Vector2(1.5, 1.6), Color(Tok.PRIMARY_LO, 0.8 * ar), 1.2, true)
-				tx += 7.0
-			var tip := _rope(a, len, sag, pr)
-			draw_circle(tip, 6.5, Color(Tok.PRIMARY_HI, ar), true, -1.0, true)
-		# The end of the rope, and the crown where the finale comes.
-		draw_circle(_rope(a, len, sag, 1.0), 3.5, Color(Tok.BORDER_HI, ar), true, -1.0, true)
-		var reached := pr >= finale_at - 0.001
-		var cp := _rope(a, len, sag, finale_at) + Vector2(0, -15.0)
-		var ccol := Tok.PRIMARY_HI if reached else Tok.PRIMARY_LO
-		if reached:
-			var gl := 0.5 + 0.5 * sin(_clock * 4.0)
-			draw_circle(cp + Vector2(0, 2), 13.0, Color(Tok.PRIMARY, 0.12 * gl * ar), true, -1.0, true)
-		draw_colored_polygon(PackedVector2Array([
-			cp + Vector2(-9, 5), cp + Vector2(-10, -5), cp + Vector2(-4.5, -0.5), cp + Vector2(0, -8),
-			cp + Vector2(4.5, -0.5), cp + Vector2(10, -5), cp + Vector2(9, 5)]), Color(ccol, ar))
-		draw_line(cp + Vector2(0, 5), _rope(a, len, sag, finale_at) + Vector2(0, -4), Color(ccol, 0.6 * ar), 1.2, true)
-		var y3 := top + h * 0.73 + ry
-		if progress >= 1.0:
-			pass
-		elif reached:
-			draw_string(body, Vector2(x0, y3), Loc.t("hud.finale"), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(Tok.PRIMARY_HI, ar))
-		elif remaining > 0:
-			draw_string(body, Vector2(x0, y3), Loc.t("hud.left") % remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(Tok.TEXT_SECONDARY, ar))
-
-	## Right zone: the lives are knots tied in a rope; a lost one comes
-	## undone (it swells, lifts and fades), one won back pulls tight.
-	func _draw_knots(l: Layout, top: float, h: float, ry: float) -> void:
-		var ar := a_right
-		var len := 132.0
-		var a := Vector2(l.size.x - l.margin - len, top + h * 0.34 + ry)
+	## The lives are knots tied in a rope; a lost one comes undone (it
+	## swells, lifts and fades), one won back pulls tight into place.
+	func _draw_knots(l: Layout, top: float, _h: float) -> void:
+		var ra := _k(0.55, 0.3)
+		if ra <= 0.0:
+			return
+		var len := 124.0
+		var a := Vector2(l.size.x - l.margin - len, top + 46.0)
 		var sag := 6.0
 		var pts := PackedVector2Array()
 		for k in 25:
-			pts.append(_rope(a, len, sag, k / 24.0) + Vector2(1.5, 2.5))
-		draw_polyline(pts, Color(Tok.SHADOW, Tok.SHADOW.a * 0.6 * ar), 3.5, true)
+			pts.append(_rope(a, len * ra, sag * ra, k / 24.0) + Vector2(1.5, 2.5))
+		draw_polyline(pts, Color(0, 0, 0, 0.35), 3.5, true)
 		for k in 25:
 			pts[k] -= Vector2(1.5, 2.5)
-		draw_polyline(pts, Color(ROPE_DARK, ar), 3.5, true)
-		# The lay of the rope: fine twist marks.
+		draw_polyline(pts, ROPE_DARK, 3.5, true)
 		var tx := 3.0
-		while tx < len:
-			var p := _rope(a, len, sag, tx / len)
-			draw_line(p + Vector2(-1.2, -1.7), p + Vector2(1.2, 1.7), Color(ROPE_LIGHT, 0.35 * ar), 1.0, true)
+		while tx < len * ra:
+			var p := _rope(a, len * ra, sag * ra, tx / (len * ra))
+			draw_line(p + Vector2(-1.2, -1.7), p + Vector2(1.2, 1.7), Color(ROPE_LIGHT, 0.35), 1.0, true)
 			tx += 6.0
+		if ra < 1.0:
+			return
 		for i in 3:
 			var t0 := 0.18 + 0.32 * i
 			var c := _rope(a, len, sag, t0)
@@ -1430,17 +1651,12 @@ class TopBar extends Control:
 			if i < lives:
 				var k := clampf(t / 0.35, 0.0, 1.0)
 				var sc := lerpf(1.6, 1.0, Motion.ease_value(Motion.Ease.EMPHASIZED, k))
-				_knot(c, ang, sc, ar * k)
+				_knot(c, ang, sc, k)
 			else:
-				# Where a knot was: a faint ring on the bare rope.
-				draw_arc(c, 9.0, 0.0, TAU, 28, Color(Tok.TEXT_FAINT, 0.5 * ar), 1.5, true)
+				draw_arc(c, 9.0, 0.0, TAU, 28, Color(Tok.TEXT_FAINT, 0.5), 1.5, true)
 				if t < 0.6:
 					var e := t / 0.6
-					_knot(c + Vector2(0, -12.0 * e), ang, 1.0 + 0.5 * e, ar * (1.0 - e))
-
-	const ROPE := Color("C4BBA8")
-	const ROPE_DARK := Color("8C8474")
-	const ROPE_LIGHT := Color("E8E0CF")
+					_knot(c + Vector2(0, -12.0 * e), ang, 1.0 + 0.5 * e, 1.0 - e)
 
 	## An overhand knot seen from the front: a plump body with the rope's
 	## turns wrapping it, lit from the top left.
@@ -1455,10 +1671,8 @@ class TopBar extends Control:
 		var sh := PackedVector2Array()
 		for p in body:
 			sh.append(p + Vector2(1.5, 2.5))
-		draw_colored_polygon(sh, Color(Tok.SHADOW, Tok.SHADOW.a * a))
+		draw_colored_polygon(sh, Color(0, 0, 0, 0.4 * a))
 		draw_colored_polygon(body, Color(ROPE, a))
-		# The turns: two strands crossing over the body, each a darker
-		# groove with a lit edge.
 		for k in 3:
 			var x := -6.0 + k * 6.0
 			var g := PackedVector2Array([Vector2(x - 3.5, 8.0), Vector2(x - 1.0, 0.0), Vector2(x + 3.5, -8.0)])
@@ -1547,7 +1761,7 @@ class Overlay extends Control:
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:
-		return Vector2(l.margin + 17.0 + i * 34.0, l.safe_top + (l.top_bar_h - l.safe_top) * 0.9)
+		return Vector2(l.margin + 98.0 + (i % 3) * 32.0, l.safe_top + 30.0 + (i / 3) * 32.0)
 
 	func _draw_tray(l: Layout) -> void:
 		if menu_a > 0.0 or hud.perk_order.is_empty() or not hud.bar.visible:

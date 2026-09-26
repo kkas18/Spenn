@@ -19,9 +19,9 @@ const GOLD_WARM := Color("DE8F3E")
 const METAL := Color("3F4652")
 const METAL_LIGHT := Color("69717E")
 const METAL_DARK := Color("1D2127")
-const BAND := Color("5D6470")
-const BAND_DARK := Color("2E333B")
-const POUCH := Color("474D57")
+const BAND := Color("B8793C")       # amber latex
+const BAND_DARK := Color("4A2C14")
+const POUCH := Color("6A4630")      # leather
 const STRING := Color("59616D")
 
 # Target hues: silhouettes carry identity, hue + lightness second. Hues sit

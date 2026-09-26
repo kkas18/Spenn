@@ -21,8 +21,16 @@ const BAND_MIN_W := 3.0
 const ARM_W := 13.0
 const SHAFT_W := 16.0
 const GRIP_W := 21.0
-const POUCH_HALF := 15.0
+const POUCH_HALF := 18.0
 const ARC_FADE := 0.12
+# Materials: a gunmetal frame with brass fittings, a leather-wrapped grip
+# and pouch, amber latex bands.
+const GUNMETAL := Color("5C6470")
+const LEATHER := Color("5E3D27")
+const LEATHER_LIGHT := Color("82573A")
+const LEATHER_DARK := Color("2E1B10")
+const STITCH := Color("D9B98A")
+const BAND_HI := Color("F2C98A")
 
 enum Mode { IDLE, AIM, RELEASE }
 
@@ -60,6 +68,8 @@ var _band_l: Line2D
 var _band_r: Line2D
 var _under_l: Line2D
 var _under_r: Line2D
+var _hi_l: Line2D
+var _hi_r: Line2D
 var _front: Node2D
 var _fork: Node2D               # static: redrawn only on layout change
 
@@ -97,6 +107,11 @@ func _ready() -> void:
 	_band_r = _make_band(Pal.BAND, curve)
 	for u in [_under_l, _under_r]:
 		u.position = Vector2(0.8, 1.6)
+	# A thin lit edge along each band: latex tube, not flat strip.
+	_hi_l = _make_band(Color(BAND_HI, 0.55), null)
+	_hi_r = _make_band(Color(BAND_HI, 0.55), null)
+	for hl in [_hi_l, _hi_r]:
+		hl.position = Vector2(-0.5, -0.9)
 	_front = Node2D.new()
 	add_child(_front)
 	_front.draw.connect(_draw_front)
@@ -105,7 +120,8 @@ func _ready() -> void:
 func _make_band(col: Color, curve: Curve) -> Line2D:
 	var line := Line2D.new()
 	line.default_color = col
-	line.width_curve = curve
+	if curve:
+		line.width_curve = curve
 	line.joint_mode = Line2D.LINE_JOINT_ROUND
 	line.begin_cap_mode = Line2D.LINE_CAP_ROUND
 	line.end_cap_mode = Line2D.LINE_CAP_ROUND
@@ -322,15 +338,18 @@ func _update_bands() -> void:
 	var ends := _pouch_ends()
 	_build_band(-1, ends[0], _pts_l)
 	_build_band(1, ends[1], _pts_r)
-	for pair in [[_band_l, _under_l, _pts_l, ends[0], -1], [_band_r, _under_r, _pts_r, ends[1], 1]]:
+	for pair in [[_band_l, _under_l, _pts_l, ends[0], -1, _hi_l], [_band_r, _under_r, _pts_r, ends[1], 1, _hi_r]]:
 		var band: Line2D = pair[0]
 		var under: Line2D = pair[1]
+		var hi: Line2D = pair[5]
 		var len := _tip(pair[4]).distance_to(pair[3])
 		var w := clampf(BAND_REST_W * sqrt(_rest_len / maxf(len, 1.0)), BAND_MIN_W, BAND_REST_W)
 		band.points = pair[2]
 		under.points = pair[2]
+		hi.points = pair[2]
 		band.width = w
 		under.width = w + 1.0
+		hi.width = maxf(1.0, w * 0.22)
 
 
 ## Band path: tucked end on the inner side of the arm, wrap over the tip,
@@ -409,7 +428,7 @@ func _draw_fork() -> void:
 	RenderingServer.canvas_item_add_set_transform(ci, Transform2D(0.0, Pal.SHADOW_OFFSET * 1.3))
 	RenderingServer.canvas_item_add_triangle_array(ci, idx, pts, PackedColorArray([Color(0, 0, 0, 0.45)]), sh)
 	RenderingServer.canvas_item_add_set_transform(ci, Transform2D.IDENTITY)
-	RenderingServer.canvas_item_add_triangle_array(ci, idx, pts, PackedColorArray([Pal.METAL_LIGHT]), uv)
+	RenderingServer.canvas_item_add_triangle_array(ci, idx, pts, PackedColorArray([GUNMETAL]), uv)
 
 
 ## A tube along a path: each point extruded both ways along its normal,
@@ -442,14 +461,53 @@ func _fork_cap(c: Vector2, r: float, pts: PackedVector2Array, nrm: PackedVector2
 		idx.append_array([base, base + 1 + i, base + 1 + (i + 1) % 20])
 
 
-## Grip wrap: a few fine grooves so it reads as a handle (front layer).
+## The grip: a leather sleeve wrapped in overlapping turns, stitched
+## down its side, between a brass ring and a brass pommel (front layer).
 func _draw_grip() -> void:
 	var paths := _fork_paths()
 	var g0: Vector2 = paths[2][0][0]
 	var g1: Vector2 = paths[2][0][1]
-	for i in 4:
-		var y := lerpf(g0.y + 10.0, g1.y - 4.0, float(i) / 3.0)
-		_front.draw_line(Vector2(g0.x - GRIP_W * 0.5 + 3.0, y), Vector2(g0.x + GRIP_W * 0.5 - 3.0, y + 3.0), Color(Pal.METAL_DARK, 0.8), 1.2, true)
+	var hw := GRIP_W * 0.5 + 1.5
+	var top := g0.y + 6.0
+	var bot := g1.y + 2.0
+	var f := _front
+	f.draw_rect(Rect2(g0.x - hw + 2.0, top + 2.0, hw * 2.0, bot - top), Color(0, 0, 0, 0.35))
+	f.draw_rect(Rect2(g0.x - hw, top, hw * 2.0, bot - top), LEATHER)
+	# Rounded body: light down the left, shade down the right.
+	f.draw_rect(Rect2(g0.x - hw + 2.0, top, 3.0, bot - top), Color(LEATHER_LIGHT, 0.8))
+	f.draw_rect(Rect2(g0.x + hw - 4.0, top, 4.0, bot - top), Color(LEATHER_DARK, 0.6))
+	# The turns of the wrap: a dark seam with a lit lip above it.
+	var y := top + 7.0
+	while y < bot - 3.0:
+		f.draw_line(Vector2(g0.x - hw, y + 3.0), Vector2(g0.x + hw, y - 2.0), LEATHER_DARK, 1.6, true)
+		f.draw_line(Vector2(g0.x - hw, y + 1.6), Vector2(g0.x + hw, y - 3.4), Color(LEATHER_LIGHT, 0.55), 1.0, true)
+		y += 9.0
+	# Stitching down the right side.
+	var sy := top + 4.0
+	while sy < bot - 4.0:
+		f.draw_line(Vector2(g0.x + hw - 6.5, sy), Vector2(g0.x + hw - 6.5, sy + 3.0), Color(STITCH, 0.7), 1.1, true)
+		sy += 6.0
+	_brass_band(Vector2(g0.x, top - 1.0), Vector2.DOWN, hw + 1.5, 6.0)
+	# The pommel.
+	var pc := Vector2(g1.x, bot + 3.0)
+	f.draw_circle(pc + Vector2(1.5, 2.5), GRIP_W * 0.62, Color(0, 0, 0, 0.4), true, -1.0, true)
+	f.draw_circle(pc, GRIP_W * 0.62, Pal.GOLD_DARK, true, -1.0, true)
+	f.draw_circle(pc + Vector2(-0.8, -1.0), GRIP_W * 0.52, Pal.GOLD, true, -1.0, true)
+	f.draw_arc(pc, GRIP_W * 0.5, PI * 1.05, PI * 1.6, 12, Color(Pal.GOLD_LIGHT, 0.9), 1.6, true)
+	f.draw_circle(pc + Vector2(-3.0, -3.5), 2.2, Color(1, 1, 1, 0.45), true, -1.0, true)
+
+
+## A brass collar across a tube at `c`: `along` is the tube's direction,
+## `hw` the half width across it, `len` its length along it.
+func _brass_band(c: Vector2, along: Vector2, hw: float, len: float) -> void:
+	var across := along.orthogonal()
+	var f := _front
+	var a := c - across * hw
+	var b := c + across * hw
+	f.draw_line(a + Vector2(1.2, 2.0), b + Vector2(1.2, 2.0), Color(0, 0, 0, 0.4), len, true)
+	f.draw_line(a, b, Pal.GOLD_DARK, len, true)
+	f.draw_line(a - along * len * 0.12, b - along * len * 0.12, Pal.GOLD, len * 0.62, true)
+	f.draw_line(a - along * len * 0.3, b - along * len * 0.3, Color(Pal.GOLD_LIGHT, 0.9), 1.1, true)
 
 
 func _draw_front() -> void:
@@ -463,16 +521,15 @@ func _draw_front() -> void:
 	_draw_demo()
 
 
+## Brass ferrules where the bands are tied on, and a brass collar where
+## the arms meet the shaft.
 func _draw_lashing() -> void:
 	for side in [-1, 1]:
 		var tip := _tip(side)
 		var d := _arm_dir(side)
-		var n := Vector2(-d.y, d.x)
-		for j in 4:
-			var c := tip - d * (6.0 + j * 3.0)
-			var h := n * (ARM_W * 0.5 + 1.2)
-			_front.draw_line(c - h + Vector2(0.6, 0.9), c + h + Vector2(0.6, 0.9), Pal.BAND_DARK, 1.8, true)
-			_front.draw_line(c - h, c + h, Pal.BAND, 1.2, true)
+		_brass_band(tip - d * 9.0, d, ARM_W * 0.5 + 1.8, 5.0)
+		_brass_band(tip - d * 16.0, d, ARM_W * 0.5 + 1.2, 3.0)
+	_brass_band(Vector2(l.center_x, l.crotch_y + 8.0), Vector2.DOWN, SHAFT_W * 0.5 + 2.0, 6.0)
 
 
 ## Short predicted path: same gravity and wall bounce as the ball, about
@@ -540,19 +597,36 @@ func launch_speed() -> float:
 	return lerpf(620.0, 2250.0, pow(power, 1.15)) * l.scale
 
 
+## The pouch: a strip of leather cupping the ball, thicker in the middle,
+## with a lit upper edge and a row of stitches along it.
 func _draw_pouch() -> void:
 	var ends := _pouch_ends()
-	var back := Vector2.DOWN.rotated(pouch_rot) * 7.0
-	var pts := PackedVector2Array()
-	for i in 9:
-		var t := float(i) / 8.0
-		var mid := pouch + back
-		pts.append(ends[0].lerp(mid, t).lerp(mid.lerp(ends[1], t), t))
-	var shadow := PackedVector2Array()
-	for q in pts:
-		shadow.append(q + Vector2(1.0, 2.0))
-	_front.draw_polyline(shadow, Pal.BAND_DARK, 9.0, true)
-	_front.draw_polyline(pts, Pal.POUCH, 8.0, true)
+	var down := Vector2.DOWN.rotated(pouch_rot)
+	var upper := PackedVector2Array()
+	var lower := PackedVector2Array()
+	for i in 13:
+		var t := float(i) / 12.0
+		var bow := sin(PI * t)
+		var p := ends[0].lerp(ends[1], t)
+		upper.append(p + down * (1.0 + 4.0 * bow))
+		lower.append(p + down * (7.0 + 14.0 * bow))
+	var shape := upper.duplicate()
+	var rev := lower.duplicate()
+	rev.reverse()
+	shape.append_array(rev)
+	var sh := PackedVector2Array()
+	for q in shape:
+		sh.append(q + Vector2(1.5, 2.5))
+	_front.draw_colored_polygon(sh, Color(0, 0, 0, 0.4))
+	_front.draw_colored_polygon(shape, Pal.POUCH)
+	var loop := shape.duplicate()
+	loop.append(shape[0])
+	_front.draw_polyline(loop, LEATHER_DARK, 1.2, true)
+	_front.draw_polyline(upper, Color(LEATHER_LIGHT, 0.9), 1.4, true)
+	for i in range(2, 11, 2):
+		var p := upper[i].lerp(lower[i], 0.5)
+		var q := upper[i + 1].lerp(lower[i + 1], 0.5)
+		_front.draw_line(p, p.lerp(q, 0.55), Color(STITCH, 0.6), 1.0, true)
 	if _ball_in_pouch and has_ball() and not (demo and _demo_ball >= 0.0):
 		var s := ease(_load_anim, -2.0)
 		Ball.draw_ball(_front, pouch, Ball.RADIUS * lerpf(0.4, 1.0, s), _ammo[0] == Ammo.PIERCE, 0.0, Vector2.UP)
@@ -568,10 +642,15 @@ func _draw_ammo() -> void:
 	var slots := rack_slots
 	var top := Vector2(l.ammo_x, l.ammo_top)
 	var bottom := top + Vector2(0, (slots - 1) * l.ammo_step)
-	# The rack: a short dark channel, lit from the upper left.
-	_front.draw_line(top + Vector2(2, -12), bottom + Vector2(2, 14), Pal.SHADOW, 22.0, true)
-	_front.draw_line(top + Vector2(0, -12), bottom + Vector2(0, 12), Color(Pal.METAL_DARK, 0.9), 20.0, true)
-	_front.draw_line(top + Vector2(-9, -10), bottom + Vector2(-9, 10), Color(Pal.METAL_LIGHT, 0.25), 1.2, true)
+	# The magazine: a glass tube between two brass caps, the spare balls
+	# stacked in it.
+	var f := _front
+	var gt := top + Vector2(0, -15)
+	var gb := bottom + Vector2(0, 15)
+	f.draw_line(gt + Vector2(2, 3), gb + Vector2(2, 3), Color(0, 0, 0, 0.4), 24.0, true)
+	f.draw_line(gt, gb, Color(0.05, 0.06, 0.08, 0.9), 22.0, true)
+	f.draw_line(gt + Vector2(-10.5, 0), gb + Vector2(-10.5, 0), Color(Pal.METAL_LIGHT, 0.5), 1.2, true)
+	f.draw_line(gt + Vector2(10.5, 0), gb + Vector2(10.5, 0), Color(0, 0, 0, 0.6), 1.2, true)
 	for i in slots:
 		var p := top + Vector2(0, i * l.ammo_step)
 		var idx := i + 1
@@ -585,6 +664,14 @@ func _draw_ammo() -> void:
 			_front.draw_arc(p, 8.5, -PI * 0.5, -PI * 0.5 + TAU * _reload, 24, Color(Pal.GOLD, 0.55), 1.2, true)
 		else:
 			Pal.disc(_front, p, 7.5, Color(0, 0, 0, 0.28))
+	# Glass: a lit streak down the left and the brass caps at both ends.
+	f.draw_line(gt + Vector2(-6.5, 4), gb + Vector2(-6.5, -4), Color(1, 1, 1, 0.14), 2.2, true)
+	f.draw_line(gt + Vector2(-3.5, 6), gt.lerp(gb, 0.4) + Vector2(-3.5, 0), Color(1, 1, 1, 0.06), 1.4, true)
+	for cap in [[gt, -1.0], [gb, 1.0]]:
+		var c: Vector2 = cap[0]
+		var dir: float = cap[1]
+		_brass_band(c, Vector2(0, dir), 14.0, 7.0)
+		_front.draw_circle(c + Vector2(0, dir * 1.0), 1.5, Pal.GOLD_DARK, true, -1.0, true)
 
 
 func _draw_ammo_icon(p: Vector2, kind: int, _current: bool) -> void:
