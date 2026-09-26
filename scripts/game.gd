@@ -60,7 +60,7 @@ const DEFENSIVE := [Target.Charm.BUBBLE, Target.Charm.SPRING, Target.Charm.GHOST
 const MOOD_WAVE := 2
 const FORESHADOW := 0.7        # s a fibre shows where an enemy is about to drop in
 const GOLD_DROP_WAVE := 2
-const SHOVE_WAVE := 3          # from here, moody ones shove their neighbours
+const SHOVE_WAVE := 2          # from here, moody ones shove their neighbours
 const SHOVE_AIM := 0.3         # s the aim must hold before one reacts
 const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
 const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
@@ -149,6 +149,7 @@ var _charm_gift_t := 4.0
 var _charm_copy_t := 3.0
 var _calm_t := 0.5
 var _gold_drop_t := 20.0       # s until a gold drop gathers on a fibre
+var _shove_idle := 3.0         # s until a grumpy one shoves a neighbour unprovoked
 var _shove_cd := 5.0           # s until the next shove may start (one at a time)
 var _shover: Target = null
 var _last_pulse := 0
@@ -446,6 +447,7 @@ func _start_run() -> void:
 	_chain_t = 0.0
 	_next_life_at = EXTRA_LIFE_EVERY
 	_shove_cd = 5.0
+	_shove_idle = 3.0
 	_shover = null
 	_gold_drop_t = 20.0
 	_rush_left = 0
@@ -2907,9 +2909,17 @@ func _shove_tick(delta: float) -> void:
 			_shover.shoved = false
 			_land_shove(_shover, _shover.arm_victim)
 		return
-	if director.wave < SHOVE_WAVE or _shove_cd > 0.0 or state != State.PLAYING:
+	if director.wave < SHOVE_WAVE or state != State.PLAYING:
 		return
-	if not slingshot.is_aiming() or Target.aim_hold < SHOVE_AIM:
+	_shove_idle -= delta
+	if _shove_cd > 0.0:
+		return
+	var aiming := slingshot.is_aiming() and Target.aim_hold >= SHOVE_AIM
+	# Unprovoked: now and then a grumpy one just shoves a neighbour aside
+	# (making room, being rude). It does not move itself, so it is no
+	# dodge; it is how the trick is first seen.
+	var idle := not aiming and _shove_idle <= 0.0
+	if not aiming and not idle:
 		return
 	var safe_y := layout.danger_y - 170.0 * sc
 	for a in targets:
@@ -2918,7 +2928,10 @@ func _shove_tick(delta: float) -> void:
 		if a.pos.y > safe_y:
 			continue
 		var v: Target = null
-		if a.mood == Target.Mood.GRUMPY and a.aimed:
+		if idle:
+			if a.mood == Target.Mood.GRUMPY:
+				v = _nearest(a, func(o: Target) -> bool: return _free_mover(o) and absf(o.pos.y - a.pos.y) < 110.0 * sc and o.pos.y < safe_y, 190.0)
+		elif a.mood == Target.Mood.GRUMPY and a.aimed:
 			v = _nearest(a, func(o: Target) -> bool: return _free_mover(o) and absf(o.pos.y - a.pos.y) < 110.0 * sc and o.pos.y < safe_y, 190.0)
 		elif a.mood == Target.Mood.CUTE and not a.aimed:
 			v = _nearest(a, func(o: Target) -> bool: return o.aimed and _free_mover(o) and absf(o.pos.y - a.pos.y) < 110.0 * sc and o.pos.y < safe_y, 190.0)
@@ -2926,6 +2939,9 @@ func _shove_tick(delta: float) -> void:
 			continue
 		a.begin_shove(v)
 		a.shove_cd = 10.0
+		a.set_meta("shove_idle", idle)
+		if idle:
+			_shove_idle = _rng.randf_range(6.0, 10.0)
 		_shover = a
 		_shove_cd = maxf(4.5, 7.5 - 0.3 * (director.wave - SHOVE_WAVE)) + _rng.randf_range(0.0, 1.5)
 		if not _told.has("shove.card"):
@@ -2948,7 +2964,7 @@ func _land_shove(a: Target, v: Target) -> void:
 	v.slide_now(v.anchor.x + dir * 70.0 * strength * sc, 520.0 * sc)
 	v.annoy(0.35)
 	v.cry()
-	if grumpy:
+	if grumpy and not a.get_meta("shove_idle", false):
 		a.slide_now(a.anchor.x - dir * 60.0 * sc, 460.0 * sc)
 		a.push(Vector2(-dir * 90.0, 0), a.pos + Vector2(dir * a.radius, 0))
 	fx.puff(at, Pal.INK, 4, 14.0, 0.25)

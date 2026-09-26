@@ -2196,3 +2196,17 @@ Rettet:
   variant.
 - Beholdt: klangen når et tau frynses av et presist skudd (sjelden og nyttig) og bokstavene i
   menyen.
+
+## v7.45 – Dytting som faktisk sees
+
+- **Problem:** dyttet skjedde bare fra bølge 3, og bare når siktet ble holdt lenge (0,3 s) på en
+  sur fiende. En spiller som skyter raskt, eller sjelden når bølge 3, så det nesten aldri.
+- Dytting starter nå fra bølge 2, samme bølge som humørene.
+- **Uprovosert dytt:**
+  - En sur fiende dytter innimellom naboen til side av seg selv, hvert 6.–10. sekund (første
+    ca. 3 s inn i bølgen), med samme varsel: armen løftes, skjelver og slår.
+  - Den flytter seg ikke selv unna, så det er ingen unnamanøver, bare det første man ser av
+    trikset.
+- Dyttet når du sikter (den sure viker unna) er uendret.
+- **Bot (6 frø):** første dytt etter 34–66 s i bølge 2, og 7–15 dytt per runde. Overlevelsen er
+  innenfor støyen.
