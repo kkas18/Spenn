@@ -14,8 +14,8 @@ func _ready() -> void:
 	add_to_group("targets")
 	collision_layer = 2
 	collision_mask = 1
-	var shape := CollisionShape2D.new()
-	var circle := CircleShape2D.new()
+	var shape: CollisionShape2D = CollisionShape2D.new()
+	var circle: CircleShape2D = CircleShape2D.new()
 	circle.radius = radius
 	shape.shape = circle
 	add_child(shape)
