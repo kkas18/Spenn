@@ -12,7 +12,7 @@ func setup(parent:Node)->void:
  spawn_parent=parent
  start_wave()
 func start_wave()->void:
- var count:=min(3+wave,8)
+ var count:int=mini(3+wave,8)
  remaining=count
  for i in range(count):
   var target:=Target.new()
