@@ -67,7 +67,9 @@ func _draw_hex(c:Color)->void:
   var a:float=-PI/2.0+TAU*float(i)/6.0
   pts.append(Vector2(cos(a),sin(a))*radius)
  draw_colored_polygon(pts,c.darkened(0.12))
- draw_polyline(PackedVector2Array(pts+[pts[0]]),Color("#FFF0C2"),3,true)
+ var outline:PackedVector2Array=pts.duplicate()
+ outline.append(pts[0])
+ draw_polyline(outline,Color("#FFF0C2"),3,true)
 
 func _draw_drop(c:Color)->void:
  var pts:=PackedVector2Array([Vector2(0,-radius),Vector2(radius*0.82,5),Vector2(radius*0.55,radius*0.72),Vector2(0,radius),Vector2(-radius*0.55,radius*0.72),Vector2(-radius*0.82,5)])
