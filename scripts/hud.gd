@@ -2,10 +2,10 @@ extends CanvasLayer
 class_name SpennHUD
 signal pause_requested
 
-var score := 0
-var wave := 1
-var lives := 3
-var multiplier := 1
+var score: int = 0
+var wave: int = 1
+var lives: int = 3
+var multiplier: int = 1
 var score_label: Label
 var wave_label: Label
 var mult_label: Label
