@@ -809,6 +809,8 @@ func _pace(delta: float) -> void:
 			_chain = 0
 	hud.bar.phase = director.wave
 	hud.bar.progress = director.wave_progress()
+	hud.bar.remaining = maxi(0, director.wave_quota() - director.wave_killed)
+	hud.bar.finale_at = Director.FINALE_AT
 	_mission_t -= delta
 	if _mission_t <= 0.0:
 		_mission_t = 0.5
@@ -3032,7 +3034,7 @@ func _pause() -> void:
 	fx.hold_time(1.0)
 	slingshot.cancel()
 	_touch = -1
-	hud.open_pause()
+	hud.open_pause(int(director.elapsed))
 	Music.set_mode(Music.Mode.PAUSE)
 	Sfx.play("pause")
 	Sfx.haptic_pattern("soft")

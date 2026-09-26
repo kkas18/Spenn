@@ -69,6 +69,16 @@ func cycle_sfx() -> void:
 	_commit()
 
 
+func set_music(v: int) -> void:
+	music_volume = clampi(v, 0, LEVELS - 1)
+	_commit()
+
+
+func set_sfx(v: int) -> void:
+	sfx_volume = clampi(v, 0, LEVELS - 1)
+	_commit()
+
+
 func toggle_haptics() -> void:
 	haptics = not haptics
 	_commit()

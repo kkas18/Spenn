@@ -1967,3 +1967,34 @@ Rettet:
   de passerer, på siden som vender mot kula (i lit-shaderen). I overbelastning lyser de
   sterkere.
 - Bot (6 frø): median ca. 194 s, rundene ender ved bølge 3–5.
+
+## v7.36 – Nytt HUD og polerte menyer (felles designspråk)
+
+- **Bølgefremdrift som tau:** til venstre står «Bølge N». Under står et tau som fylles med gull
+  mot kronen ved 80 % (der finalen kommer), og «N igjen». Når kronen er nådd, står det «Finale!».
+  Fordelsbrettet ligger rett under.
+- **Poengtelleren:** hvert siffer ruller opp for seg, og bredden glir mellom tegnene så tallet
+  aldri hopper sideveis. Den siste gevinsten («+240») stiger og tones ut under tallet.
+- **Multiplikatorbrikke:** en gullbrikke «×N» med en ring rundt som viser rekka mot neste steg.
+  Den erstatter prikkene. Ved overbelastning gløder den.
+- **Liv som knuter på et tau:** en tapt knute løsner (sveller, løftes og tones ut). En knute
+  som vinnes tilbake, strammes på plass.
+- **Hovedmeny:**
+  - Runde glassknapper med linjeikoner (innstillinger, statistikk, kuler).
+  - En NO/EN-pille med glidende gullknott.
+  - «Dagens utfordring» som pille med kalenderikon.
+  - Rekorden i gull, oppdragene på et glasskort med ring-avkryssing, og «Dra for å spille» med
+    pil.
+- **Pause:**
+  - Et glasskort med oppsummering: poeng, bølge og tid.
+  - Én gullknapp «Fortsett» med dybde.
+  - En ikonrad under: Start på nytt, Innstillinger og Hovedmeny.
+- **Innstillinger:**
+  - Grupperte glasskort: Lyd, Spill, Tilgjengelighet og Språk.
+  - Rader med etikett til venstre og kontroll til høyre: tretrinns nivå for lyd, animerte
+    brytere og NO/EN-velger.
+  - Tilbakepil i toppen.
+- **Felles designspråk:**
+  - Glasspaneler og pilleknapper.
+  - Gluten brukes i titler og tall, Nunito i blandet skrift i tekst.
+  - Statistikk, kuler og game over bruker samme stil.
