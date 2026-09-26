@@ -1604,8 +1604,6 @@ func _collide(b: Ball) -> void:
 			# The string rubs the ball: a touch of spin from the drag.
 			b.w += clampf(rdv.cross(b.vel.normalized()) * 0.004, -6.0, 6.0)
 			if t.consume_pluck():
-				var loud := clampf(linear_to_db(clampf(rdv.length() / 120.0, 0.05, 1.0)), -18.0, -6.0)
-				Sfx.play("twang", clampf(1.5 - t.length / 900.0, 0.8, 1.4) * randf_range(0.95, 1.05), loud)
 				Sfx.haptic(5, 0.15)
 		if not b.can_touch(t.get_instance_id()) or not t.is_solid():
 			continue

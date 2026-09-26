@@ -98,6 +98,9 @@ const NOTE_DB := -17.0
 # Strings: the background fibres are a harp and the top bar's tension
 # string a low steel string (plucked-string samples, tools/import_assets.py),
 # on their own bus with a longer room so they sit behind the action.
+# Off: over the music the plucked strings were one layer too many; the
+# fibres and the tension string stay silent (their light and motion stay).
+const STRINGS_ON := false
 const HARP_COUNT := 11          # C minor pentatonic, C4..C6
 const HARP_POOL := 6
 const HARP_DB := -13.0
@@ -309,7 +312,7 @@ func _string(stream: AudioStream, pitch: float, volume_db: float) -> void:
 
 ## A harp string: step `i` of the pentatonic (clamped), on the grid.
 func harp(i: int, volume_db := 0.0, on_grid := true) -> void:
-	if _harp.is_empty():
+	if not STRINGS_ON or _harp.is_empty():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if on_grid and now - _harp_last < HARP_GAP:
@@ -327,6 +330,8 @@ func harp(i: int, volume_db := 0.0, on_grid := true) -> void:
 ## Several harp strings swept in turn: a strum (or a run), starting on
 ## the grid.
 func strum(steps: Array, gap := 0.045, volume_db := 0.0) -> void:
+	if not STRINGS_ON:
+		return
 	var wait := to_grid()
 	for k in steps.size():
 		var i: int = steps[k]
@@ -341,7 +346,7 @@ func strum(steps: Array, gap := 0.045, volume_db := 0.0) -> void:
 ## The tension string, plucked: tuned up the scale as it tightens (`tight`
 ## 0..1 is the wave's progress), so a wave climbs an octave as it fills.
 func taut(tight: float, volume_db := 0.0) -> void:
-	if _taut.is_empty():
+	if not STRINGS_ON or _taut.is_empty():
 		return
 	var step: int = TAUT_STEPS[clampi(int(round(clampf(tight, 0.0, 1.0) * (TAUT_STEPS.size() - 1))), 0, TAUT_STEPS.size() - 1)]
 	_string(_taut[_rng.randi() % _taut.size()], pow(2.0, step / 12.0), -11.0 + minf(volume_db, 0.0))

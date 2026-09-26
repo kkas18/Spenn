@@ -1808,7 +1808,6 @@ class TopBar extends Control:
 			_twanged = true
 			_pluck = 5.0
 			_pluck_t = 0.0
-			Sfx.play("twang", 1.3, -9.0)
 		# Score: the last gain, and each drum rolling forward to its digit.
 		if score < _last_score:
 			shown_score = float(score)
@@ -1863,7 +1862,6 @@ class TopBar extends Control:
 			if progress >= 1.0 and _last_progress < 1.0:
 				_pluck = 4.5
 				_shimmer = 0.0
-				Sfx.play("twang", 1.6, -8.0)
 			_pluck_t = 0.0 if progress >= 1.0 else _pluck_t
 		elif progress < _last_progress - 0.2:
 			_slack = 1.0

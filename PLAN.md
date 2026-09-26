@@ -2185,3 +2185,14 @@ Rettet:
     kombotoner 0,06 s.
   - Skrapelydene er også 4–5 dB ned.
 - **Resultat** (samme bot): ca. 12 lyder i sekundet (token 99, stemmer 142).
+
+## v7.44 – Strengene er stille
+
+- Strengelydene er slått av: harpetoner når kuler krysser bakgrunnsstrengene, spenningsstrengens
+  klang ved drap, akkordslag og arpeggio, kule-mot-tau-klang og klangen i toppstrengen.
+  Oppå musikken ble de ett lag for mye.
+- Alt det visuelle er beholdt: energiperlene, dirringen, varslene og rekke-lyset.
+- Motoren ligger klar bak ett flagg (Sfx.STRINGS_ON), hvis vi senere vil prøve en roligere
+  variant.
+- Beholdt: klangen når et tau frynses av et presist skudd (sjelden og nyttig) og bokstavene i
+  menyen.
