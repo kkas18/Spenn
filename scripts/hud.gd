@@ -442,17 +442,19 @@ func _build_fonts() -> void:
 	_theme = Theme.new()
 	_theme.default_font = _font_body_b
 	_theme.default_font_size = Tok.TYPE_BODY
-	_theme.set_stylebox("normal", "Button", _box(Tok.SURFACE, Tok.BORDER))
-	_theme.set_stylebox("hover", "Button", _box(Tok.SURFACE_HI, Tok.BORDER_HI))
-	_theme.set_stylebox("focus", "Button", _box(Tok.SURFACE_HI, Tok.BORDER_HI))
-	_theme.set_stylebox("pressed", "Button", _box(Tok.SURFACE_LO, Color(Tok.PRIMARY, 0.6)))
-	_theme.set_stylebox("disabled", "Button", _box(Tok.SURFACE_LO, Tok.BORDER))
+	# Buttons are brass-rimmed plates, the same metal as the menu's tokens
+	# and the levers; pressed, the rim brightens and the face sinks.
+	_theme.set_stylebox("normal", "Button", _box(Color("0E1015"), Tok.PRIMARY_LO, 3))
+	_theme.set_stylebox("hover", "Button", _box(Color("12151B"), Tok.PRIMARY, 3))
+	_theme.set_stylebox("focus", "Button", _box(Color("12151B"), Tok.PRIMARY, 3))
+	_theme.set_stylebox("pressed", "Button", _box(Color("08090C"), Tok.PRIMARY_HI, 3))
+	_theme.set_stylebox("disabled", "Button", _box(Color("0E1015"), Tok.BORDER, 3))
 	for c in ["font_color", "font_hover_color", "font_focus_color"]:
 		_theme.set_color(c, "Button", Tok.TEXT_PRIMARY)
 	_theme.set_color("font_pressed_color", "Button", Tok.PRIMARY_HI)
 	# Primary: the one gold action on a screen.
 	_theme.set_type_variation(&"PrimaryButton", &"Button")
-	var prim := _box(Tok.PRIMARY, Tok.PRIMARY)
+	var prim := _box(Tok.PRIMARY, Tok.PRIMARY_LO, 3)
 	prim.shadow_color = Tok.PRIMARY_LO
 	prim.shadow_offset = Vector2(0, 5)
 	prim.shadow_size = 1
@@ -464,19 +466,9 @@ func _build_fonts() -> void:
 		_theme.set_color(c, "PrimaryButton", Tok.ON_PRIMARY)
 	# Round glass buttons that carry a line icon (menu, pause, settings).
 	_theme.set_type_variation(&"IconButton", &"Button")
-	var ib := _glass(Tok.RADIUS_PILL)
-	ib.set_content_margin_all(0)
-	ib.shadow_size = 10
-	ib.shadow_offset = Vector2(0, 4)
-	var ibh := ib.duplicate() as StyleBoxFlat
-	ibh.border_color = Tok.BORDER_HI
-	var ibp := ib.duplicate() as StyleBoxFlat
-	ibp.bg_color = Tok.SURFACE_LO
-	ibp.border_color = Color(Tok.PRIMARY, 0.6)
-	_theme.set_stylebox("normal", "IconButton", ib)
-	_theme.set_stylebox("hover", "IconButton", ibh)
-	_theme.set_stylebox("focus", "IconButton", ibh)
-	_theme.set_stylebox("pressed", "IconButton", ibp)
+	var ib := StyleBoxEmpty.new()
+	for st in ["normal", "hover", "focus", "pressed", "disabled"]:
+		_theme.set_stylebox(st, "IconButton", ib)
 	for c in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
 		_theme.set_color(c, "IconButton", Tok.TEXT_PRIMARY)
 	# Settings rows: the row itself is the target, drawn by the row.
@@ -486,11 +478,11 @@ func _build_fonts() -> void:
 		_theme.set_stylebox(st, "RowButton", empty)
 
 
-func _box(bg: Color, border: Color) -> StyleBoxFlat:
+func _box(bg: Color, border: Color, width := 1) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
 	s.border_color = border
-	s.set_border_width_all(1)
+	s.set_border_width_all(width)
 	s.set_corner_radius_all(Tok.RADIUS_PILL)
 	s.content_margin_left = Tok.SPACE_LG
 	s.content_margin_right = Tok.SPACE_LG
@@ -662,7 +654,7 @@ func _build_pause() -> void:
 		_pause_icon_caps.append(k)
 		icons.add_child(c)
 	col.add_child(icons)
-	_pause_hint = label(19, Tok.TEXT_FAINT, _font_body)
+	_pause_hint = label(21, Tok.TEXT_FAINT, _font_body)
 	_pause_box.add_child(_pause_hint)
 
 
@@ -760,7 +752,7 @@ func _build_settings() -> void:
 		_s_rows.append(r)
 		first = false
 	# Attribution for the music (CC BY 4.0) and the CC0 packs.
-	_s_credits = label(17, Tok.TEXT_FAINT, _font_body)
+	_s_credits = label(19, Tok.TEXT_FAINT, _font_body)
 	_s_credits.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_s_credits.custom_minimum_size = Vector2(560, 0)
 	_settings_box.add_child(_spacer(Tok.SPACE_XS))
@@ -874,7 +866,7 @@ func _fill_stats(box: VBoxContainer) -> void:
 		["skill.chain", "chain", int(st.get("chain", 0))],
 		["skill.cut", "scissors", int(st.get("cuts", 0))],
 		["stats.missions", "flag", Prefs.mission_level],
-		["stats.time", "clock", "%d:%02d" % [secs / 3600, (secs / 60) % 60]],
+		["stats.time", "clock", Loc.t("stats.hm") % [secs / 3600, (secs / 60) % 60] if secs >= 3600 else Loc.t("stats.m") % (secs / 60)],
 	]
 	box.add_child(board)
 
@@ -886,28 +878,19 @@ func _fill_skins(box: VBoxContainer) -> void:
 	sub.text = sentence(Loc.t("skins.total") % _group(Prefs.skin_points))
 	box.add_child(sub)
 	box.add_child(_spacer(Tok.SPACE_SM))
+	# A gallery: each ball on its brass socket, three to a row.
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", Tok.SPACE_MD)
+	grid.add_theme_constant_override("v_separation", Tok.SPACE_MD)
 	for i in Meta.SKINS.size():
-		var sk: Array = Meta.SKINS[i]
-		var open := Meta.skin_unlocked(i, Prefs.skin_points)
-		var b := button(func() -> void:
-			if Meta.skin_unlocked(i, Prefs.skin_points):
-				Prefs.set_skin(i)
-				_open_meta(_skins, _skins_box, _fill_skins)
-			else:
-				Sfx.play("deny")
-				Sfx.haptic_pattern("error"), i == Prefs.skin)
-		b.custom_minimum_size = Vector2(maxf(360.0, 52.0 * l.dp), maxf(60.0, Tok.TOUCH_MIN_DP * l.dp))
-		var name := sentence(Loc.t(sk[0]))
-		if i == Prefs.skin:
-			b.text = "%s  ·  %s" % [name, Loc.t("skins.equipped")]
-		elif open:
-			b.text = name
-		else:
-			b.text = "%s  ·  %s" % [name, Loc.t("skins.locked") % _group(int(sk[1]))]
-			b.modulate.a = 0.55
-		b.icon = _swatch(Meta.skin_colors(i), open)
-		b.expand_icon = false
-		box.add_child(b)
+		var t := SkinTile.new()
+		t.hud = self
+		t.index = i
+		t.theme_type_variation = &"RowButton"
+		t.custom_minimum_size = Vector2(172, 212)
+		grid.add_child(t)
+	box.add_child(grid)
 
 
 ## A small lit ball for a skin button (drawn into a texture once).
@@ -1122,22 +1105,114 @@ class IconBtn extends UIButton:
 	var lit := false
 
 	func _draw() -> void:
-		var col := Tok.TEXT_PRIMARY
-		if lit:
-			Hud.pill(self, Rect2(Vector2.ZERO, size).grow(-2.0), Tok.PRIMARY)
-			col = Tok.ON_PRIMARY
-		var s := size.y / 48.0 if caption == "" else size.y / 64.0
+		var down := get_draw_mode() == DRAW_PRESSED or get_draw_mode() == DRAW_HOVER_PRESSED
 		if caption == "":
-			Hud.glyph(self, glyph, size * 0.5, s, col)
+			# A brass token like the menu's, its icon engraved in the face.
+			var r := minf(size.x, size.y) * 0.5 - 3.0
+			var c := size * 0.5
+			Hud.brass_disc(self, c, r, Color("08090C") if down else Color("0E1015"))
+			var s := r / 24.0
+			Hud.glyph(self, glyph, c + Vector2(0.8, 1.2), s, Color(Tok.PRIMARY_HI, 0.35))
+			Hud.glyph(self, glyph, c, s, Tok.PRIMARY_HI)
 			return
+		# With a caption: an engraved brass plate; lit (on), its face is gold.
+		var plate := Rect2(Vector2(2, 2), size - Vector2(4, 6))
+		Hud.pill(self, Rect2(plate.position + Vector2(2, 3.5), plate.size), Color(0, 0, 0, 0.45))
+		Hud.pill(self, plate, Tok.PRIMARY_LO)
+		Hud.pill(self, plate.grow(-2.5), Tok.PRIMARY)
+		Hud.pill(self, plate.grow(-6.0), Tok.PRIMARY if lit else (Color("08090C") if down else Color("0E1015")))
+		var col := Tok.ON_PRIMARY if lit else Tok.PRIMARY_HI
+		var s := size.y / 64.0
 		var f := get_theme_font("font")
 		var fs := get_theme_font_size("font_size")
 		var tw := f.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var iw := 24.0 * s
 		var x0 := size.x * 0.5 - (iw + 12.0 + tw) * 0.5
-		Hud.glyph(self, glyph, Vector2(x0 + iw * 0.5, size.y * 0.5), s, Tok.ON_PRIMARY if lit else Tok.PRIMARY)
-		var base := size.y * 0.5 + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
-		draw_string(f, Vector2(x0 + iw + 12.0, base), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		var cy := plate.get_center().y
+		Hud.glyph(self, glyph, Vector2(x0 + iw * 0.5, cy), s, col)
+		var base := cy + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
+		draw_string(f, Vector2(x0 + iw + 12.0, base), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col if lit else Tok.TEXT_PRIMARY)
+
+
+## A ball in the gallery: the ball itself, large, on a brass socket, its
+## name and its state under it (in use, or what it costs to unlock). The one
+## in use has a gold rim; a locked one is grey behind a padlock and shakes
+## when tapped.
+class SkinTile extends UIButton:
+	var hud: Hud
+	var index := 0
+	var _shake := 0.0
+	var _box: StyleBoxFlat
+
+	func _ready() -> void:
+		super()
+		_box = StyleBoxFlat.new()
+		_box.set_corner_radius_all(22)
+		_box.anti_aliasing = true
+		_box.shadow_color = Color(0, 0, 0, 0.35)
+		_box.shadow_size = 8
+		_box.shadow_offset = Vector2(0, 4)
+		pressed.connect(func() -> void:
+			if Meta.skin_unlocked(index, Prefs.skin_points):
+				Prefs.set_skin(index)
+				for t in get_parent().get_children():
+					t.queue_redraw()
+			else:
+				_shake = 1.0
+				Sfx.play("deny")
+				Sfx.haptic_pattern("error"))
+
+	func _process(delta: float) -> void:
+		if _shake > 0.0:
+			_shake = maxf(0.0, _shake - delta / 0.4)
+			queue_redraw()
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var open := Meta.skin_unlocked(index, Prefs.skin_points)
+		var used := index == Prefs.skin
+		var sk: Array = Meta.SKINS[index]
+		_box.bg_color = Color("12151B")
+		_box.border_color = Tok.PRIMARY_HI if used else Tok.PRIMARY_LO
+		_box.set_border_width_all(3 if used else 2)
+		draw_style_box(_box, Rect2(Vector2(2, 2), size - Vector2(4, 4)))
+		var c := Vector2(size.x * 0.5 + sin(_shake * 30.0) * 6.0 * _shake, 82.0)
+		if used:
+			draw_circle(c, 60.0, Color(Tok.PRIMARY, 0.1), true, -1.0, true)
+		Hud.brass_disc(self, c, 50.0)
+		var col: Array = Meta.skin_colors(index)
+		if not open:
+			for k in 3:
+				var g: float = (col[k] as Color).get_luminance()
+				col[k] = Color(g, g, g).darkened(0.3)
+		var r := 30.0
+		draw_circle(c + Vector2(2, 4), r, Color(0, 0, 0, 0.45), true, -1.0, true)
+		draw_circle(c, r, col[0], true, -1.0, true)
+		draw_circle(c + Vector2(-1.5, -1.5), r - 3.0, col[1], true, -1.0, true)
+		draw_circle(c + Vector2(-9, -9), r * 0.34, Color(col[2], 0.85), true, -1.0, true)
+		draw_circle(c + Vector2(-11, -12), r * 0.12, Color(1, 1, 1, 0.7), true, -1.0, true)
+		if not open:
+			# The padlock.
+			var lp := c + Vector2(0, 6)
+			draw_arc(lp + Vector2(0, -10), 8.0, PI, TAU, 12, Tok.TEXT_PRIMARY, 3.0, true)
+			draw_rect(Rect2(lp + Vector2(-12, -10), Vector2(24, 20)), Tok.TEXT_PRIMARY)
+			draw_circle(lp + Vector2(0, -1), 3.0, Color("12151B"), true, -1.0, true)
+		var f := hud.body_font()
+		var name := Hud.sentence(Loc.t(sk[0]))
+		draw_string(f, Vector2(0, 162.0), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, Tok.TEXT_PRIMARY if open else Tok.TEXT_SECONDARY)
+		var state := ""
+		var scol := Tok.TEXT_SECONDARY
+		if used:
+			state = Loc.t("skins.equipped")
+			scol = Tok.PRIMARY_HI
+		elif not open:
+			state = Hud._group(int(sk[1]))
+		var sfs := 19
+		while sfs > 15 and f.get_string_size(state, HORIZONTAL_ALIGNMENT_LEFT, -1, sfs).x > size.x - 16.0:
+			sfs -= 1
+		if state != "":
+			draw_string(f, Vector2(0, 188.0), state, HORIZONTAL_ALIGNMENT_CENTER, size.x, sfs, scol)
 
 
 ## Statistics as an instrument board: three brass gauges up top (best
@@ -1245,8 +1320,8 @@ class StatsBoard extends Control:
 				fs -= 2
 			draw_string(num, Vector2(tr.position.x, tr.position.y + 84.0), txt, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, Color(Tok.TEXT_PRIMARY, e))
 			var lab := Hud.sentence(Loc.t(tiles[i][0]))
-			var lfs := 16
-			while lfs > 12 and body.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs).x > tw - 14.0:
+			var lfs := 19
+			while lfs > 16 and body.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs).x > tw - 14.0:
 				lfs -= 1
 			draw_string(body, Vector2(tr.position.x, tr.position.y + 110.0), lab, HORIZONTAL_ALIGNMENT_CENTER, tw, lfs, Color(Tok.TEXT_SECONDARY, e))
 
@@ -1993,7 +2068,7 @@ class TopBar extends Control:
 			elif remaining > 0:
 				txt = Loc.t("hud.left") % remaining
 			if txt != "":
-				draw_string(body, Vector2(0, ys - 12.0), txt, HORIZONTAL_ALIGNMENT_RIGHT, w - 44.0, 16, Color(col, la))
+				draw_string(body, Vector2(0, ys - 12.0), txt, HORIZONTAL_ALIGNMENT_RIGHT, w - 44.0, 19, Color(col, la))
 
 	func _peg(c: Vector2, r: float, ang: float, teeth: bool) -> void:
 		if r <= 0.5:
@@ -2058,7 +2133,7 @@ class TopBar extends Control:
 		if _wave_new_t < 3.2:
 			cap = Loc.t("hud.newWave")
 			ccol = Color(T_HOT, minf(1.0, (3.2 - _wave_new_t) / 0.4))
-		draw_string(body, Vector2(c.x - 70.0, c.y + r + 19.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 15, ccol)
+		draw_string(body, Vector2(c.x - 70.0, c.y + r + 21.0), cap, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 19, ccol)
 
 	func _crown(c: Vector2, s: float, col: Color, ci: CanvasItem = null) -> void:
 		if s <= 0.01:
@@ -2393,7 +2468,7 @@ class Overlay extends Control:
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:
-		return Vector2(l.margin + 98.0 + (i % 3) * 32.0, l.safe_top + 30.0 + (i / 3) * 32.0)
+		return Vector2(l.margin + 100.0 + (i % 3) * 36.0, l.safe_top + 30.0 + (i / 3) * 36.0)
 
 	func _draw_tray(l: Layout) -> void:
 		if menu_a > 0.0 or hud.perk_order.is_empty() or not hud.bar.visible:
@@ -2404,10 +2479,10 @@ class Overlay extends Control:
 				continue
 			var p := _slot(l, i)
 			var land := clampf(1.0 - (toast_t - 1.95) / 0.35, 0.0, 1.0) if id == toast_id else 0.0
-			var r := 14.0 + 3.0 * land
+			var r := 16.0 + 3.0 * land
 			draw_circle(p, r, Tok.SURFACE_LO, true, -1.0, true)
 			draw_arc(p, r, 0.0, TAU, 32, Color(Tok.PRIMARY, 0.35 + 0.6 * land), 1.0, true)
-			Perks.draw_icon(self, id, p, 1.0, 0.42)
+			Perks.draw_icon(self, id, p, 1.0, 0.48)
 			var lv := int(hud.perk_levels.get(id, 1))
 			if lv > 1:
 				Pal.disc(self, p + Vector2(11, 10), 6.0, Tok.PRIMARY)
@@ -2453,10 +2528,10 @@ class Overlay extends Control:
 		var slot := _slot(l, maxi(0, hud.perk_order.find(toast_id)))
 		var mid := icon0.lerp(slot, 0.5) + Vector2(0, -120.0)
 		var p := icon0.lerp(mid, fly).lerp(mid.lerp(slot, fly), fly)
-		var r := lerpf(30.0, 14.0, fly) * lerpf(0.85, 1.0, pop)
+		var r := lerpf(30.0, 16.0, fly) * lerpf(0.85, 1.0, pop)
 		draw_circle(p, r, Color(Tok.SURFACE_LO, pop), true, -1.0, true)
 		draw_arc(p, r, 0.0, TAU, 40, Color(Tok.PRIMARY, 0.8 * pop), 1.2, true)
-		Perks.draw_icon(self, toast_id, p, pop, lerpf(0.85, 0.42, fly))
+		Perks.draw_icon(self, toast_id, p, pop, lerpf(0.85, 0.48, fly))
 
 	## The flow meter: a fine bar on the floor just under the danger line.
 	## Hot, it fills white-cyan, glows and beats with the music.
@@ -2495,7 +2570,7 @@ class Overlay extends Control:
 		if n == 0:
 			return
 		var w := l.size.x
-		var ch := 152.0
+		var ch := 168.0
 		if ly + 24.0 + ch > l.fork_y - 110.0:
 			return
 		var body := hud.body_font()
@@ -2560,7 +2635,7 @@ class Overlay extends Control:
 				fs -= 2
 			draw_string(num, Vector2(-cw * 0.5 + 2.0, 77.0), big, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, Color(0, 0, 0, 0.35 * ca))
 			draw_string(num, Vector2(-cw * 0.5, 74.0), big, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, Color(Tok.PRIMARY_HI, ca))
-			draw_multiline_string(body, Vector2(-cw * 0.5 + 10.0, 102.0), txt, HORIZONTAL_ALIGNMENT_CENTER, cw - 20.0, 16, 3, Color(Tok.TEXT_PRIMARY, 0.9 * ca))
+			draw_multiline_string(body, Vector2(-cw * 0.5 + 8.0, 104.0), txt, HORIZONTAL_ALIGNMENT_CENTER, cw - 16.0, 19, 3, Color(Tok.TEXT_PRIMARY, 0.9 * ca))
 			draw_set_transform(Vector2.ZERO)
 
 	func _step_cards(rd: float) -> void:
@@ -2573,7 +2648,7 @@ class Overlay extends Control:
 		for i in 3:
 			if not _card_down[i] and _menu_t > 0.35 + 0.13 * i + 0.5:
 				_card_down[i] = true
-				_card_w[i] += randf_range(1.6, 2.6) * (1.0 if i % 2 == 0 else -1.0)
+				_card_w[i] += randf_range(0.8, 1.2) * (1.0 if i % 2 == 0 else -1.0)
 			var air := 0.0 if Prefs.reduced_motion else sin(_clock * 0.8 + i * 2.1) * 0.12
 			_card_w[i] += (-11.0 * sin(_card_ang[i]) - 1.1 * _card_w[i] + air) * rd
 			_card_ang[i] += _card_w[i] * rd
@@ -2706,6 +2781,10 @@ class GameOver extends Control:
 	var _retry: UIButton
 	var _menu: UIButton
 
+	var _bezel: StyleBoxFlat
+	var _window: StyleBoxFlat
+	var _tile: StyleBoxFlat
+
 	const COUNT_FROM := 0.15
 	const COUNT_D := 0.8
 
@@ -2726,7 +2805,7 @@ class GameOver extends Control:
 		for b in [_retry, _menu]:
 			b.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), min_h)
 		var bw := maxf(320.0, 48.0 * l.dp)
-		_box.position = Vector2(l.size.x * 0.5 - bw * 0.5, l.size.y * 0.66)
+		_box.position = Vector2(l.size.x * 0.5 - bw * 0.5, l.size.y * 0.7)
 		_box.size = Vector2(bw, 0)
 
 	func refresh_text() -> void:
@@ -2752,7 +2831,7 @@ class GameOver extends Control:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		_box.modulate.a = 0.0
 		_box.visible = true
-		var base_y := hud.l.size.y * 0.66
+		var base_y := hud.l.size.y * 0.7
 		_box.position.y = base_y + 10.0
 		Motion.to(_box, "modulate:a", 1.0, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
 		Motion.to(_box, "position:y", base_y, Motion.NORMAL, Motion.Ease.ENTER, 0.55)
@@ -2764,9 +2843,9 @@ class GameOver extends Control:
 		order.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1])
 		var parts: PackedStringArray = []
 		if _overloads > 0:
-			parts.append("%s ×%d" % [Loc.t("gameOver.overloads"), _overloads])
+			parts.append("%s ×%d" % [Hud.sentence(Loc.t("gameOver.overloads")), _overloads])
 		for p: Array in order.slice(0, 3 - parts.size()):
-			parts.append("%s ×%d" % [Loc.t(p[0]), p[1]])
+			parts.append("%s ×%d" % [Hud.sentence(Loc.t(p[0])), p[1]])
 		return "   ·   ".join(parts)
 
 	func close() -> void:
@@ -2799,19 +2878,50 @@ class GameOver extends Control:
 		var num := hud.num_font()
 		var cy := l.size.y * 0.34
 		var ka := Motion.ease_value(Motion.Ease.ENTER, _t / Motion.NORMAL)
-		draw_string(caps, Vector2(0, cy - 96.0 + (1.0 - ka) * 8.0), Loc.t("menu.daily" if _daily else "gameOver.title"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(Tok.PRIMARY if _daily else Tok.TEXT_SECONDARY, ka))
+		var disp0 := hud.display_font()
+		var title := Hud.sentence(Loc.t("menu.daily" if _daily else "gameOver.title"))
+		draw_string(disp0, Vector2(0, cy - 126.0 + (1.0 - ka) * 8.0), title, HORIZONTAL_ALIGNMENT_CENTER, w, 46, Color(Tok.PRIMARY_HI if _daily else Tok.TEXT_PRIMARY, ka))
 		var k := Motion.ease_value(Motion.Ease.ENTER, clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0))
 		var shown := Hud._group(int(round(_score * k)))
 		var sa := minf(1.0, (_t - COUNT_FROM) / 0.15)
+		# The score on a brass counter plate, sized for the final figure so it
+		# never grows while it counts.
+		var fs := Tok.TYPE_HERO
+		var pw := num.get_string_size(Hud._group(_score), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 72.0
+		var plate := Rect2(w * 0.5 - pw * 0.5, cy - 100.0 + (1.0 - ka) * 10.0, pw, 124.0)
+		if _bezel == null:
+			_bezel = StyleBoxFlat.new()
+			_bezel.set_corner_radius_all(26)
+			_bezel.shadow_color = Color(0, 0, 0, 0.5)
+			_bezel.shadow_size = 14
+			_bezel.shadow_offset = Vector2(0, 6)
+			_bezel.anti_aliasing = true
+			_window = StyleBoxFlat.new()
+			_window.set_corner_radius_all(18)
+			_window.bg_color = Color("0A0C10")
+			_window.border_color = Color(0, 0, 0, 0.8)
+			_window.set_border_width_all(1)
+			_window.anti_aliasing = true
+		_bezel.bg_color = Color(Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.4 + (0.4 if _record and _record_done else 0.0)), ka)
+		draw_style_box(_bezel, plate.grow(7.0))
+		draw_line(plate.position + Vector2(18, -4.5), Vector2(plate.end.x - 18.0, plate.position.y - 4.5), Color(Tok.PRIMARY_HI, 0.6 * ka), 1.4, true)
+		draw_style_box(_window, plate)
+		for sh in 6:
+			var sa2 := 0.5 * (1.0 - sh / 6.0) * ka
+			draw_rect(Rect2(plate.position.x + 8.0, plate.position.y + 4.0 + sh * 3.0, plate.size.x - 16.0, 3.0), Color(0, 0, 0, sa2))
+			draw_rect(Rect2(plate.position.x + 8.0, plate.end.y - 7.0 - sh * 3.0, plate.size.x - 16.0, 3.0), Color(0, 0, 0, sa2))
 		if sa > 0.0:
-			draw_string(num, Vector2(3, cy + 3.0), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(0, 0, 0, 0.35 * sa))
-			draw_string(num, Vector2(0, cy), shown, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_HERO, Color(Tok.TEXT_PRIMARY, sa))
+			var base := plate.get_center().y + (num.get_ascent(fs) - num.get_descent(fs)) * 0.5
+			draw_string(num, Vector2(3, base + 3.0), shown, HORIZONTAL_ALIGNMENT_CENTER, w, fs, Color(0, 0, 0, 0.35 * sa))
+			draw_string(num, Vector2(0, base), shown, HORIZONTAL_ALIGNMENT_CENTER, w, fs, Color(Tok.TEXT_PRIMARY, sa))
+		draw_colored_polygon(PackedVector2Array([plate.position + Vector2(12, 4), plate.position + Vector2(plate.size.x * 0.55, 4),
+			plate.position + Vector2(plate.size.x * 0.42, 56), plate.position + Vector2(12, 56)]), Color(1, 1, 1, 0.035 * ka))
 		# Under the score, what it means against the record:
 		#  - a new record: the old one, struck through (the stamp is above);
 		#  - close (85 % or more): "So close!" and a bar filling up to the
 		#    record, with how many points were missing;
 		#  - otherwise: how far short, in gold.
-		var ky := cy + 52.0
+		var ky := cy + 70.0
 		var land := COUNT_FROM + Motion.dur(COUNT_D)
 		var kg := clampf(Motion.ease_value(Motion.Ease.EMPHASIZED, (_t - land) / Motion.NORMAL), 0.0, 1.2)
 		var gap := _prev - _score
@@ -2856,28 +2966,57 @@ class GameOver extends Control:
 				var line := Loc.t("gameOver.gap") % Hud._group(gap)
 				var gs := lerpf(1.12, 1.0, ga)
 				draw_set_transform(Vector2(w * 0.5, ky), 0.0, Vector2(gs, gs))
-				draw_string(caps, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(0, 0, 0, 0.35 * ga))
-				draw_string(caps, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, ga))
+				draw_string(body, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(0, 0, 0, 0.35 * ga))
+				draw_string(body, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(Tok.PRIMARY_HI, ga))
 				draw_set_transform(Vector2.ZERO)
 			ky += 30.0
 		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
 		if kb > 0.0 and not _record and not (gap > 0 and _score >= _prev * 0.85):
-			var best_line := "%s  %s" % [Loc.t("menu.dailyBest" if _daily else "gameOver.bestScore"), Hud._group(maxi(_prev, _score))]
-			draw_string(caps, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, kb))
-		var ks := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.4) / Motion.NORMAL)
-		if ks > 0.0:
-			var stats := "%s %d:%02d   ·   %s %d %%" % [Loc.t("gameOver.time"), _secs / 60, _secs % 60, Loc.t("gameOver.accuracy"), _acc]
-			draw_string(caps, Vector2(0, ky + 32.0 + (1.0 - ks) * 6.0), stats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.TEXT_FAINT, ks))
-		var kk := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.5) / Motion.NORMAL)
+			var best_line := "%s  %s" % [Hud.sentence(Loc.t("menu.dailyBest" if _daily else "gameOver.bestScore")), Hud._group(maxi(_prev, _score))]
+			draw_string(body, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, 21, Color(Tok.TEXT_SECONDARY, kb))
+			ky += 14.0
+		# The run in three engraved tiles: time, accuracy, overloads.
+		var tile_w := minf(176.0, (w - 80.0) / 3.0)
+		var tiles := [
+			["clock", "%d:%02d" % [_secs / 60, _secs % 60], "gameOver.time"],
+			["aim", "%d %%" % _acc, "gameOver.accuracy"],
+			["bolt", str(_overloads), "gameOver.overloads"],
+		]
+		for i in 3:
+			var kt := Motion.ease_value(Motion.Ease.ENTER, clampf((_t - 0.4 - 0.06 * i) / Motion.NORMAL, 0.0, 1.0))
+			if kt <= 0.0:
+				continue
+			var tr := Rect2(w * 0.5 + (i - 1.5) * (tile_w + 12.0) + 6.0, ky + 18.0 + (1.0 - kt) * 12.0, tile_w, 108.0)
+			if _tile == null:
+				_tile = StyleBoxFlat.new()
+				_tile.set_corner_radius_all(20)
+				_tile.set_border_width_all(2)
+				_tile.anti_aliasing = true
+			_tile.bg_color = Color(Color("12151B"), kt)
+			_tile.border_color = Color(Tok.PRIMARY_LO, kt)
+			draw_style_box(_tile, tr)
+			var ic := tr.position + Vector2(tile_w * 0.5, 24.0)
+			draw_circle(ic, 16.0, Color(Tok.PRIMARY_LO, kt), true, -1.0, true)
+			draw_circle(ic, 14.0, Color(Color("0E1015"), kt), true, -1.0, true)
+			Hud.glyph(self, tiles[i][0], ic, 0.75, Color(Tok.PRIMARY_HI, kt))
+			draw_string(num, Vector2(tr.position.x, tr.position.y + 74.0), tiles[i][1], HORIZONTAL_ALIGNMENT_CENTER, tile_w, 30, Color(Tok.TEXT_PRIMARY, kt))
+			draw_string(body, Vector2(tr.position.x, tr.position.y + 98.0), Hud.sentence(Loc.t(tiles[i][2])), HORIZONTAL_ALIGNMENT_CENTER, tile_w, 18, Color(Tok.TEXT_SECONDARY, kt))
+		ky += 166.0
+		var kk := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.55) / Motion.NORMAL)
 		var feats := _feats()
 		if kk > 0.0 and feats != "":
-			draw_string(caps, Vector2(0, ky + 56.0 + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.PRIMARY_LO.lightened(0.25), kk))
+			draw_string(body, Vector2(0, ky + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, 20, Color(Tok.PRIMARY_HI, 0.85 * kk))
+			ky += 30.0
 		# Missions finished in this run, each with a gold tick.
 		var km := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.65) / Motion.NORMAL)
 		if km > 0.0:
 			for i in _done.size():
-				var line := Loc.t("mission.done") + "  ·  " + str(_done[i])
-				draw_string(caps, Vector2(0, ky + 92.0 + i * 24.0 + (1.0 - km) * 6.0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_CAPTION, Color(Tok.PRIMARY, km))
+				var line := str(_done[i])
+				var lw := body.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+				var yy := ky + i * 28.0 + (1.0 - km) * 6.0
+				var x0 := w * 0.5 - (lw + 30.0) * 0.5
+				draw_polyline(PackedVector2Array([Vector2(x0, yy - 7), Vector2(x0 + 6, yy - 1), Vector2(x0 + 17, yy - 13)]), Color(Tok.PRIMARY_HI, km), 3.0, true)
+				draw_string(body, Vector2(x0 + 30.0, yy), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(Tok.TEXT_PRIMARY, km))
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)
@@ -2887,7 +3026,7 @@ class GameOver extends Control:
 			var st := clampf(rt / 0.06, 0.0, 1.0)
 			var label := Loc.t("record.daily" if _daily else "record.new")
 			var lw := caps.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x + 44.0
-			var bc := Vector2(w * 0.5, cy - 150.0)
+			var bc := Vector2(w * 0.5 + pw * 0.5 - 30.0, cy - 88.0)
 			draw_set_transform(bc, -0.09, Vector2(bk, bk))
 			var rr := Rect2(-lw * 0.5, -28.0, lw, 56.0)
 			draw_rect(Rect2(rr.position + Vector2(3, 5), rr.size), Color(0, 0, 0, 0.45 * st))

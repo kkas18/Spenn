@@ -7,7 +7,7 @@ const BG := Color("0E1015")
 const BG_LIFT := Color("141820")
 const INK := Color("D9DDE3")
 const INK_DIM := Color("8A929D")
-const INK_FAINT := Color("4A515C")
+const INK_FAINT := Color("6E7682")   # ~4.5:1 on the background: faint, still readable
 
 # Gold is the only warm colour: the ball and power.
 const GOLD := Color("D4A94F")

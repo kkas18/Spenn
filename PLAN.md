@@ -2210,3 +2210,27 @@ Rettet:
 - Dyttet når du sikter (den sure viker unna) er uendret.
 - **Bot (6 frø):** første dytt etter 34–66 s i bølge 2, og 7–15 dytt per runde. Overlevelsen er
   innenfor støyen.
+
+## v7.46 – Designrevisjonen gjennomført (alle sju punkter)
+
+1. **Game over i messing-stil:**
+   - Tittelen er satt i Gluten med blandet skrift.
+   - Poengene står på en messingplate med vindu og glass, og platen har fast bredde mens tallet
+     teller opp.
+   - Tid, treff og overbelastning vises som graverte fliser.
+   - Ferdighetene står på én linje i gull, og fullførte oppdrag har en hake.
+   - Rekordstempelet sitter på platens hjørne.
+2. **Lesbar tekst:**
+   - Svak tekst er hevet fra #4A515C til #6E7682 (ca. 4,5:1 kontrast).
+   - Minste tekst er ca. 19 px: HUD-etiketter, flisetiketter, lapptekst, pausehint og kreditering.
+3. **Én knappestil:**
+   - Vanlige knapper er plater med messingkant, og hovedknappen er gull med messingkant.
+   - Runde ikonknapper (pause, tilbake) er messingmynter med gravert ikon.
+   - Dagens utfordring er en messingplate som blir gull når den er på.
+4. **Kulegalleri:**
+   - Kulene vises store på messingsokler, tre per rad.
+   - Kula som er i bruk har gullkant.
+   - Låste kuler er grå med hengelås og viser prisen, og de rister når de trykkes.
+5. Lappene med oppdrag svinger bare halvparten så mye når de lander.
+6. Fordelsbrettet har større ikoner (r 16) og mer luft.
+7. Spilletid vises som «37 min» eller «2 t 5 min».
