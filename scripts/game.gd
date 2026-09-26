@@ -36,6 +36,7 @@ func _ready()->void:
  var director:SpennDirector=Director.new()
  add_child(director)
  director.wave_changed.connect(hud.set_wave)
+ director.wave_cleared.connect(_on_wave_cleared)
  director.target_struck.connect(func(at:Vector2,color:Color):fx.burst(at,color))
  director.setup(self)
  pause_overlay=PauseOverlay.new()
@@ -44,6 +45,9 @@ func _ready()->void:
  pause_overlay.restart_requested.connect(_restart)
  var intro:SpennIntro=Intro.new()
  add_child(intro)
+func _on_wave_cleared(_wave:int,bonus:int)->void:
+ hud.add_wave_bonus(bonus)
+
 func _on_fired(projectile:SpennProjectile)->void:
  projectile.resolved.connect(_on_shot_resolved)
 func _on_shot_resolved(hit:bool)->void:
