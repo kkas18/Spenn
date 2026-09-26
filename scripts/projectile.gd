@@ -9,8 +9,8 @@ func _ready() -> void:
 	collision_layer = 1
 	collision_mask = 2
 	area_entered.connect(_on_area_entered)
-	var shape := CollisionShape2D.new()
-	var circle := CircleShape2D.new()
+	var shape: CollisionShape2D = CollisionShape2D.new()
+	var circle: CircleShape2D = CircleShape2D.new()
 	circle.radius = radius
 	shape.shape = circle
 	add_child(shape)
