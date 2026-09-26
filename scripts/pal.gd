@@ -48,18 +48,19 @@ const EYE := Color("E4E7EC")
 # kinds sit apart in hue and in lightness (they read in greyscale too),
 # nothing is gold (that is the ball's) or coral (that is danger), and the
 # Vokter (steel), Legen (pearl) and Speilet (silver) keep their materials.
-# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR
+# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS
+# (Pipp is a pastel lilac chick, Pakkis a pastel pink knot: soft, childlike tones)
 const THEMES := [
 	# Nordlys: the original, azure and emerald
-	[Color("4F8BFF"), Color("2FA66A"), Color("33D1C6"), Color("9A6BFF"), Color("8FE3FF"), Color("7E9CC9"), Color("D05BE0"), Color("9FD85A"), Color("FF7FB6"), Color("E6ECEF"), Color("B3C3D6")],
+	[Color("4F8BFF"), Color("2FA66A"), Color("33D1C6"), Color("9A6BFF"), Color("8FE3FF"), Color("7E9CC9"), Color("D05BE0"), Color("9FD85A"), Color("FF7FB6"), Color("E6ECEF"), Color("B3C3D6"), Color("D9C8FF"), Color("F7B8CB")],
 	# Dyphav: deep sea, royal blue, deep teal, seafoam
-	[Color("3F7BE6"), Color("1F9A8A"), Color("4CC7EC"), Color("7468F0"), Color("A6ECF2"), Color("7E9CC9"), Color("B85AE0"), Color("7DD8A8"), Color("EE84B8"), Color("E6ECEF"), Color("B3C3D6")],
+	[Color("3F7BE6"), Color("1F9A8A"), Color("4CC7EC"), Color("7468F0"), Color("A6ECF2"), Color("7E9CC9"), Color("B85AE0"), Color("7DD8A8"), Color("EE84B8"), Color("E6ECEF"), Color("B3C3D6"), Color("CFC6FF"), Color("F2B2C8")],
 	# Ametyst: periwinkle, lavender and orchid
-	[Color("7483FF"), Color("35A386"), Color("58CEDD"), Color("B27CFF"), Color("C7D6FF"), Color("7E9CC9"), Color("E466CF"), Color("B6DE78"), Color("FF8FC8"), Color("E6ECEF"), Color("B3C3D6")],
+	[Color("7483FF"), Color("35A386"), Color("58CEDD"), Color("B27CFF"), Color("C7D6FF"), Color("7E9CC9"), Color("E466CF"), Color("B6DE78"), Color("FF8FC8"), Color("E6ECEF"), Color("B3C3D6"), Color("E2CCFF"), Color("FABFD2")],
 	# Skog: jade, mint and moss
-	[Color("4A96E4"), Color("33AD5E"), Color("5FD8B4"), Color("8B7AEA"), Color("A2EAD2"), Color("7E9CC9"), Color("C265DA"), Color("C6DC58"), Color("F28CAC"), Color("E6ECEF"), Color("B3C3D6")],
+	[Color("4A96E4"), Color("33AD5E"), Color("5FD8B4"), Color("8B7AEA"), Color("A2EAD2"), Color("7E9CC9"), Color("C265DA"), Color("C6DC58"), Color("F28CAC"), Color("E6ECEF"), Color("B3C3D6"), Color("D6CFF7"), Color("F4BBCB")],
 	# Is: pale and luminous
-	[Color("78A6FF"), Color("4FBE86"), Color("6FE2DA"), Color("B39BFF"), Color("C6F2FF"), Color("7E9CC9"), Color("DA86EA"), Color("BEE68C"), Color("FFA3CA"), Color("E6ECEF"), Color("B3C3D6")],
+	[Color("78A6FF"), Color("4FBE86"), Color("6FE2DA"), Color("B39BFF"), Color("C6F2FF"), Color("7E9CC9"), Color("DA86EA"), Color("BEE68C"), Color("FFA3CA"), Color("E6ECEF"), Color("B3C3D6"), Color("E6DCFF"), Color("FCC8D8")],
 ]
 const THEME_TIME := 2.0
 

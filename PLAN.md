@@ -1809,3 +1809,33 @@ Fra bølge 5 (varslet med kortet «DE SVINGER»):
   - **Bytter plass (bølge 6):** to naboer i samme høyde bytter plass under siktet ditt.
   - Hvert triks navngis første gang det brukes.
 - Bot (6 frø): median ca. 182 s, lengste 341 s.
+
+## v7.30 – Triks-merker og to nye søte fiender (Pipp og Pakkis)
+
+**Idé:** fiendenes smarte ferdigheter blir *synlige ting*: små triks-merker (perler) som
+dingler under kroppen. Merkene kan kastes, arves, kopieres og deles ut, alltid i en synlig bue.
+Derfor overrasker byttene spilleren uten å føles tilfeldige eller urettferdige.
+
+**Fem triks (fra bølge 3):**
+- **Boble:** et skall som tar ett skudd og lades opp igjen etter 8 sekunder.
+- **Sprett:** lynrask unnamanøver med lang rekkevidde. Står aldri stille.
+- **Skygge:** blir usynlig et øyeblikk når du sikter (skuddene går gjennom).
+- **Ballong:** synker halvt så fort og stiger når du sikter.
+- **Liane:** svinger over til et nabotau når du sikter.
+
+**Merkene flytter seg:**
+- **Beskytter:** sikter du på en uten merke, kaster en nabo trikset sitt til den.
+- **Bytter:** naboer med merker bytter av og til med hverandre (to buer som krysser).
+- **Arv:** dør en med merke, kastes merket videre til nærmeste venn.
+- **Motspill:** skyt selve merket (perlen under kroppen) for å knuse trikset: TRIKS KNUST.
+
+**Nye fiender (barnslige, men smarte):**
+- **Pipp:** en liten, lilla kyllingunge med nebb og dusk som hopper litt.
+  - *Hermegåsa:* den kopierer trikset til nærmeste store fiende («vil ha det samme»).
+  - Den er først ute med å fange et merke som kastes.
+- **Pakkis:** en rund fersken-knott med en liten sekk.
+  - Den deler ut nye triks-merker til vennene sine hvert 6. sekund.
+  - Ta den først, ellers sprer triksene seg.
+
+Hvert triks og hver ny fiende introduseres første gang med navn og forklaring.
+- Bot (6 frø): median ca. 181 s, som før. Treffsikkerheten synker litt, så triksene virker.

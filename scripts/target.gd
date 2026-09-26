@@ -5,7 +5,7 @@ extends Node2D
 ## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
-enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR }
+enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS }
 enum Phase { OFF, HANGING, FALLING }
 
 const N := 10                  # rope points
@@ -13,13 +13,13 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0}
-const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1}
-const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 20.0, Kind.SHIELD: 26.0, Kind.BOSS: 46.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0, Kind.PIPP: 19.0, Kind.PAKKIS: 26.0}
+const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1, Kind.PIPP: 1, Kind.PAKKIS: 1}
+const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35, Kind.PIPP: 15, Kind.PAKKIS: 35}
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
-const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2}
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2, Kind.PIPP: 0.55, Kind.PAKKIS: 1.0}
 const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
 const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
 # Spinneren fights in three stages (by health left): two plates; three
@@ -42,12 +42,14 @@ const EVADE := {
 	Kind.REEL: [0.5, 85.0, 300.0, 0.0, 0.25],
 	Kind.MEDIC: [0.6, 120.0, 340.0, 40.0, 0.1],
 	Kind.MIRROR: [0.9, 70.0, 200.0, 0.0, 0.4],
+	Kind.PIPP: [0.5, 110.0, 380.0, 50.0, 0.0],
+	Kind.PAKKIS: [0.8, 90.0, 260.0, 0.0, 0.3],
 }
 # Material. Soft bodies are jelly: a ring of radial springs that dents
 # where it is struck, bulges elsewhere (area is kept), ripples round and
 # lags behind when the body is swung. Rigid bodies keep their shape; they
 # ring briefly, rock and spin instead.
-const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC]
+const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC, Kind.PIPP, Kind.PAKKIS]
 const SOFT_N := 18
 const SOFT_K := 340.0          # radial spring (1/s²)
 const SOFT_C := 7.5            # damping (1/s)
@@ -71,9 +73,9 @@ enum Trait { CURIOUS, SLEEPY, JITTERY, PROUD, SHY }
 # spins in and flashes, the Skygge fades in on the way).
 const ENTRY_SPEED := {Kind.DROP: 1700.0, Kind.HEAVY: 320.0, Kind.BOSS: 260.0, Kind.REEL: 420.0, Kind.MIRROR: 650.0}
 # Voice register by size and build: small ones squeak, big ones rumble.
-const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9}
+const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9, Kind.PIPP: 1.75, Kind.PAKKIS: 1.1}
 
-const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9}
+const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9, Kind.PIPP: 1.15, Kind.PAKKIS: 0.9}
 
 var kind: Kind = Kind.RING
 var soft := false
@@ -216,6 +218,18 @@ const PLAY_DEAD_KINDS := [Kind.HEAVY, Kind.SHIELD, Kind.MIRROR]
 var playdead := 0.0             # seconds of the act left
 var _peek_at := 0.0
 var surprised := false          # the act ended in a drop (the game says so)
+# Trick charms: a skill made visible, a bead dangling under the body. It can
+# be tossed, inherited, copied and handed out (the game moves them), and a
+# ball through the bead breaks it.
+enum Charm { NONE, BUBBLE, SPRING, GHOST, BALLOON, VINE }
+const CHARM_COL := [Color.WHITE, Color("7FE0C0"), Color("8FD0FF"), Color("F29CC8"), Color("FFB27A"), Color("9BD86A")]
+const BUBBLE_BACK := 8.0
+var charm := Charm.NONE
+var charm_flash := 0.0
+var wants_vine := false
+var _charm_cd := 0.0
+var _ghost_t := 0.0
+var _pipp_hop := 1.5
 var _watch: Target = null       # a neighbour it is looking at (fall, arrival)
 var _watch_t := 0.0
 var landed := false             # arrived this frame (the game tells neighbours)
@@ -346,6 +360,10 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt_delay = -1.0
 	temper = _roll_temper()
 	_roll_trait()
+	if k == Kind.PIPP:
+		# Baby proportions: big eyes.
+		_eye_scale *= 1.3
+		_pupil_scale *= 1.15
 	hp = HP[k]
 	radius = RADIUS[k]
 	anchor = anchor_pos
@@ -421,6 +439,12 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	nemesis = 0
 	playdead = 0.0
 	surprised = false
+	charm = Charm.NONE
+	charm_flash = 0.0
+	wants_vine = false
+	_charm_cd = 0.0
+	_ghost_t = 0.0
+	_pipp_hop = randf_range(0.8, 2.0)
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -898,7 +922,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * dt
+					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -915,6 +939,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_ride_step()
 			else:
 				_brain(dt)
+			_charm_step(dt)
 			_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
@@ -978,8 +1003,17 @@ func _brain(dt: float) -> void:
 			_heal_t = lerpf(4.5, 2.6, a)
 			wants_heal = true
 	match kind:
-		Kind.MEDIC, Kind.MIRROR:
+		Kind.MEDIC, Kind.MIRROR, Kind.PAKKIS:
 			_evade(dt)
+		Kind.PIPP:
+			_evade(dt)
+			# A chick can't keep still: little hops on its string.
+			_pipp_hop -= dt
+			if _pipp_hop <= 0.0:
+				_pipp_hop = randf_range(1.2, 2.4)
+				vel.y -= 150.0
+				squash_t = 0.0
+				squash_dir = Vector2.UP
 		Kind.RING:
 			# Vakt: with cover available it slides its hook along the rail to
 			# hang behind another target; otherwise it evades like the rest.
@@ -1090,16 +1124,18 @@ func _evade(dt: float) -> void:
 		if a < 0.4:
 			return
 		react *= 0.35
-	if tactic == 0:
+	if tactic == 0 and charm != Charm.SPRING:
 		# Wave one: they have not learned to read you yet.
 		react *= 1.6
+	if charm == Charm.SPRING:
+		react *= 0.45
 	# They know your rhythm: the moment you usually let go, they go.
 	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03
 	if on_beat:
 		_rhythm_used = true
 	elif _aim_t < react:
 		return
-	if temper == Temper.BOLD and not on_beat and randf() < 0.35:
+	if temper == Temper.BOLD and not on_beat and charm != Charm.SPRING and randf() < 0.35:
 		# Stands its ground: a defiant flinch, no move (a chance for you).
 		ang_vel -= dodge_dir * 1.5
 		_dodge_cd = lerpf(2.0, 1.0, a)
@@ -1108,6 +1144,10 @@ func _evade(dt: float) -> void:
 	var sc := _screen_h / 1280.0
 	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0) * [1.0, 1.25, 0.8, 1.0][temper] * (0.8 if tactic == 0 else 1.0)
 	var speed: float = prof[2] * lerpf(1.0, 1.4, a) * sc
+	if charm == Charm.SPRING:
+		reach *= 1.7
+		speed *= 1.3
+		charm_flash = 1.0
 	if on_beat:
 		# Timed to your release: a sharper, longer move.
 		reach *= 1.25
@@ -1292,6 +1332,92 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	startle_t = 0.25
 	Sfx.play("slide", randf_range(0.95, 1.1))
+
+
+## Takes on a trick charm (it flashes as it lands).
+func set_charm(c: int) -> void:
+	charm = c as Charm
+	charm_flash = 1.0
+	_charm_cd = 0.0
+	if charm == Charm.BUBBLE:
+		patched = true
+
+
+## Gives up its charm (tossed on, or broken); returns it.
+func take_charm() -> int:
+	var c := charm
+	charm = Charm.NONE
+	_ghost_t = 0.0
+	return c
+
+
+## Where the charm bead hangs: under the body on a short thread, trailing
+## the swing a little.
+func charm_pos() -> Vector2:
+	return pos + Vector2(0, radius + 15.0).rotated(clampf(-vel.x * 0.0015, -0.6, 0.6))
+
+
+func _charm_step(dt: float) -> void:
+	charm_flash = maxf(0.0, charm_flash - dt * 2.0)
+	match charm:
+		Charm.BUBBLE:
+			if not patched:
+				_charm_cd += dt
+				if _charm_cd >= BUBBLE_BACK:
+					_charm_cd = 0.0
+					patched = true
+					charm_flash = 1.0
+		Charm.GHOST:
+			_ghost_t -= dt
+			_charm_cd -= dt
+			if aimed and _charm_cd <= 0.0:
+				_ghost_t = 1.2
+				_charm_cd = 4.0
+				charm_flash = 1.0
+				Sfx.play("fade", randf_range(1.0, 1.15))
+		Charm.BALLOON:
+			if aimed:
+				length = maxf(60.0 * (_screen_h / 1280.0), length - 110.0 * dt)
+				goal_length = length
+		Charm.VINE:
+			_charm_cd -= dt
+			if aimed and _charm_cd <= 0.0 and acro == Acro.NONE and rope_host == null:
+				wants_vine = true
+				_charm_cd = 6.0
+				charm_flash = 1.0
+	if kind != Kind.SHADE:
+		hidden_amt = move_toward(hidden_amt, 1.0 if _ghost_t > 0.0 else 0.0, dt / 0.25)
+
+
+## The bead: a thread from the body, a coloured bead with a tiny glyph.
+func _draw_charm(f: Node2D) -> void:
+	if charm == Charm.NONE or phase != Phase.HANGING:
+		return
+	var a := 1.0 - 0.7 * hidden_amt
+	var p := charm_pos()
+	var top := pos + (p - pos).normalized() * (radius - 2.0)
+	var col: Color = CHARM_COL[charm]
+	f.draw_line(top, p, Color(Pal.STRING, 0.9 * a), 1.2, true)
+	if charm_flash > 0.0:
+		f.draw_circle(p, 7.0 + 8.0 * charm_flash, Color(col, 0.25 * charm_flash * a), true, -1.0, true)
+	f.draw_circle(p + Vector2(1.2, 1.2), 7.0, Color(0, 0, 0, 0.35 * a), true, -1.0, true)
+	f.draw_circle(p, 7.0, Color(col, a), true, -1.0, true)
+	f.draw_circle(p + Vector2(-2.2, -2.2), 2.0, Color(1, 1, 1, 0.55 * a), true, -1.0, true)
+	var g := Color(Pal.BG, 0.8 * a)
+	match charm:
+		Charm.BUBBLE:
+			f.draw_arc(p, 3.6, 0.0, TAU, 14, g, 1.2, true)
+		Charm.SPRING:
+			f.draw_polyline(PackedVector2Array([p + Vector2(-3, 3), p + Vector2(-1, -1), p + Vector2(1, 3), p + Vector2(3, -1)]), g, 1.3, true)
+		Charm.GHOST:
+			f.draw_arc(p + Vector2(0, 0.5), 3.0, PI, TAU, 8, g, 1.3, true)
+			f.draw_line(p + Vector2(-3, 0.5), p + Vector2(-3, 3.5), g, 1.3, true)
+			f.draw_line(p + Vector2(3, 0.5), p + Vector2(3, 3.5), g, 1.3, true)
+		Charm.BALLOON:
+			f.draw_circle(p + Vector2(0, -1), 2.6, g, true, -1.0, true)
+			f.draw_line(p + Vector2(0, 1.5), p + Vector2(0.8, 4.0), g, 1.0, true)
+		Charm.VINE:
+			f.draw_arc(p + Vector2(0, -1), 3.2, PI * 0.1, PI * 0.9, 8, g, 1.3, true)
 
 
 ## Sneaking down while you are busy aiming at someone else: silent, a
@@ -2113,6 +2239,10 @@ func _mesh_build() -> void:
 			_capsule(ROD_HALF, r, b)
 		Kind.DROP:
 			_fan(_drop_outline(r), Vector2(0.0, -r * 0.1), b)
+		Kind.PIPP:
+			_fan(_round(r, 20), Vector2.ZERO, b)
+		Kind.PAKKIS:
+			_fan(_round(r, 24), Vector2.ZERO, b)
 		Kind.SHADE:
 			_fan(_crescent(r), Vector2(-r * 0.55, 0.0), b)
 		Kind.BOSS:
@@ -2269,6 +2399,14 @@ func _hex(r: float, sub: int) -> PackedVector2Array:
 	return out
 
 
+## A plain disc outline (Pipp, Pakkis): round, soft bodies.
+func _round(r: float, n: int) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in n:
+		pts.append(Vector2.from_angle(TAU * i / n) * r)
+	return pts
+
+
 func _drop_outline(r: float) -> PackedVector2Array:
 	var pts := PackedVector2Array([Vector2(0, -r * 1.75)])
 	for i in 17:
@@ -2378,6 +2516,7 @@ func _draw_face() -> void:
 			shc[i] += Vector2(1.5, 1.5)
 		f.draw_colored_polygon(shc, Color(0, 0, 0, 0.35))
 		f.draw_colored_polygon(crown, Pal.GOLD)
+	_draw_charm(f)
 	if kind == Kind.BOSS and phase == Phase.HANGING:
 		var hp_max: int = HP[kind]
 		for i in hp_max:
@@ -2423,6 +2562,25 @@ func _hole() -> float:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _face
+	if kind == Kind.PIPP:
+		# A tiny beak under the eye and a tuft of down on top.
+		var bk := Color("F2A65A", col.a)
+		f.draw_colored_polygon(PackedVector2Array([Vector2(-4.5, radius * 0.42), Vector2(4.5, radius * 0.42), Vector2(0, radius * 0.42 + 6.5)]), bk)
+		for i in 3:
+			var x := (i - 1) * 4.0
+			f.draw_line(Vector2(x, -radius + 1.0), Vector2(x * 1.8, -radius - 7.0 - (2.0 if i == 1 else 0.0)), Color(col.lightened(0.3), col.a), 2.0, true)
+	elif kind == Kind.PAKKIS:
+		# Its little sack of tricks, tied at the neck, on its side.
+		var sc := Vector2(radius * 0.78, radius * 0.45)
+		var sack := Color("C99A6A", col.a)
+		f.draw_circle(sc + Vector2(1.5, 1.5), 9.5, Color(0, 0, 0, 0.3 * col.a), true, -1.0, true)
+		f.draw_circle(sc, 9.5, sack, true, -1.0, true)
+		f.draw_circle(sc + Vector2(-2.5, -2.5), 3.0, Color(Color("E6C39A"), 0.8 * col.a), true, -1.0, true)
+		f.draw_line(sc + Vector2(-4, -9), sc + Vector2(4, -9), Color(Color("8A6340"), col.a), 3.0, true)
+		if charm_flash > 0.0:
+			for k in 3:
+				var a := -PI * 0.5 + (k - 1) * 0.6
+				f.draw_line(sc + Vector2.from_angle(a) * 12.0, sc + Vector2.from_angle(a) * (16.0 + 4.0 * charm_flash), Color(Pal.GOLD_LIGHT, charm_flash * col.a), 1.5, true)
 	if morale > 0.35 and phase == Phase.HANGING and not panicked():
 		# Nervous sweat: a drop that runs down the side and fades.
 		var k := fposmod(_clock * 0.8 + _hue_shift * 20.0, 1.0)

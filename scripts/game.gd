@@ -47,12 +47,21 @@ const SNEAK_WAVE := 4           # while you aim at one, another sneaks down
 const SWAP_WAVE := 6            # two neighbours trade places under your aim
 const SNEAK_EVERY := 7.0
 const SWAP_EVERY := 8.0
+# Trick charms (from CHARM_WAVE): spawned on some targets, shared, swapped,
+# inherited, copied by Pipp and handed out by Pakkis.
+const CHARM_WAVE := 3
+const CHARM_SWAP := Vector2(7.0, 11.0)
+const CHARM_PASS_CD := 5.0
+const CHARM_GIFT := 6.0
+const CHARM_COPY := 5.0
+const CHARM_BREAK := 30
+const DEFENSIVE := [Target.Charm.BUBBLE, Target.Charm.SPRING, Target.Charm.GHOST]
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 5
 const ACRO_EVERY := Vector2(8.0, 13.0)
 const RESCUE_CHANCE := 0.4
-const ACRO_KINDS := [Target.Kind.RING, Target.Kind.SPLIT, Target.Kind.DROP, Target.Kind.SHADE, Target.Kind.MEDIC, Target.Kind.REEL]
+const ACRO_KINDS := [Target.Kind.RING, Target.Kind.SPLIT, Target.Kind.DROP, Target.Kind.SHADE, Target.Kind.MEDIC, Target.Kind.REEL, Target.Kind.PIPP]
 const MAX_MINIONS := 3
 const TRIPLE_SPREAD := 0.1
 const Ammo := Slingshot.Ammo
@@ -126,6 +135,10 @@ var _empty_seen := false
 var _sneak_cd := 0.0
 var _swap_cd := 0.0
 var _swap_aim: Target = null
+var _charm_swap_t := 8.0
+var _charm_pass_cd := 0.0
+var _charm_gift_t := 4.0
+var _charm_copy_t := 3.0
 var overloads := 0
 var skill_counts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var waves_cleared := 0
@@ -404,6 +417,10 @@ func _start_run() -> void:
 	_empty_seen = false
 	_sneak_cd = 4.0
 	_swap_cd = 4.0
+	_charm_swap_t = 8.0
+	_charm_pass_cd = 0.0
+	_charm_gift_t = 4.0
+	_charm_copy_t = 3.0
 	_acro_t = 8.0
 	_last_hazard = Hazard.NONE
 	_rhythm_told = false
@@ -497,6 +514,8 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	t.aggression = director.aggression()
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, 0.0)
 	_maybe_intro(t)
+	if director.wave >= CHARM_WAVE and kind != Target.Kind.BOSS and kind != Target.Kind.PAKKIS and _rng.randf() < clampf(0.12 + 0.03 * (director.wave - CHARM_WAVE), 0.0, 0.35):
+		_give_charm(t, 1 + _rng.randi() % 5)
 	director.count_spawn()
 	return t
 
@@ -627,6 +646,7 @@ func _process(delta: float) -> void:
 		_acro_tick(delta)
 		_nemesis_tick(delta)
 		_cunning_tick(delta)
+		_charm_tick(delta)
 		_pace(delta)
 		_spawn_minions()
 		_medic_work()
@@ -1371,6 +1391,8 @@ func _collide(b: Ball) -> void:
 				Sfx.play("twang", 1.2, -6.0)
 				Sfx.haptic(8, 0.2)
 			continue
+		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:
+			_break_charm(t)
 		if t.pluck(b.pos, b.vel, Ball.RADIUS):
 			Sfx.play("twang", randf_range(0.85, 1.25), -14.0)
 		if not b.can_touch(t.get_instance_id()) or not t.is_solid():
@@ -1817,6 +1839,8 @@ func _kill_bonus(t: Target, gained: int) -> int:
 					n.scatter(t.pos)
 	_last_kill = t.pos
 	_flow_add(FLOW_KILL)
+	if t.charm != Target.Charm.NONE:
+		_inherit_charm(t)
 	if t.nemesis > 0:
 		var rv := REVENGE * t.nemesis * _mult() * _surge()
 		bonus += rv
@@ -2394,12 +2418,163 @@ func _free_mover(t: Target) -> bool:
 
 
 ## Names a trick the first time it is pulled this run.
-func _name_trick(key: String, at: Vector2) -> void:
+func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if _told.has(key):
 		return
 	_told[key] = true
-	fx.popup(Loc.t(key), at + Vector2(0, -60.0), Pal.CORAL, 18)
+	fx.popup(Loc.t(key), at + Vector2(0, -60.0), col, 18)
 	Sfx.play("tease", 0.95, -4.0)
+
+
+# ---------------------------------------------------------------- charms
+
+func _give_charm(t: Target, c: int) -> void:
+	t.set_charm(c)
+	if not _told.has("charm.title"):
+		_told["charm.title"] = true
+		fx.after(0.6, func() -> void: hud.card(Loc.t("charm.title"), Loc.t("charm.sub"), 2.4))
+	_name_trick("charm.%d" % c, t.pos, Target.CHARM_COL[c])
+
+
+## Tosses `c` from `from` to `to` (visible arc); it is theirs on arrival.
+func _toss_charm(from: Vector2, to: Target, c: int) -> void:
+	var col: Color = Target.CHARM_COL[c]
+	Sfx.play("whoosh", 1.5, -10.0)
+	fx.charm_toss(from, to, col, func() -> void:
+		if is_instance_valid(to) and to.is_hittable() and to.charm == Target.Charm.NONE:
+			to.set_charm(c)
+			Sfx.play("click", 1.4, -8.0)
+			_name_trick("charm.%d" % c, to.pos, Target.CHARM_COL[c]))
+
+
+func _break_charm(t: Target) -> void:
+	var col: Color = Target.CHARM_COL[t.charm]
+	var at := t.charm_pos()
+	t.take_charm()
+	var pts := CHARM_BREAK * _mult()
+	_add_score(pts, at)
+	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16)
+	fx.sparks(at, col, 8)
+	fx.ring(at, col, 26.0)
+	Sfx.play("burst", 1.7, -6.0)
+	Sfx.haptic(10, 0.3)
+
+
+## A dying holder tosses its charm on: to a Pipp if one is near (it
+## catches first), else to the nearest friend.
+func _inherit_charm(t: Target) -> void:
+	var c := t.take_charm()
+	var best: Target = null
+	var bd := INF
+	for o in targets:
+		if o == t or not o.is_hittable() or o.charm != Target.Charm.NONE or o.kind == Target.Kind.BOSS:
+			continue
+		var d := o.pos.distance_to(t.pos) * (0.5 if o.kind == Target.Kind.PIPP else 1.0)
+		if d < 320.0 * layout.scale and d < bd:
+			bd = d
+			best = o
+	if best:
+		_toss_charm(t.pos, best, c)
+
+
+func _nearest(from: Target, pred: Callable, reach: float) -> Target:
+	var best: Target = null
+	var bd := reach * layout.scale
+	for o in targets:
+		if o == from or not o.is_hittable() or not pred.call(o):
+			continue
+		var d := o.pos.distance_to(from.pos)
+		if d < bd:
+			bd = d
+			best = o
+	return best
+
+
+func _charm_tick(delta: float) -> void:
+	for t in targets:
+		if t.wants_vine:
+			t.wants_vine = false
+			_vine_escape(t)
+	if director.wave < CHARM_WAVE and not _any_kind(Target.Kind.PAKKIS):
+		return
+	_charm_pass_cd -= delta
+	_charm_swap_t -= delta
+	_charm_gift_t -= delta
+	_charm_copy_t -= delta
+	# Protect: you aim at one without a trick; a neighbour throws it theirs.
+	if _charm_pass_cd <= 0.0 and Target.aim_hold > 0.35:
+		for t in targets:
+			if not t.aimed or t.charm != Target.Charm.NONE or t.kind == Target.Kind.BOSS:
+				continue
+			var giver := _nearest(t, func(o: Target) -> bool: return o.charm in DEFENSIVE and not o.aimed, 240.0)
+			if giver:
+				_charm_pass_cd = CHARM_PASS_CD
+				_toss_charm(giver.charm_pos(), t, giver.take_charm())
+				_name_trick("charm.pass", t.pos)
+			break
+	# Swap: two holders trade, their charms crossing in the air.
+	if _charm_swap_t <= 0.0:
+		_charm_swap_t = _rng.randf_range(CHARM_SWAP.x, CHARM_SWAP.y)
+		for a in targets:
+			if not a.is_hittable() or a.charm == Target.Charm.NONE:
+				continue
+			var b := _nearest(a, func(o: Target) -> bool: return o.charm != Target.Charm.NONE and o.charm != a.charm, 280.0)
+			if b:
+				var ca := a.take_charm()
+				var cb := b.take_charm()
+				_toss_charm(a.charm_pos(), b, ca)
+				_toss_charm(b.charm_pos(), a, cb)
+				_name_trick("charm.swap", a.pos.lerp(b.pos, 0.5))
+				break
+	# Pakkis hands out fresh tricks from its sack.
+	if _charm_gift_t <= 0.0:
+		_charm_gift_t = CHARM_GIFT
+		for p in targets:
+			if p.kind != Target.Kind.PAKKIS or not p.is_hittable():
+				continue
+			var to := _nearest(p, func(o: Target) -> bool: return o.charm == Target.Charm.NONE and o.kind != Target.Kind.BOSS and o.kind != Target.Kind.PAKKIS, 320.0)
+			if to:
+				p.charm_flash = 1.0
+				p.voice("up", -6.0)
+				_toss_charm(p.pos + Vector2(p.radius * 0.8, p.radius * 0.4), to, 1 + _rng.randi() % 5)
+	# Pipp copies the trick of the nearest big one (the holder keeps it).
+	if _charm_copy_t <= 0.0:
+		_charm_copy_t = CHARM_COPY
+		for p in targets:
+			if p.kind != Target.Kind.PIPP or not p.is_hittable() or p.charm != Target.Charm.NONE:
+				continue
+			var src := _nearest(p, func(o: Target) -> bool: return o.charm != Target.Charm.NONE and o.kind != Target.Kind.PIPP, 300.0)
+			if src:
+				src.charm_flash = 1.0
+				p.voice("up", -6.0)
+				_toss_charm(src.charm_pos(), p, src.charm)
+				_name_trick("charm.copy", p.pos)
+
+
+func _any_kind(k: int) -> bool:
+	for t in targets:
+		if t.kind == k and t.is_hittable():
+			return true
+	return false
+
+
+## Vine charm: aimed at, it swings over to the nearest rope it can reach.
+func _vine_escape(t: Target) -> void:
+	if not _can_swing(t) and not (t.is_hittable() and t.acro == Target.Acro.NONE and t.rope_host == null):
+		return
+	var best: Target = null
+	var bd := INF
+	for h in targets:
+		if h == t or not h.is_hittable() or h.acro != Target.Acro.NONE or h.kind == Target.Kind.BOSS or h.golden:
+			continue
+		var dx := absf(h.anchor.x - t.anchor.x)
+		if dx < 60.0 * layout.scale or dx > minf(t.length * 1.1, 260.0 * layout.scale) or h.pos.y - h.radius < t.pos.y + 10.0:
+			continue
+		if dx < bd:
+			bd = dx
+			best = h
+	if best:
+		t.start_swing(best)
 
 
 # ---------------------------------------------------------------- flow

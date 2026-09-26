@@ -73,6 +73,7 @@ var _glow: Node2D
 const TEX_SOFT := preload("res://assets/particles/soft.png")
 var _links: Array[Dictionary] = []
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
+var _charms: Array[Dictionary] = []  # trick charms in flight between targets
 var _puffs: Array[Dictionary] = []
 var _next_puff := 0
 
@@ -207,6 +208,12 @@ func link(a: Vector2, b: Vector2, col: Color) -> void:
 
 
 ## Runs `cb` after `delay` seconds of game time (slowed by hit-stop).
+## A trick charm tossed from `from` to target `to` in a high arc (it homes
+## on the target as it moves); `cb` runs on arrival (the game hands it over).
+func charm_toss(from: Vector2, to: Target, col: Color, cb: Callable, dur := 0.5) -> void:
+	_charms.append({"t": 0.0, "dur": dur, "from": from, "to": to, "end": to.charm_pos(), "col": col, "cb": cb})
+
+
 func after(delay: float, cb: Callable) -> void:
 	_later.append({"t": delay, "cb": cb})
 
@@ -520,6 +527,7 @@ func clear() -> void:
 		k.t = -1.0
 	_queued.clear()
 	_later.clear()
+	_charms.clear()
 	_links.clear()
 	_flashes.clear()
 	_waves.clear()
@@ -595,6 +603,15 @@ func _process(delta: float) -> void:
 		k.t += delta
 		if k.t > 0.5:
 			_links.erase(k)
+		else:
+			any = true
+	for c in _charms.duplicate():
+		c.t += delta
+		if is_instance_valid(c.to) and c.to.is_hittable():
+			c.end = c.to.charm_pos()
+		if c.t >= c.dur:
+			_charms.erase(c)
+			c.cb.call()
 		else:
 			any = true
 	for q in _later.duplicate():
@@ -676,6 +693,18 @@ func _draw_glow() -> void:
 
 
 func _draw() -> void:
+	for c in _charms:
+		var k: float = c.t / c.dur
+		var e := Motion.ease_value(Motion.Ease.STANDARD, k)
+		var mid: Vector2 = (c.from + c.end) * 0.5 + Vector2(0, -90.0 - 0.15 * c.from.distance_to(c.end))
+		var p: Vector2 = c.from.lerp(mid, e).lerp(mid.lerp(c.end, e), e)
+		for j in 4:
+			var ej := maxf(0.0, e - 0.05 * (j + 1))
+			var q: Vector2 = c.from.lerp(mid, ej).lerp(mid.lerp(c.end, ej), ej)
+			draw_circle(q, 5.0 - j, Color(c.col, 0.25 - 0.05 * j), true, -1.0, true)
+		draw_circle(p + Vector2(1.2, 1.2), 7.0, Color(0, 0, 0, 0.3), true, -1.0, true)
+		draw_circle(p, 7.0, c.col, true, -1.0, true)
+		draw_circle(p + Vector2(-2.2, -2.2), 2.0, Color(1, 1, 1, 0.6), true, -1.0, true)
 	# Smoke sits behind everything else.
 	for d in _puffs:
 		if d.t < 0.0:

@@ -259,6 +259,10 @@ func pick_kind(rng: RandomNumberGenerator) -> Target.Kind:
 		table.append([Target.Kind.MIRROR, 0.7 + a])
 	if i >= 3.0:
 		table.append([Target.Kind.SHADE, 0.8 + a * 1.2])
+	if i >= 1.2:
+		table.append([Target.Kind.PIPP, 0.9])
+	if i >= 2.2:
+		table.append([Target.Kind.PAKKIS, 0.55 + a * 0.5])
 	var total := 0.0
 	for e in table:
 		total += e[1]
