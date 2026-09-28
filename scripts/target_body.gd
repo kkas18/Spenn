@@ -96,6 +96,11 @@ enum Trait { CURIOUS, SLEEPY, JITTERY, PROUD, SHY }
 const ENTRY_SPEED := {Kind.DROP: 1700.0, Kind.HEAVY: 320.0, Kind.BOSS: 260.0, Kind.REEL: 420.0, Kind.MIRROR: 650.0}
 # Voice register by size and build: small ones squeak, big ones rumble.
 const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9, Kind.PIPP: 1.75, Kind.PAKKIS: 1.1, Kind.CAPTAIN: 0.7, Kind.SEER: 1.05, Kind.SNEAK: 1.3}
+# How each kind laughs at you (see Laughs): the small and light giggle, the
+# sly snicker, the crowd cackles, the unimpressed sneer, the Spinneren
+# laughs deep (see laugh_voice for mood and size).
+const LAUGH_FAMILY := {Kind.RING: "goblin", Kind.HEAVY: "sneer", Kind.SPLIT: "imp", Kind.ROD: "sneer", Kind.DROP: "giggle", Kind.SHIELD: "sneer", Kind.BOSS: "evil", Kind.REEL: "giggle", Kind.SHADE: "imp", Kind.MEDIC: "imp", Kind.MIRROR: "goblin", Kind.PIPP: "giggle", Kind.PAKKIS: "goblin", Kind.CAPTAIN: "sneer", Kind.SEER: "imp", Kind.SNEAK: "giggle"}
+const HEX := "0123456789abcdef"
 
 const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9, Kind.PIPP: 1.15, Kind.PAKKIS: 0.9, Kind.CAPTAIN: 0.85, Kind.SEER: 1.0, Kind.SNEAK: 1.0}
 
@@ -132,6 +137,18 @@ var _taunt := -1.0             # time into a taunt (<0: none)
 var _taunt_in := 3.0           # until the next unprompted taunt
 var _taunt_delay := -1.0       # a near miss is mocked a moment later
 static var _last_tease_ms := 0
+var _near := false             # the coming taunt answers a near miss
+# Laughing at you (see Jeers): how given to it this one is (0 never .. 1 at
+# every chance), and the laugh under way: its voice's loudness curve (hex,
+# see Laughs), when it began (real time: the voice runs on the clock, not
+# on the game's slowed time) and how fast the curve runs (its pitch).
+static var jeers: Jeers = null
+var jeer := 0.0
+var laugh_amt := 0.0           # 0..1 now: the mouth opens and the body bobs with it
+var _laugh_curve := ""
+var _laugh_ms := -1
+var _laugh_rate := 30.0
+var _laugh_prev := 0.0
 # Teamwork: a sturdy one steps into the line of fire to shield an ally.
 var covered := false           # an ally is guarding this one: it holds still
 var _guard_wait := -1.0        # reaction time before the guard moves
@@ -474,6 +491,12 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt = -1.0
 	_taunt_in = randf_range(2.0, 4.0)
 	_taunt_delay = -1.0
+	_near = false
+	if _laugh_ms >= 0:
+		Sfx.hush(self)
+	laugh_amt = 0.0
+	_laugh_curve = ""
+	_laugh_ms = -1
 	temper = _roll_temper()
 	_roll_trait()
 	mind_ask = false
@@ -704,12 +727,12 @@ func _land() -> void:
 			dent(pos + Vector2(0, radius), 520.0)
 		Kind.HEAVY, Kind.BOSS:
 			vel.y += 90.0
-			Sfx.play("clank", 0.8, -10.0)
+			Sfx.play("clank", 0.8, -10.0, pos)
 		Kind.MIRROR:
 			tilt = 0.0
 			flash_t = 0.12
-			Sfx.play("metal", 1.6, -14.0)
-	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
+			Sfx.play("metal", 1.6, -14.0, pos)
+	Sfx.play("knock", randf_range(0.9, 1.15), -12.0, pos)
 	if randf() < 0.35:
 		voice("up", -9.0)
 
@@ -717,17 +740,17 @@ func _land() -> void:
 func _on_entry() -> void:
 	match kind:
 		Kind.REEL:
-			Sfx.play("reel", 0.9, -6.0)
+			Sfx.play("reel", 0.9, -6.0, pos)
 		Kind.SHADE:
 			hidden_amt = 1.0
 		Kind.DROP:
-			Sfx.play("whoosh", 1.3, -10.0)
+			Sfx.play("whoosh", 1.3, -10.0, pos)
 
 
 ## Sings one syllable on a note of the key, in this kind's register.
 func voice(shape: String, db := 0.0) -> void:
 	var reg: float = VOICE_REG[kind] * (0.82 if mood == Mood.GRUMPY else (1.22 if mood == Mood.CUTE else 1.0))
-	Sfx.voice(shape, reg, randi() % 4, db)
+	Sfx.voice(shape, reg, randi() % 4, db, pos)
 
 
 ## Looks at a neighbour for a moment (it fell, or just arrived).
@@ -785,19 +808,87 @@ func _tease(dt: float) -> void:
 			taunt()
 
 
-## A wiggle-and-bob, a wink and (rarely, quietly) a "na-na".
+## A wiggle-and-bob, a wink and (rarely, quietly) a "na-na"; or, from one
+## given to it, a laugh right at you (see Jeers).
 func taunt() -> void:
 	if _taunt >= 0.0 or phase != Phase.HANGING or temper == Temper.TIMID or _closed_t > 0.0 or scared:
+		return
+	var near := _near
+	_near = false
+	if laughing():
 		return
 	_taunt = 0.0
 	_blink_t = 0.12
 	if soft:
 		# A three-lobed wiggle.
 		_jv[2] += 110.0 * (radius / 30.0)
+	if jeers != null and jeers.offer(self, Jeers.Why.NEAR if near else Jeers.Why.TAUNT):
+		return
 	var now := Time.get_ticks_msec()
-	if now - _last_tease_ms > 1600:
+	if now - _last_tease_ms > 1600 and not Sfx.laughing():
 		_last_tease_ms = now
 		voice("taunt", -2.0)
+
+
+## How this one laughs: [family, pitch] (see Laughs). By kind (LAUGH_FAMILY);
+## the cute giggle, the grumpy sneer, and the biggest brutes laugh deep.
+## Pitched by size, so a big one sounds big and a small one small.
+func laugh_voice() -> Array:
+	var fam: String = LAUGH_FAMILY[kind]
+	var pitch := pow(size_k, -0.45) * randf_range(0.97, 1.03)
+	if kind != Kind.BOSS:
+		if mood == Mood.CUTE:
+			fam = "giggle"
+			pitch *= 1.05
+		elif mood == Mood.GRUMPY:
+			fam = "sneer"
+			pitch *= 0.95
+		if fam == "sneer" and size_k > 1.12 and kind in [Kind.HEAVY, Kind.CAPTAIN, Kind.SHIELD]:
+			fam = "evil"
+	return [fam, clampf(pitch, 0.82, 1.2)]
+
+
+## Laughs at you, following its voice's loudness `curve` (from Sfx.laugh)
+## at `pitch`: eyes squeezed shut, the mouth opening with each "ha", the
+## body bobbing (a jelly one wobbling) along. The laugh runs on real time
+## (the voice does), not on the game's slowed time.
+func start_laugh(curve: String, pitch: float) -> void:
+	_laugh_curve = curve
+	_laugh_rate = Laughs.RATE * pitch
+	_laugh_ms = Time.get_ticks_msec()
+	_laugh_prev = 0.0
+	smug = maxf(smug, 0.8)
+
+
+func laughing() -> bool:
+	return _laugh_ms >= 0
+
+
+## The laugh under way: `laugh_amt` follows the voice. Struck (or no longer
+## hanging) it stops short, and so does the voice.
+func _laugh_step() -> void:
+	if _laugh_ms < 0:
+		laugh_amt = move_toward(laugh_amt, 0.0, 0.12)
+		return
+	# Where the voice is: read off its player while it sounds, else (silent,
+	# or just ended) by the clock.
+	var at := Sfx.laugh_pos(self)
+	var k := at * Laughs.RATE if at >= 0.0 else (Time.get_ticks_msec() - _laugh_ms) / 1000.0 * _laugh_rate
+	var i := int(k)
+	var n := _laugh_curve.length()
+	if i >= n or phase != Phase.HANGING or _closed_t > 0.0:
+		if i < n:
+			Sfx.hush(self)
+		_laugh_ms = -1
+		return
+	var a := HEX.find(_laugh_curve[i]) / 15.0
+	var b := HEX.find(_laugh_curve[mini(i + 1, n - 1)]) / 15.0
+	var v := lerpf(a, b, k - i)
+	# Each "ha" (a rise in the voice) squashes a jelly body a little.
+	if soft and v - _laugh_prev > 0.2:
+		_jv[0] += 70.0 * (v - _laugh_prev) * (radius / 30.0)
+	_laugh_prev = v
+	laugh_amt = v
 
 
 ## The phone was jerked downward: does this one take fright and climb?
@@ -1041,11 +1132,11 @@ func _debris_bounce(screen_h: float) -> void:
 		if speed > 120.0 and _floor_hits <= 2:
 			var loud := linear_to_db(clampf(speed / 1400.0, 0.1, 0.55))
 			if soft:
-				Sfx.play("squish", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("squish", randf_range(0.8, 0.95), loud - 6.0, pos)
 			elif kind in [Kind.SHIELD, Kind.MIRROR, Kind.BOSS]:
-				Sfx.play("metal", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("metal", randf_range(0.8, 0.95), loud - 6.0, pos)
 			else:
-				Sfx.play("wood", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("wood", randf_range(0.8, 0.95), loud - 6.0, pos)
 
 
 ## Radius of the collision shape around `closest_point` (a rod's capsule
@@ -1223,7 +1314,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 			enraged = true
 			_lunge_left += 60.0
 			_speed_bonus = 1.6
-			Sfx.play("whoosh", 0.8, -6.0)
+			Sfx.play("whoosh", 0.8, -6.0, pos)
 		elif kind == Kind.BOSS:
 			var st := 0 if hp > 5 else (1 if hp > 2 else 2)
 			if st != boss_stage:
@@ -1508,12 +1599,14 @@ func startle(from: Vector2) -> void:
 	# Missed it: once the fright passes, it mocks you.
 	if temper != Temper.TIMID and _taunt_delay < 0.0:
 		_taunt_delay = 0.5
+		_near = true
 	var away := (pos - from).normalized()
 	push(away * 45.0, pos - away * radius * 0.5 + Vector2(0, -radius * 0.3))
 
 
 func step(dt: float, descent: float, danger_y: float, danger_band: float, screen_h: float) -> void:
 	_screen_h = screen_h
+	_laugh_step()
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	struck_t = maxf(0.0, struck_t - dt)
 	stun_t = maxf(0.0, stun_t - dt)
@@ -1540,7 +1633,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if (kind == Kind.HEAVY or kind == Kind.BOSS) and _entry_run > 34.0:
 					# Lowered on its chain: a quiet clank per few links.
 					_entry_run = 0.0
-					Sfx.play("clank", randf_range(1.3, 1.5), -20.0)
+					Sfx.play("clank", randf_range(1.3, 1.5), -20.0, pos)
 				if kind == Kind.MIRROR:
 					tilt += 11.0 * dt
 			else:
@@ -1716,7 +1809,7 @@ func _brain(dt: float) -> void:
 				_calm_t = 0.0
 				var d := minf(lerpf(240.0, 380.0, a) * dt, maxf(0.0, length - 40.0))
 				if d > 0.0 and _reeled == 0.0:
-					Sfx.play("reel", randf_range(0.95, 1.1))
+					Sfx.play("reel", randf_range(0.95, 1.1), 0.0, pos)
 				length -= d
 				_reeled += d
 			else:
@@ -1741,7 +1834,7 @@ func _brain(dt: float) -> void:
 				_shade_hidden = not _shade_hidden
 				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * randf_range(0.85, 1.2)
 				if _shade_hidden:
-					Sfx.play("fade", randf_range(0.95, 1.05))
+					Sfx.play("fade", randf_range(0.95, 1.05), 0.0, pos)
 			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
 			# Spinneren: aimed at, it spins its plates faster to close the gap.
@@ -1818,7 +1911,7 @@ func mind_climb(amount: float) -> void:
 	_hop_left += amount
 	squash_t = 0.0
 	squash_dir = Vector2.UP
-	Sfx.play("creak", randf_range(0.95, 1.1))
+	Sfx.play("creak", randf_range(0.95, 1.1), 0.0, pos)
 
 
 ## A bluff: it stands its ground with a defiant flinch and a smirk.
@@ -1873,7 +1966,7 @@ func _slide(x: float, speed: float, quiet := false) -> void:
 	_slide_to = x
 	_slide_speed = speed
 	if not quiet:
-		Sfx.play("slide", randf_range(0.92, 1.08))
+		Sfx.play("slide", randf_range(0.92, 1.08), 0.0, pos)
 
 
 ## Idle life: now and then a target drifts along the rail on its own. Bold
@@ -1947,7 +2040,7 @@ func _gold_step(dt: float) -> void:
 	if _gold_t < GOLD_TIME:
 		return
 	if _gold_t - dt < GOLD_TIME:
-		Sfx.play("reel", 1.3)
+		Sfx.play("reel", 1.3, 0.0, pos)
 		voice("up")
 	length -= 520.0 * (_screen_h / 1280.0) * dt
 	if length < 14.0:
@@ -2011,7 +2104,7 @@ func _dead_step(dt: float) -> void:
 		_lunge_left += 75.0 * (_screen_h / 1280.0)
 		surprised = true
 		voice("taunt")
-		Sfx.play("whoosh", 0.9, -4.0)
+		Sfx.play("whoosh", 0.9, -4.0, pos)
 
 
 ## Slides the hook straight to `x` (past neighbours: a deliberate move).
@@ -2021,7 +2114,7 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	_tell_t = 0.0
 	startle_t = 0.25
-	Sfx.play("slide", randf_range(0.95, 1.1))
+	Sfx.play("slide", randf_range(0.95, 1.1), 0.0, pos)
 
 
 ## Makes this one a variant of its family (right after spawning).
@@ -2155,6 +2248,12 @@ func personality() -> void:
 	p_wary = clampf(w, 0.0, 1.0)
 	p_sly = clampf(s, 0.0, 1.0)
 	p_social = clampf(so, 0.0, 1.0)
+	# Who laughs at you: the bold, the grumpy, the proud and the heavies
+	# (the calm rarely, the timid never); the Spinneren and a Kommandør
+	# always have it in them.
+	jeer = 0.0 if temper == Temper.TIMID else clampf((p_bold - 0.3) * 1.6, 0.0, 1.0)
+	if kind == Kind.BOSS or kind == Kind.CAPTAIN:
+		jeer = maxf(jeer, 0.8)
 
 
 ## Grumpy ones take things badly: anger rises (a rage at 1).
@@ -2309,7 +2408,7 @@ func _charm_step(dt: float) -> void:
 				_ghost_t = 1.2
 				_charm_cd = 4.0
 				charm_flash = 1.0
-				Sfx.play("fade", randf_range(1.0, 1.15))
+				Sfx.play("fade", randf_range(1.0, 1.15), 0.0, pos)
 		Charm.BALLOON:
 			if aimed:
 				length = maxf(60.0 * (_screen_h / 1280.0), length - 110.0 * dt)
@@ -2393,7 +2492,7 @@ func _release() -> void:
 	spin = signf(vel.x) * randf_range(2.0, 3.5)
 	startle_t = 0.5
 	voice("up")
-	Sfx.play("whoosh", randf_range(1.0, 1.2), -4.0)
+	Sfx.play("whoosh", randf_range(1.0, 1.2), -4.0, pos)
 
 
 ## In the air: a thrown body. It grabs the host's rope if it passes close
@@ -2460,7 +2559,7 @@ func _try_grab(h: Target) -> bool:
 	_dodge_cd = 1.5
 	grabbed = true
 	voice("up")
-	Sfx.play("creak", randf_range(0.9, 1.05), -2.0)
+	Sfx.play("creak", randf_range(0.9, 1.05), -2.0, pos)
 	return true
 
 
@@ -2516,7 +2615,7 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 		tele_t -= dt
 		if tele_t <= 0.0:
 			_lunge_left += drop * (_screen_h / 1280.0)
-			Sfx.play("whoosh", randf_range(0.95, 1.15), -8.0)
+			Sfx.play("whoosh", randf_range(0.95, 1.15), -8.0, pos)
 		return
 	_brain_t -= dt
 	if _brain_t <= 0.0:

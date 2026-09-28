@@ -2642,3 +2642,109 @@ Rettet:
      v7.53: 184 s, v7.54: 202 s). Litt ned fra v7.54 fordi fiendene nå også leser vinden, og
      fordi sky fiender hopper litt lenger unna.
    - Vinden er sjekket numerisk: siktelinjen og kula driver like langt, i snitt 11,6 px.
+
+## v7.56 – Lyd: hånlatter, en miks der effektene høres, og musikk som løfter seg
+
+1. **Fiender som ler deg ut:**
+   - 25 latteropptak i fem stemmetyper, alle CC0 fra freesound.org (kreditert i
+     `CREDITS.md`):
+
+     | Stemme | Hvem | Karakter |
+     |---|---|---|
+     | Fnis (giggle) | Pipp, Dråpe, Snelle, Luring | små og lyse |
+     | Snik (imp) | Splitt, Skygge, Lege, Leser | lure |
+     | Kakling (goblin) | Ring, Pakkis, Speil | mengden |
+     | Hån (sneer) | Tungvekt, Stav, Skjold, Kommandør | voksne og uimponerte, ned til et enkelt «heh» |
+     | Skurk (evil) | Spinneren, og de største brutale | dyp skurkelatter |
+
+   - Søte fiender fniser, gretne håner, og tonehøyden følger størrelsen: en stor fiende
+     låter stor.
+   - **Hvem ler:** bare noen. De frekke, gretne, stolte og tunge ler mest, de rolige
+     sjelden, de sky aldri. Spinneren og Kommandøren har det alltid i seg.
+   - **Når:**
+     - når en unnamanøver eller bløff lykkes (vurdert 0,8 s etter at kula passerte, og den
+       ble ikke truffet);
+     - ved nesten-bom;
+     - noen ganger når de er frekke nær linjen;
+     - alltid ved gjennombrudd (den frekkeste i nærheten);
+     - og alltid «siste latter» når runden går tapt.
+   - **Aldri støy:** én latter om gangen, 4–7 s stillhet etter, sjeldnere jo mer de har
+     ledd, og aldri under overbelastning. Botene hører 2–3 latter i minuttet.
+   - **Ansiktet ler med:** øynene lukker seg til glade buer, og munnen åpner seg på hvert
+     «ha». Munnen følger lydens egen lydstyrkekurve, som er lagret per opptak
+     (`scripts/laughs.gd`) og lest av spillerens avspillingsposisjon, så synken er eksakt.
+     Kroppen hopper og lener seg bakover, små fiender rister, og geléfiender skvulper.
+     Treffer du en fiende midt i latteren, stopper den brått.
+   - **Lyden kommer fra fienden:** latteren følger kroppen i stereo.
+   - **Innstilling:** «Fiendelatter» under Lyd, med eget ikon. Slått av er latteren stille,
+     men ansiktet ler fortsatt.
+   - **Import** (`tools/import_assets.py`, `build_laughs`): opptakene klippes ut av lengre
+     filer, høypassfiltreres, renses for sus (forsiktig spektral port) og klippes i en pause
+     mellom stavelser, aldri midt i et «ha». Til slutt lydstyrkematches de som alle andre
+     lyder.
+2. **Miksen, målt og rettet:**
+   - **Hovedfunn:** Godots kompressor regner omtrent dobbelt så mange dB over terskelen som
+     tallene sier. Effektbussens «lim» (−30 dB, 4:1) presset derfor hvert treff 10–20 dB
+     ned til ett flatt nivå, under musikken. Treff, død og gjennombrudd låt like svakt som
+     et klask. Dette er emulert per lyd fra Godots kildekode.
+   - **Ny effektkjede:** limet tar nå bare de kraftigste toppene (−14 dB, 2:1, 1 ms), og
+     effektbussen er 3 dB lavere. Resultat:
+     - treff og klask er 4–8 dB tydeligere;
+     - aksentene (død, gjennombrudd) er ca. 9 dB tydeligere;
+     - små bakgrunnslyder ligger 3 dB tilbake;
+     - grensesnitt, tonestige og stemmelyder er kompensert til der de var.
+   - **Stereo:** lydene i feltet (treff, klask, kutt, knuser, tau, veggtreff, fiendelyder)
+     spilles fra der de skjer, med 2D-spillere og moderat panorering (ca. 5 dB ved kanten).
+     Det gir romlig atskillelse fra musikken i midten. 2D-spillerens halve nivå per side
+     (−6 dB i midten) kompenseres. Grensesnitt og store aksenter står i midten.
+   - **Stemmebuss (Voices):** latteren har egen buss med høypass, litt nærvær (+2,5 dB ved
+     3,2 kHz), et kort eget rom og en sikkerhetslimiter. Den har ingen kompressor, fordi den
+     presset latteren 10–19 dB.
+   - **Musikken gir plass mens du spiller:**
+     - fast nivå −3,5 dB (før steg den med presset, opptil +4,5 dB i de travleste
+       øyeblikkene);
+     - EQ-dipp ved 320 Hz og 1 kHz, der treffene har kroppen sin (−3 og −2,5 dB ved fullt
+       press, to tredjedeler i ro);
+     - viker opptil 2,5 dB når feltet er travelt (etter antall lyder som klinger);
+     - dukker under latter med en kompressor styrt av stemmebussen: i snitt ca. 4 dB,
+       6–7 dB på det sterkeste, og den går mykt tilbake mellom «ha»-ene.
+3. **Musikkløft:** to nye spor av Kevin MacLeod (CC BY 4.0, kreditert i spillet og i
+   `CREDITS.md`):
+   - «Brain Dance», det drivende løftet;
+   - «Cephalopod», hardt og mørkt for Spinneren.
+
+   Begge er målt til nøyaktig 124,00 BPM, samme tempo som «Mesmerizing Galaxy», og ligger
+   rundt samme grunntone (F).
+   - **Løkker:** 32 og 16 takter er klippet på taktstreken. Skjøten ligger på 45. og 20.
+     persentil av løkkenes egne taktstreker, altså umulig å skille fra en vanlig taktstrek.
+     Lydstyrken er matchet med K-vekting (BS.1770), altså etter øret og ikke etter RMS.
+   - **Hvilket spor når:** første bølge har det rolige sporet, deretter veksler løftet og
+     det rolige sporet annenhver bølge, så ingen løkke går lenge. Bossen har sitt eget spor
+     mens den henger der.
+   - **Byttene:** skjer på neste taktstrek. Det nye sporet startes like langt inn i sin takt
+     som det gamle er, så slagene faller eksakt sammen mens det gamle toner ut. Et
+     Movie Maker-opptak viste bytte 0,069 slag etter taktstreken, og nytt spor startet
+     0,0333 s inn.
+4. **Målt i ekte lyd** (Godots Movie Maker, samme bot-runde før og etter, musikk og
+   effekter tatt opp hver for seg, midtspill 20–73 s):
+
+   | Måling | v7.55 | v7.56 |
+   |---|---|---|
+   | Musikk (median, 400 ms) | −44,4 dB | −47,2 dB |
+   | Effekter over musikk (aktive vinduer, median) | −13,0 dB | −7,2 dB |
+   | Effekter over musikk (p90) | −10,3 dB | −1,6 dB |
+   | Effekttopper over musikk (median) | −2,1 dB | +3,6 dB |
+   | Effekttopper over musikk (p90) | +4,3 dB | +10,0 dB |
+
+   Kontrollopptak:
+   - latter +7–8 dB over den duckede musikken;
+   - musikken dukker 4,4 dB under latteren;
+   - latter og treff ved kanten ligger ±5,8 og ±5,1 dB mot sin side.
+5. **Tester:**
+   - Testpakken passerer (import, oppstart, soak og bot på tre frø).
+   - 18 botrunder på tre nivåer ga 4–12 latter per runde. Fordelingen var nesten-bom
+     3–9, unnamanøver 0–3 og bløff 0–3, og «siste latter» kom i alle runder.
+   - Gjennombrudd ga da sjelden latter, fordi pausen etter forrige latter sperret. Nå ler
+     den frekkeste i nærheten alltid. De tre testfrøene gir nå 7–8 latter per runde,
+     medregnet én gjennombruddslatter.
+   - Botens rapport viser latter per årsak (`Jeers.report`).

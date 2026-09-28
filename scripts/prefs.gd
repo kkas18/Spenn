@@ -1,8 +1,9 @@
 extends Node
 ## Persisted preferences and progress (autoload `Prefs`): language, music
-## and effects volume, haptics, reduced motion, aim guide, best score,
-## which enemies and intros have been seen, and the meta game: missions,
-## lifetime points and stats, the chosen ball skin and the daily record.
+## and effects volume, the enemies' laughs, haptics, reduced motion, aim
+## guide, best score, which enemies and intros have been seen, and the meta
+## game: missions, lifetime points and stats, the chosen ball skin and the
+## daily record.
 ## Restored on every launch.
 
 signal changed
@@ -14,6 +15,7 @@ var lang := ""
 var music_volume := 2
 var sfx_volume := 2
 var haptics := true
+var laughs := true             # the enemies laugh out loud at you (Settings, Sound)
 var reduced_motion := false
 var aim_guide := true
 var tilt := true               # tilt parallax and gloss follow the phone
@@ -46,6 +48,7 @@ func _ready() -> void:
 		music_volume = int(_cfg.get_value("settings", "music", legacy))
 		sfx_volume = int(_cfg.get_value("settings", "sfx", legacy))
 		haptics = bool(_cfg.get_value("settings", "haptics", true))
+		laughs = bool(_cfg.get_value("settings", "laughs", true))
 		reduced_motion = bool(_cfg.get_value("settings", "reduced_motion", false))
 		aim_guide = bool(_cfg.get_value("settings", "aim_guide", true))
 		tilt = bool(_cfg.get_value("settings", "tilt", true))
@@ -93,6 +96,11 @@ func set_sfx(v: int) -> void:
 
 func toggle_haptics() -> void:
 	haptics = not haptics
+	_commit()
+
+
+func toggle_laughs() -> void:
+	laughs = not laughs
 	_commit()
 
 
@@ -242,6 +250,7 @@ func save() -> void:
 	_cfg.set_value("settings", "music", music_volume)
 	_cfg.set_value("settings", "sfx", sfx_volume)
 	_cfg.set_value("settings", "haptics", haptics)
+	_cfg.set_value("settings", "laughs", laughs)
 	_cfg.set_value("settings", "reduced_motion", reduced_motion)
 	_cfg.set_value("settings", "aim_guide", aim_guide)
 	_cfg.set_value("settings", "tilt", tilt)

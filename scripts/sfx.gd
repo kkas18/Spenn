@@ -1,15 +1,26 @@
 extends Node
 ## Sound effects (autoload `Sfx`) and haptics.
-## Recorded sounds from the Kenney packs (CC0, see CREDITS.md), prepared by
-## tools/import_assets.py: trimmed, faded and matched to one loudness, so the
-## gains below are the mix. Each sound has several takes; a play picks one
-## that differs from the last, with a small random pitch drift, so repeats
-## never sound mechanical. A light high-shelf roll-off, a compressor and a
-## small dark room on the Sfx bus glue everything together.
+## Recorded sounds from the Kenney packs and freesound.org (CC0, see
+## CREDITS.md), prepared by tools/import_assets.py: trimmed, faded and
+## matched to one loudness, so the gains below are the mix. Each sound has
+## several takes; a play picks one that differs from the last, with a small
+## random pitch drift, so repeats never sound mechanical. A light high-shelf
+## roll-off, a compressor and a small dark room on the Sfx bus glue
+## everything together.
+## Sounds of the field are placed where they happen: given a position they
+## play from a 2D player, panned across the stereo image (gently, so a
+## phone speaker loses nothing), which also lifts them clear of the music
+## in the middle. The interface and the big accents stay in the middle.
+## The enemies' laughs have their own bus (Voices): a presence lift and a
+## short room of their own, and the music ducks under them (Music keys a
+## compressor on it). They follow the laughing body across the image.
 
-const POOL := 14
+const POOL := 10                # the middle: interface, accents, notes, syllables
+const FIELD_POOL := 10          # placed: the sounds of the field
+const PAN := 1.2                # how wide the field spreads (Godot's 2D panning)
+const PAN_DB := 6.02            # a 2D player gives each side half its level: made up here
 const MIN_GAP := 0.05           # same sound can't retrigger faster than this
-const LEVEL_DB := [-80.0, -24.0, -18.0, -13.0]  # off, low, medium, high
+const LEVEL_DB := [-80.0, -27.0, -21.0, -16.0]  # off, low, medium, high
 const STRINGS_DB := -4.0        # the strings sit under the effects
 # The mix keeps the music in front of the busy middle of the field:
 # - each sound may retrigger only so often (GAP, else MIN_GAP);
@@ -46,7 +57,7 @@ const MIX := {
 	"reel": [-18.0, 0.04, 3],
 	"fade": [-16.0, 0.04, 3],
 	"token": [-22.0, 0.05, 2],
-	"tick": [-18.0, 0.0, 1],
+	"tick": [-15.0, 0.0, 1],
 	"reload": [-18.0, 0.04, 1],
 	"beat": [-13.0, 0.0, 5],
 	# accents: rarer, allowed to speak
@@ -60,12 +71,12 @@ const MIX := {
 	"lose": [-10.0, 0.0, 1],
 	"reveal": [-10.0, 0.0, 1],
 	# interface
-	"click": [-15.0, 0.03, 4],
-	"panel": [-17.0, 0.03, 3],
+	"click": [-12.0, 0.03, 4],
+	"panel": [-14.0, 0.03, 3],
 	"pause": [-13.0, 0.0, 1],
 	"resume": [-13.0, 0.0, 1],
 	"countdown": [-11.0, 0.0, 1],
-	"count": [-22.0, 0.0, 2],
+	"count": [-19.0, 0.0, 2],
 	"restart": [-13.0, 0.0, 1],
 	"deny": [-13.0, 0.0, 1],
 	# enemy evasion (Kenney RPG Audio)
@@ -82,18 +93,25 @@ const MIX := {
 	"rise": [-10.0, 0.0, 1],
 	"fall": [-13.0, 0.0, 1],
 	# creature voices (made by the import tool), pitched onto the key
-	"voice_up": [-17.0, 0.0, 1],
-	"voice_taunt": [-18.0, 0.0, 1],
-	"voice_down": [-16.0, 0.0, 1],
+	"voice_up": [-14.0, 0.0, 1],
+	"voice_taunt": [-15.0, 0.0, 1],
+	"voice_down": [-13.0, 0.0, 1],
 }
 
 # Voices sing on the notes of the key (C minor: C D Eb G, and the octave).
 const VOICE_STEPS := [1.0, 1.1225, 1.1892, 1.4983, 2.0]
 
+# Laughs (see Laughs and Jeers): the level of each family (the deep ones a
+# little louder, the music masks their range most), and how wide they pan.
+# Set so a laugh stands ~7 dB over the music it ducks (measured on a
+# movie-maker render, see PLAN.md v7.56).
+const LAUGH_DB := {"giggle": -7.0, "imp": -7.0, "goblin": -7.0, "sneer": -6.5, "evil": -5.5}
+const LAUGH_PAN := 1.6
+
 # Tuned tines, one per step of the ladder the kills climb (C D Eb G over
 # the octaves, the play track's key). Played at their own pitch, no drift.
 const NOTE_COUNT := 9
-const NOTE_DB := -17.0
+const NOTE_DB := -14.0
 
 # Strings: the background fibres are a harp and the top bar's tension
 # string a low steel string (plucked-string samples, tools/import_assets.py),
@@ -121,7 +139,14 @@ var _last := {}
 var _last_take := {}
 var _players: Array[AudioStreamPlayer] = []
 var _started: Array[float] = []
+var _field: Array[AudioStreamPlayer2D] = []
+var _field_started: Array[float] = []
+var _laughs := {}               # family -> its takes
+var _laughers: Array[AudioStreamPlayer2D] = []
+var _laugh_who: Array = [null, null]   # the body each laugh follows
+var _last_laugh := {}
 var _bus := 0
+var _vbus := 0
 var _rng := RandomNumberGenerator.new()
 # Headless runs (CI smoke test) have no audio output; a sound still playing
 # at exit is held by the dummy driver and reported as a leak.
@@ -136,8 +161,13 @@ func _ready() -> void:
 	AudioServer.set_bus_name(_bus, "Sfx")
 	AudioServer.set_bus_send(_bus, &"Master")
 	# Room for the music: cut the lows (the track's bass and kick live
-	# there), soften the grating top, then glue the bursts together so a
-	# busy moment gets denser, not louder; a small dark room.
+	# there), soften the grating top, then glue: the compressor only
+	# catches the loudest peaks (a few dB), so each sound keeps its attack
+	# and the mix its order (accents over hits over the small sounds), and
+	# a busy moment gets denser, not louder; a small dark room.
+	# (Godot's compressor counts ~2x the dB over its threshold: the old
+	# -30 dB 4:1 squeezed every hit by 10-20 dB into one flat level, under
+	# the music. Measured per sound, see PLAN.md v7.56.)
 	var low := AudioEffectHighPassFilter.new()
 	low.cutoff_hz = 140.0
 	AudioServer.add_bus_effect(_bus, low)
@@ -146,10 +176,10 @@ func _ready() -> void:
 	shelf.gain = 0.45
 	AudioServer.add_bus_effect(_bus, shelf)
 	var comp := AudioEffectCompressor.new()
-	comp.threshold = -30.0
-	comp.ratio = 4.0
-	comp.attack_us = 2000.0
-	comp.release_ms = 150.0
+	comp.threshold = -14.0
+	comp.ratio = 2.0
+	comp.attack_us = 1000.0
+	comp.release_ms = 120.0
 	AudioServer.add_bus_effect(_bus, comp)
 	var room := AudioEffectReverb.new()
 	room.room_size = 0.3
@@ -168,6 +198,10 @@ func _ready() -> void:
 		add_child(p)
 		_players.append(p)
 		_started.append(-1.0)
+	for i in FIELD_POOL:
+		_field.append(_placed(&"Sfx", PAN))
+		_field_started.append(-1.0)
+	_build_voices()
 	for name: String in MIX:
 		var list: Array[AudioStream] = []
 		for i: int in MIX[name][2]:
@@ -205,13 +239,65 @@ func _ready() -> void:
 	Prefs.changed.connect(apply_volume)
 
 
+## A player that places its sound across the stereo image by its position
+## (no falloff with distance: the whole field is in earshot).
+func _placed(bus: StringName, pan: float) -> AudioStreamPlayer2D:
+	var p := AudioStreamPlayer2D.new()
+	p.bus = bus
+	p.attenuation = 0.0
+	p.max_distance = 100000.0
+	p.panning_strength = pan
+	add_child(p)
+	return p
+
+
+## The Voices bus for the laughs: the rumble off, a little presence (they
+## are voices: 3 kHz up, the boxy 320 Hz down), in a short room of their
+## own, a limiter for safety; and their takes. (No compressor: the takes
+## are levelled on import, and Godot's squeezes far harder than its ratio.)
+func _build_voices() -> void:
+	_vbus = AudioServer.bus_count
+	AudioServer.add_bus(_vbus)
+	AudioServer.set_bus_name(_vbus, "Voices")
+	AudioServer.set_bus_send(_vbus, &"Master")
+	var low := AudioEffectHighPassFilter.new()
+	low.cutoff_hz = 90.0
+	AudioServer.add_bus_effect(_vbus, low)
+	var eq := AudioEffectEQ6.new()
+	eq.set_band_gain_db(2, -1.5)
+	eq.set_band_gain_db(4, 2.5)
+	AudioServer.add_bus_effect(_vbus, eq)
+	var room := AudioEffectReverb.new()
+	room.room_size = 0.35
+	room.damping = 0.6
+	room.spread = 0.7
+	room.hipass = 0.3
+	room.dry = 1.0
+	room.wet = 0.1
+	AudioServer.add_bus_effect(_vbus, room)
+	var lim := AudioEffectHardLimiter.new()
+	lim.ceiling_db = -1.0
+	AudioServer.add_bus_effect(_vbus, lim)
+	for i in 2:
+		_laughers.append(_placed(&"Voices", LAUGH_PAN))
+	for fam: String in Laughs.CURVES:
+		var list: Array[AudioStream] = []
+		for i: int in Laughs.CURVES[fam].size():
+			list.append(load("%slaugh_%s_%d.ogg" % [DIR, fam, i]))
+		_laughs[fam] = list
+
+
 func _exit_tree() -> void:
 	for p in _players:
+		p.stop()
+		p.stream = null
+	for p in _field + _laughers:
 		p.stop()
 		p.stream = null
 	for p in _hplayers:
 		p.stop()
 		p.stream = null
+	_laughs.clear()
 	_takes.clear()
 	_notes.clear()
 	_harp.clear()
@@ -221,20 +307,24 @@ func _exit_tree() -> void:
 func apply_volume() -> void:
 	AudioServer.set_bus_volume_db(_bus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
 	AudioServer.set_bus_mute(_bus, Prefs.sfx_volume == 0)
+	if _vbus > 0:
+		AudioServer.set_bus_volume_db(_vbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)])
+		AudioServer.set_bus_mute(_vbus, Prefs.sfx_volume == 0 or not Prefs.laughs)
 	if _hbus > 0:
 		AudioServer.set_bus_volume_db(_hbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)] + STRINGS_DB)
 		AudioServer.set_bus_mute(_hbus, Prefs.sfx_volume == 0)
 
 
-func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
+## Plays a take of `name`. Given `at` (a point of the field, px) it plays
+## from there, panned across the stereo image; otherwise in the middle.
+func play(name: String, pitch := 1.0, volume_db := 0.0, at := Vector2.INF) -> void:
 	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last.get(name, -1.0)) < float(GAP.get(name, MIN_GAP)):
 		return
 	# Density: the small field sounds make way when the field is busy.
-	while not _recent.is_empty() and now - _recent[0] > DENSITY_WIN:
-		_recent.pop_front()
+	_prune(now)
 	var over := _recent.size() - DENSE
 	var low := LOW.has(name)
 	if low and over >= DENSE:
@@ -250,12 +340,108 @@ func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 	_last_take[name] = take
 	var mix: Array = MIX[name]
 	var drift: float = mix[1]
+	var pitch_scale := clampf(pitch * (1.0 + _rng.randf_range(-drift, drift)), 0.7, 1.35)
+	var db := float(mix[0]) + minf(volume_db, 0.0)
+	if at.is_finite():
+		var i := _oldest(_field, _field_started)
+		var f := _field[i]
+		f.stream = list[take]
+		f.pitch_scale = pitch_scale
+		f.volume_db = db + PAN_DB
+		f.global_position = at
+		f.play()
+		_field_started[i] = now
+		return
 	var p := _players[_voice()]
 	p.stream = list[take]
-	p.pitch_scale = clampf(pitch * (1.0 + _rng.randf_range(-drift, drift)), 0.7, 1.35)
-	p.volume_db = float(mix[0]) + minf(volume_db, 0.0)
+	p.pitch_scale = pitch_scale
+	p.volume_db = db
 	p.play()
 	_started[_players.find(p)] = now
+
+
+func _prune(now: float) -> void:
+	while not _recent.is_empty() and now - _recent[0] > DENSITY_WIN:
+		_recent.pop_front()
+
+
+## How busy the field sounds right now, 0..1 (sounds started in the last
+## DENSITY_WIN s): the music gives way as it rises.
+func busy() -> float:
+	_prune(Time.get_ticks_msec() / 1000.0)
+	return clampf((_recent.size() - 1) / 6.0, 0.0, 1.0)
+
+
+## A laugh of `family` (see Laughs) from `who`, following it across the
+## stereo image: a take not heard last time, at `pitch`. Returns the take's
+## loudness curve and its length in seconds ({} for an unknown family),
+## which the laughing face follows. With the laughs switched off (or no
+## audio) nothing is heard, but the curve is still returned: the face
+## still laughs, silently.
+func laugh(family: String, pitch: float, who: Node2D) -> Dictionary:
+	if not _laughs.has(family):
+		return {}
+	var curves: Array = Laughs.CURVES[family]
+	var take := _rng.randi() % curves.size()
+	if curves.size() > 1 and take == int(_last_laugh.get(family, -1)):
+		take = (take + 1) % curves.size()
+	_last_laugh[family] = take
+	var curve: String = curves[take]
+	if not _headless and Prefs.sfx_volume > 0 and Prefs.laughs:
+		var i := 0 if not _laughers[0].playing else 1
+		var p := _laughers[i]
+		p.stream = _laughs[family][take]
+		p.pitch_scale = pitch
+		p.volume_db = float(LAUGH_DB[family]) + PAN_DB
+		p.global_position = _where(who)
+		p.play()
+		_laugh_who[i] = who
+	return {"curve": curve, "secs": curve.length() / Laughs.RATE / pitch}
+
+
+## True while a laugh is sounding.
+func laughing() -> bool:
+	return _laughers[0].playing or _laughers[1].playing
+
+
+## How far into its take the laugh from `who` is (seconds of the take's
+## own time), or -1 when none is sounding: the face follows the voice to
+## the sample.
+func laugh_pos(who: Node2D) -> float:
+	for i in _laughers.size():
+		if _laugh_who[i] == who and _laughers[i].playing:
+			return _laughers[i].get_playback_position()
+	return -1.0
+
+
+## Cuts short the laugh coming from `who` (it was struck mid-laugh).
+func hush(who: Node2D) -> void:
+	for i in _laughers.size():
+		if _laugh_who[i] == who:
+			_laughers[i].stop()
+			_laugh_who[i] = null
+
+
+func _process(_delta: float) -> void:
+	# A laugh follows its body as it swings and slides.
+	for i in _laughers.size():
+		var who = _laugh_who[i]
+		if who == null:
+			continue
+		if not is_instance_valid(who) or not _laughers[i].playing:
+			_laugh_who[i] = null
+		else:
+			_laughers[i].global_position = _where(who)
+
+
+## Where `who` is on screen. A body keeps its place in `pos` (its node
+## stays put and draws itself there), in its parent's space.
+static func _where(who: Node2D) -> Vector2:
+	var p = who.get("pos")
+	if p is Vector2:
+		var parent := who.get_parent() as Node2D
+		return parent.get_global_transform() * p if parent else p
+	return who.global_position
 
 
 ## Step `i` of the note ladder (clamped; steps past the top wrap to its
@@ -355,7 +541,7 @@ func taut(tight: float, volume_db := 0.0) -> void:
 ## A creature's syllable: `shape` is up (startle), taunt or down (death);
 ## `register` sets the octave by size (0.5 big and low .. 2 small and high),
 ## and the note is a step of the key, so a crowd of them stays in tune.
-func voice(shape: String, register: float, step: int, volume_db := 0.0) -> void:
+func voice(shape: String, register: float, step: int, volume_db := 0.0, at := Vector2.INF) -> void:
 	var name := "voice_" + shape
 	if _headless or not _takes.has(name) or Prefs.sfx_volume == 0:
 		return
@@ -363,10 +549,21 @@ func voice(shape: String, register: float, step: int, volume_db := 0.0) -> void:
 	if now - _voice_last < VOICE_MIN_GAP:
 		return
 	_voice_last = now
+	var pitch := clampf(register * VOICE_STEPS[posmod(step, VOICE_STEPS.size())], 0.3, 3.0)
+	var db := float(MIX[name][0]) + minf(volume_db, 0.0)
+	if at.is_finite():
+		var i := _oldest(_field, _field_started)
+		_field[i].stream = _takes[name][0]
+		_field[i].pitch_scale = pitch
+		_field[i].volume_db = db + PAN_DB
+		_field[i].global_position = at
+		_field[i].play()
+		_field_started[i] = now
+		return
 	var p := _players[_voice()]
 	p.stream = _takes[name][0]
-	p.pitch_scale = clampf(register * VOICE_STEPS[posmod(step, VOICE_STEPS.size())], 0.3, 3.0)
-	p.volume_db = float(MIX[name][0]) + minf(volume_db, 0.0)
+	p.pitch_scale = pitch
+	p.volume_db = db
 	p.play()
 	_started[_players.find(p)] = now
 
@@ -378,6 +575,17 @@ func _voice() -> int:
 		if not _players[i].playing:
 			return i
 		if _started[i] < _started[oldest]:
+			oldest = i
+	return oldest
+
+
+## The same for the placed players.
+func _oldest(list: Array[AudioStreamPlayer2D], started: Array[float]) -> int:
+	var oldest := 0
+	for i in list.size():
+		if not list[i].playing:
+			return i
+		if started[i] < started[oldest]:
 			oldest = i
 	return oldest
 

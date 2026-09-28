@@ -151,6 +151,10 @@ func _decide(t: Target) -> void:
 			_claim(hide_x, t)
 		Option.WAIT:
 			t.mind_wait(WAIT_MAX)
+	# Whatever it chose, if the shot goes by it may laugh at you (a coiled
+	# one is judged when it springs).
+	if pick != Option.WAIT:
+		g.jeers.watch(t, Jeers.Why.BLUFF if pick == Option.HOLD else Jeers.Why.DODGE)
 	# A light, hopping kind also bobs up its string as it goes.
 	var hop: float = prof[3]
 	if (pick == Option.AWAY or pick == Option.ACROSS) and hop > 0.0 and a > 0.35 and t.length > 90.0 * sc:
@@ -176,6 +180,7 @@ func _spring(t: Target) -> void:
 	t.vel.x += dir * 260.0 * sc
 	_claim(x, t)
 	g.habits.note_dodge(t, g._time)
+	g.jeers.watch(t, Jeers.Why.DODGE)
 	t.mind_done(false)
 
 

@@ -156,7 +156,7 @@ func _wall(n: Vector2) -> void:
 	var jn := (1.0 + WALL_BOUNCE) * absf(vel.dot(n))
 	friction(n, Vector2.ZERO, jn, MU_WALL, 0.0)
 	impact(n)
-	Sfx.play("wood", clampf(1.5 - absf(vel.x) / 2400.0, 1.1, 1.5), linear_to_db(clampf(absf(vel.x) / 1400.0, 0.12, 0.6)) - 6.0)
+	Sfx.play("wood", clampf(1.5 - absf(vel.x) / 2400.0, 1.1, 1.5), linear_to_db(clampf(absf(vel.x) / 1400.0, 0.12, 0.6)) - 6.0, pos)
 
 
 ## Friction at a contact with normal `n` (pointing out of the other body

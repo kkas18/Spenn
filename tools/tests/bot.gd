@@ -74,7 +74,7 @@ func _process(_d: float) -> bool:
 		return false
 	if game.state == game.get_script().get_script_constant_map()["State"]["GAME_OVER"]:
 		var d = game.director
-		print("RESULT seed=%d time=%.0fs score=%d acc=%d%% over=%d wave=%d %s" % [rng.seed, d.elapsed, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave, game.mind.report()])
+		print("RESULT seed=%d time=%.0fs score=%d acc=%d%% over=%d wave=%d %s %s" % [rng.seed, d.elapsed, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave, game.jeers.report(), game.mind.report()])
 		quit()
 		return false
 	if frame > 60 * 60 * 12:

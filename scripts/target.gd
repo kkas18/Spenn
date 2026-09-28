@@ -504,7 +504,8 @@ func _details(col: Color) -> void:
 
 ## The mouth carries the mood: a small smile at rest, a worried line when
 ## you aim at it, an "o" when startled, a smirk when smug, a tongue when it
-## taunts, a frown in rage and a grimace when struck. Drawn in eye space.
+## taunts, a wide open laugh when it laughs at you, a frown in rage and a
+## grimace when struck. Drawn in eye space.
 func _mouth(er: float) -> void:
 	var f := _ink
 	var y := er * 1.25
@@ -522,6 +523,21 @@ func _mouth(er: float) -> void:
 		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 2.1, true)
 		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.6, true)
 		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.6, true)
+	elif laughing():
+		# Laughing at you: a wide open "D" that opens with each "ha" (big
+		# enough to read on a phone), the tongue showing when it is widest.
+		var o := 0.35 + 0.65 * laugh_amt
+		var hw := w * 0.85
+		var top := y - 2.0
+		var grin := PackedVector2Array()
+		for i in 13:
+			var a := PI * i / 12.0
+			grin.append(Vector2(cos(a) * hw, top + sin(a) * w * 0.95 * o))
+		f.draw_colored_polygon(grin, dark)
+		if o > 0.55:
+			f.disc(Vector2(0, top + w * 0.66 * o), w * 0.3 * o, Color("E86A8A", modulate.a))
+		f.draw_polyline(grin, ink, 1.6, true)
+		f.draw_line(Vector2(-hw, top), Vector2(hw, top), ink, 2.2, true)
 	elif startle_t > 0.0 or panicked():
 		f.disc(Vector2(0, y + 1.0), er * 0.26, dark)
 		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.8, true)
@@ -663,6 +679,14 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 		lower = 0.22
 	if _closed_t > 0.0:
 		upper = 1.0
+	if laughing() and _closed_t <= 0.0:
+		# Squeezed shut with laughter: a happy arch, lifting with each "ha".
+		var arch := PackedVector2Array()
+		for i in 9:
+			var t := lerpf(-1.0, 1.0, i / 8.0)
+			arch.append(Vector2(t * er * 0.85, er * 0.25 - (1.0 - t * t) * er * (0.45 + 0.15 * laugh_amt)))
+		f.draw_polyline(arch, Color(Pal.EYE, 0.9), 2.2, true)
+		return
 	if upper + lower > 0.92:
 		# Shut: a single soft curve, the lashes of a closed lid.
 		_lid_curve(f, er, 0.08, 1.0, Color(Pal.EYE, 0.9), 2.0)

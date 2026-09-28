@@ -4,3 +4,4 @@ build/
 *.jks
 export_credentials.cfg
 *.tmp
+__pycache__/
