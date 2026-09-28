@@ -296,6 +296,19 @@ var read_flash := 0.0
 var pace := 1.0
 var innocent := 0.0
 const PACE_SNEAK := 2.6
+# The Mind (see Mind): four leanings, 0..1, from temper, trait, mood and
+# kind: bold (stands its ground, baits), wary (flees, climbs), sly (cuts
+# across, waits for the release) and social (hides behind a friend).
+var p_bold := 0.4
+var p_wary := 0.4
+var p_sly := 0.3
+var p_social := 0.3
+var mind_ask := false           # it has watched your aim long enough: the Mind decides
+var mind_beat := false          # ... on the beat of your usual release
+var wait_t := 0.0               # coiled, waiting for the ball to leave the pouch
+var bait_t := 0.0               # dancing in your line of fire for the team
+var rush_t := 0.0               # sinking fast while a teammate baits
+var _tell_t := 0.0              # the eye shows where it is going; then it goes
 # Mood, on top of kind and temper, rolled at spawn: grumpy ones glare, steam
 # and get angrier (nearby misses, fallen friends) until they fly into a
 # rage and drop; cute ones blush and sparkle, hide behind others when aimed
@@ -461,6 +474,12 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt_delay = -1.0
 	temper = _roll_temper()
 	_roll_trait()
+	mind_ask = false
+	mind_beat = false
+	wait_t = 0.0
+	bait_t = 0.0
+	rush_t = 0.0
+	_tell_t = 0.0
 	if k == Kind.PIPP:
 		# Baby proportions: big eyes.
 		_eye_scale *= 1.3
@@ -549,6 +568,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	charm_flash = 0.0
 	mood = Mood.NEUTRAL
 	anger = 0.0
+	personality()
 	variant = Var.STD
 	champion = false
 	stance = Stance.CALM
@@ -1516,7 +1536,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * speed_mul() * pace * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
+					length += descent * speed_mul() * pace * (1.9 if rush_t > 0.0 else 1.0) * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -1599,15 +1619,10 @@ func _brain(dt: float) -> void:
 		leader = null
 	_guard_step(dt)
 	_wander(dt)
-	if mood == Mood.CUTE and aimed and has_cover and kind != Kind.RING and a > 0.1 and _dodge_cd <= 0.0:
-		# Cute: slips behind a bigger friend when you aim at it.
-		_aim_t += dt
-		if _aim_t > lerpf(0.55, 0.25, a):
-			var prof: Array = EVADE.get(kind, [0.0, 0.0, 300.0])
-			_slide(anchor.x + (cover_x - pos.x), float(prof[2]) * 0.8)
-			_dodge_cd = lerpf(2.4, 1.2, a)
-			_aim_t = 0.0
-			startle_t = 0.3
+	if bait_t > 0.0:
+		# Baiting for the team: it dances in your line of fire, no dodging.
+		if _taunt < 0.0:
+			taunt()
 		return
 	if kind == Kind.MEDIC:
 		_heal_t -= dt
@@ -1615,7 +1630,7 @@ func _brain(dt: float) -> void:
 			_heal_t = lerpf(4.5, 2.6, a)
 			wants_heal = true
 	match kind:
-		Kind.MEDIC, Kind.MIRROR, Kind.PAKKIS:
+		Kind.MEDIC, Kind.MIRROR, Kind.PAKKIS, Kind.CAPTAIN:
 			_evade(dt)
 		Kind.PIPP:
 			_evade(dt)
@@ -1640,17 +1655,8 @@ func _brain(dt: float) -> void:
 					vel.y -= 110.0
 					squash_t = 0.0
 					squash_dir = Vector2.UP
-			# Vakt: with cover available it slides its hook along the rail to
-			# hang behind another target; otherwise it evades like the rest.
-			if aimed and has_cover and a > 0.12 and _dodge_cd <= 0.0:
-				_aim_t += dt
-				if _aim_t > lerpf(0.6, 0.25, a):
-					_slide(anchor.x + (cover_x - pos.x), EVADE[kind][2] * 0.8)
-					_dodge_cd = lerpf(2.4, 1.2, a)
-					_aim_t = 0.0
-					startle_t = 0.3
-			else:
-				_evade(dt)
+			# (Slipping behind a friend is one of the Mind's answers now.)
+			_evade(dt)
 		Kind.HEAVY, Kind.SPLIT:
 			if not enraged:
 				_evade(dt)
@@ -1729,16 +1735,17 @@ func _brain(dt: float) -> void:
 			_lunge_brain(dt, lerpf(10.0, 6.0, a) * (0.45 if boss_stage == 2 else 1.0), 40.0)
 
 
-## Common evasion: watch the shot (narrowed eye) for a reaction time, then
-## slide the hook along the rail away from the path, or retreat up the
-## string if there is no room. A ball already in flight is read faster but
-## answered with a shorter move. Cooldown after every move.
+## Common evasion: it watches the shot (narrowed eye) for a reaction time,
+## then asks the Mind what to do (see Mind): flee along the rail, cut
+## across, climb, bluff, hide or wait for the release. A ball already in
+## flight is read faster. After every answer, a cooldown (mind_done).
 func _evade(dt: float) -> void:
 	var a := aggression
 	var prof: Array = EVADE[kind]
 	var threatened := aimed or incoming
-	if guard_of != null:
-		# On guard duty: standing in the line of fire is the point.
+	if guard_of != null or bait_t > 0.0 or wait_t > 0.0 or mind_ask:
+		# On guard duty or baiting, standing in the line of fire is the
+		# point; a coiled one waits for the release (see Mind._spring).
 		return
 	if aim_hold < 0.0:
 		_rhythm_used = false
@@ -1769,40 +1776,61 @@ func _evade(dt: float) -> void:
 		_rhythm_used = true
 	elif _aim_t < react:
 		return
-	if temper == Temper.BOLD and not on_beat and charm != Charm.SPRING and stance != Stance.WARY and randf() < 0.35:
-		# Stands its ground: a defiant flinch, no move (a chance for you).
-		ang_vel -= dodge_dir * 1.5
-		_dodge_cd = lerpf(2.0, 1.0, a)
-		_aim_t = 0.0
+	mind_ask = true
+	mind_beat = on_beat
+	_aim_t = 0.0
+
+
+## The Mind's moves (see Mind). A slide is shown first: the eye darts to
+## where it is going and the body holds for `tell` s, then goes (and, once
+## the team has learned to feint, may still jink the wrong way first).
+func mind_slide(x: float, speed: float, tell: float) -> void:
+	x = clampf(x, minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
+	if absf(x - anchor.x) < 4.0:
 		return
-	var sc := _screen_h / 1280.0
-	var reach: float = prof[1] * lerpf(0.75, 1.2, a) * sc * (0.6 if incoming and not aimed else 1.0) * [1.0, 1.25, 0.8, 1.0][temper] * (0.8 if tactic == 0 else 1.0)
-	var speed: float = prof[2] * lerpf(1.0, 1.4, a) * sc
-	if charm == Charm.SPRING:
-		reach *= 1.7
-		speed *= 1.3
-		charm_flash = 1.0
-	if on_beat:
-		# Timed to your release: a sharper, longer move.
-		reach *= 1.25
-		speed *= 1.25
-	var room_fwd := (slide_hi - anchor.x) if dodge_dir > 0.0 else (anchor.x - slide_lo)
-	var room_back := (anchor.x - slide_lo) if dodge_dir > 0.0 else (slide_hi - anchor.x)
-	var moved := false
-	if room_fwd > 28.0 * sc:
-		_slide(anchor.x + dodge_dir * minf(reach, room_fwd), speed)
-		moved = true
-	elif room_back > reach * 0.8 and a > 0.45:
-		# Boxed in on the far side: cut back across the shot instead.
-		_slide(anchor.x - dodge_dir * minf(reach * 1.3, room_back), speed * 1.15)
-		moved = true
-	var hop: float = prof[3]
-	if (not moved or (hop > 0.0 and a > 0.35) or temper == Temper.TIMID) and length > 90.0 * sc:
-		_hop_left += maxf(hop, 45.0) * sc * lerpf(0.8, 1.3, a)
-		Sfx.play("creak", randf_range(0.95, 1.1))
-	ang_vel += dodge_dir * 2.5
-	startle_t = 0.3
-	_dodge_cd = lerpf(2.6, 1.1, a) * (1.3 if kind == Kind.HEAVY else 1.0)
+	_slide_to = NAN
+	_queued_x = x
+	_queued_speed = speed
+	_tell_t = tell
+
+
+## Up the string: it tenses (a squash upward and a creak), then winches.
+func mind_climb(amount: float) -> void:
+	_hop_left += amount
+	squash_t = 0.0
+	squash_dir = Vector2.UP
+	Sfx.play("creak", randf_range(0.95, 1.1))
+
+
+## A bluff: it stands its ground with a defiant flinch and a smirk.
+func mind_hold() -> void:
+	ang_vel -= dodge_dir * 1.5
+	smug = maxf(smug, 0.5)
+
+
+## Coiled: it waits (trembling) for the ball to leave the pouch, then
+## springs aside at the last moment (see Mind._spring).
+func mind_wait(secs: float) -> void:
+	wait_t = secs
+
+
+## For the team: dances in your line of fire while a partner sinks.
+func mind_bait(secs: float) -> void:
+	bait_t = secs
+	taunt()
+
+
+## For the team: sinks fast while a partner baits (arrows under it say so).
+func mind_rush(secs: float) -> void:
+	rush_t = secs
+
+
+## After an answer: a start (when it moved) and the wait before the next.
+func mind_done(still: bool) -> void:
+	if not still:
+		ang_vel += dodge_dir * 2.5
+		startle_t = 0.3
+	_dodge_cd = lerpf(2.6, 1.1, aggression) * (1.3 if kind == Kind.HEAVY else 1.0) * (0.6 if still else 1.0)
 	_aim_t = 0.0
 
 
@@ -1862,7 +1890,14 @@ func _wander(dt: float) -> void:
 ## its string with a natural lag. Hops pull the string up, then it pays
 ## back out once things are calm.
 func _move_anchor(dt: float) -> void:
-	if not is_nan(_slide_to):
+	if _tell_t > 0.0:
+		# The tell: it holds, eye on where it is going, then goes.
+		_tell_t -= dt
+		if _tell_t <= 0.0 and not is_nan(_queued_x):
+			var x := _queued_x
+			_queued_x = NAN
+			_slide(x, _queued_speed)
+	elif not is_nan(_slide_to):
 		var d := _slide_to - anchor.x
 		var sp := _slide_speed * clampf(absf(d) / 40.0, 0.35, 1.0)
 		var step_x := signf(d) * minf(absf(d), sp * dt)
@@ -1965,6 +2000,7 @@ func slide_now(x: float, speed: float) -> void:
 	_slide_to = clampf(x, radius + 12.0, field_w - radius - 12.0)
 	_slide_speed = speed
 	_queued_x = NAN
+	_tell_t = 0.0
 	startle_t = 0.25
 	Sfx.play("slide", randf_range(0.95, 1.1))
 
@@ -2051,6 +2087,55 @@ func set_mood(m: int) -> void:
 			_eye_scale *= 1.1
 			_pupil_scale *= 1.15
 			_val_shift += 0.04
+	personality()
+
+
+## Its leanings for the Mind, from temper, trait, mood and kind.
+func personality() -> void:
+	var b := 0.35
+	var w := 0.4
+	var s := 0.3
+	var so := 0.3
+	match temper:
+		Temper.TIMID:
+			w += 0.35
+			b -= 0.25
+			so += 0.15
+		Temper.BOLD:
+			b += 0.4
+			w -= 0.15
+		Temper.ERRATIC:
+			s += 0.3
+	match trait_kind:
+		Trait.SHY:
+			so += 0.3
+		Trait.PROUD:
+			b += 0.2
+		Trait.JITTERY:
+			w += 0.15
+		Trait.CURIOUS:
+			s += 0.1
+		Trait.SLEEPY:
+			w -= 0.1
+	match mood:
+		Mood.GRUMPY:
+			b += 0.2
+		Mood.CUTE:
+			so += 0.35
+	match kind:
+		Kind.HEAVY, Kind.SHIELD, Kind.MIRROR:
+			b += 0.2
+		Kind.CAPTAIN:
+			so += 0.4
+			s += 0.1
+		Kind.PIPP, Kind.DROP:
+			w += 0.15
+		Kind.PAKKIS, Kind.SHADE:
+			s += 0.15
+	p_bold = clampf(b, 0.0, 1.0)
+	p_wary = clampf(w, 0.0, 1.0)
+	p_sly = clampf(s, 0.0, 1.0)
+	p_social = clampf(so, 0.0, 1.0)
 
 
 ## Grumpy ones take things badly: anger rises (a rage at 1).
@@ -2078,6 +2163,9 @@ func cancel_shove() -> bool:
 ## nothing watches it and freezes the instant you aim at it or a ball comes
 ## its way (the aim and flight reads are the game's, see Game._update_eyes).
 func _smart_step(dt: float) -> void:
+	wait_t = maxf(0.0, wait_t - dt)
+	bait_t = maxf(0.0, bait_t - dt)
+	rush_t = maxf(0.0, rush_t - dt)
 	order_flash = maxf(0.0, order_flash - dt)
 	tired_t = maxf(0.0, tired_t - dt)
 	read_cd = maxf(0.0, read_cd - dt)

@@ -168,6 +168,8 @@ var hud: Hud
 var fx: Fx
 var contacts: Contacts   # the contact physics (scripts/contacts.gd)
 var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
+var mind: Mind           # how every enemy answers your aim (scripts/mind.gd)
+var habits := Habits.new()  # what they know of you, kept between runs (scripts/habits.gd)
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
@@ -197,6 +199,7 @@ var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
+var _punish_told := false
 var _last_kill := Vector2.ZERO
 var _cocky_t := 0.0             # after a breach the survivors get cocky
 var daily := false              # this run is the daily challenge
@@ -230,6 +233,7 @@ var _jolt_cd := 0.0
 func _ready() -> void:
 	contacts = Contacts.new(self)
 	smarts = Smarts.new(self)
+	mind = Mind.new(self)
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
@@ -431,6 +435,7 @@ func _start_run() -> void:
 	skill_counts = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 	waves_cleared = 0
 	_habit_told = false
+	_punish_told = false
 	_tactic_told = 0
 	flows = 0
 	_evolve_told = false
@@ -462,6 +467,9 @@ func _start_run() -> void:
 	_spawn_t = 2.5
 	_last_tap = -10.0
 	director.reset()
+	habits.restore({} if daily else Prefs.habits)
+	habits.begin_run()
+	mind.reset()
 	hud.bar.score = 0
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
@@ -995,6 +1003,7 @@ func _wave_tick(delta: float) -> void:
 			director.wave_break -= delta
 			if director.wave_break <= 0.0:
 				director.next_wave()
+				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
 				_spawn_t = 0.3
 				# A new wave, a new colour theme, eased in.
 				Pal.next_theme()
@@ -1119,7 +1128,7 @@ func _update_eyes() -> void:
 		t.covered = false
 		if t.guard_of != null and (not is_instance_valid(t.guard_of) or not t.guard_of.is_hittable() or not t.guard_of.aimed):
 			t.guard_of = null
-		if t.aimed and (t.kind == Target.Kind.RING or t.kind == Target.Kind.CAPTAIN or t.mood == Target.Mood.CUTE):
+		if t.aimed and t.kind != Target.Kind.BOSS:
 			_find_cover(t, o)
 		_slide_room(t)
 		var nearest := INF
@@ -1136,6 +1145,9 @@ func _update_eyes() -> void:
 			t.has_look = true
 	_guard_allies(path)
 	smarts.tick(path)
+	var dt := get_process_delta_time()
+	habits.tick(dt, _time, backdrop.danger)
+	mind.tick(dt)
 	# Everything in the line of fire narrows its eye: it is watching you.
 	for t in targets:
 		t.squint = t.aimed or (t.threat_lvl > 0.2 and t.is_hittable())
@@ -1582,6 +1594,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if perk("heavy") > 0 and t.hp >= 2 and not b.special:
 		# Heavy balls: armour takes two blows' worth.
 		t.hp -= 1
+	habits.note_hit(t, _time)
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = 0
 	var gained := t.points() * b.hits * _mult() * _surge()
@@ -1953,6 +1966,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 ## the field is yanked up a little as relief.
 func _breach(t: Target) -> void:
 	lives -= 1
+	habits.note_life_lost()
 	hud.bar.lose_life(lives)
 	var at := Vector2(t.pos.x, layout.danger_y)
 	if t.is_leader:
@@ -2035,6 +2049,9 @@ func _show_results() -> void:
 	if state != State.DEATH:
 		return
 	_check_missions()
+	if not daily:
+		habits.end_run(director.elapsed, run_kills)
+		Prefs.habits = habits.store()
 	Prefs.record_run(_run_stats())
 	var prev := Prefs.daily_record() if daily else Prefs.record
 	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
@@ -2060,6 +2077,11 @@ func _learn_tick() -> void:
 	Target.hold_avg = director.hold_avg
 	Target.aim_hold = (_time - _aim_start) if _aim_start >= 0.0 and slingshot.is_aiming() else -1.0
 	Target.cold_x = director.cold_u() * layout.size.x if tac >= Director.Tactic.RHYTHM else NAN
+	if not _punish_told and director.wave >= 2 and habits.punish > 0.45 and director.shots >= 10:
+		# They answer by cutting across, bluffing and climbing more now.
+		_punish_told = true
+		fx.popup(Loc.t("habit.punish"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
+		Sfx.play("tease", 0.9, -4.0)
 	if tac >= Director.Tactic.RHYTHM and Target.rhythm and not _rhythm_told:
 		_rhythm_told = true
 		fx.popup(Loc.t("habit.rhythm"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
@@ -3019,12 +3041,15 @@ func _finish_ball(b: Ball) -> void:
 		return
 	var s: Dictionary = _shots[b.shot_id]
 	s.balls -= 1
+	if b.banks > 0:
+		s.banked = true
 	if s.balls > 0:
 		return
 	_shots.erase(b.shot_id)
 	if state != State.PLAYING and state != State.STARTING:
 		return
 	director.record_shot(s.hit)
+	habits.note_result(s.hit, s.get("banked", false))
 	if s.hit:
 		_flow_add(FLOW_HIT)
 		streak += 1
@@ -3072,8 +3097,11 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 	_shot_seq += 1
 	if state == State.PLAYING or state == State.STARTING:
 		director.record_aim(vel.normalized().x)
+		habits.note_shot(_time)
+		habits.note_side(vel.normalized().x)
 		if _release_hold >= 0.0:
 			director.record_hold(_release_hold)
+			habits.note_hold(_release_hold)
 		director.record_column(_cross_u(pos, vel))
 	_aim_start = -1.0
 	_release_hold = -1.0

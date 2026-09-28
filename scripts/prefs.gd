@@ -31,6 +31,7 @@ var mission_level := 0         # missions completed so far: goals grow with it
 var stats := {}                # lifetime counters (see record_run)
 var daily_date := 0
 var daily_best := 0
+var habits := {}               # what the enemies know of the player (see Habits)
 
 var _cfg := ConfigFile.new()
 
@@ -60,6 +61,7 @@ func _ready() -> void:
 		stats = _cfg.get_value("meta", "stats", {})
 		daily_date = int(_cfg.get_value("meta", "daily_date", 0))
 		daily_best = int(_cfg.get_value("meta", "daily_best", 0))
+		habits = _cfg.get_value("meta", "habits", {})
 	_fill_missions()
 	if lang == "":
 		lang = "no" if OS.get_locale_language() in ["nb", "nn", "no"] else "en"
@@ -167,11 +169,12 @@ func record_run(run: Dictionary) -> void:
 	save()
 
 
-## Clears the record, the statistics, today's best and the missions.
-## Unlocked ball skins (and the one in use), settings and the enemies
-## already introduced are kept.
+## Clears the record, the statistics, today's best, the missions and what
+## the enemies have learned about you. Unlocked ball skins (and the one in
+## use), settings and the enemies already introduced are kept.
 func reset_progress() -> void:
 	record = 0
+	habits = {}
 	stats = {}
 	total_points = 0
 	daily_best = 0
@@ -232,4 +235,5 @@ func save() -> void:
 	_cfg.set_value("meta", "stats", stats)
 	_cfg.set_value("meta", "daily_date", daily_date)
 	_cfg.set_value("meta", "daily_best", daily_best)
+	_cfg.set_value("meta", "habits", habits)
 	_cfg.save(PATH)

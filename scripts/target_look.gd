@@ -206,6 +206,9 @@ func _tremble() -> Vector2:
 		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
 	if trait_kind == Trait.JITTERY and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 23.0 + _hue_shift * 50.0), cos(_clock * 19.0)) * 0.3
+	if wait_t > 0.0 and phase == Phase.HANGING:
+		# Coiled, waiting for the release: a fine, fast tremble.
+		j += Vector2(sin(_clock * 61.0), cos(_clock * 53.0) * 0.4) * 0.8
 	if (panicked() or hurry) and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	var ew := evolve_warning()
@@ -260,9 +263,14 @@ func _update_eye(delta: float) -> void:
 		goal = Vector2(-0.75, -0.65)
 	var quick := 0.15
 	if not is_nan(_queued_x):
-		# Mid-feint: the eye darts to where it is really going (the tell).
+		# About to move, or mid-feint: the eye darts to where it is really
+		# going (the tell).
 		goal = Vector2(signf(_queued_x - anchor.x), -0.15).rotated(-body_rot)
 		quick = 0.45
+	elif rush_t > 0.0:
+		# Sinking for the team: eyes down, on the line.
+		goal = Vector2(0.0, 0.85).rotated(-body_rot)
+		quick = 0.3
 	_pupil = _pupil.lerp(goal, Pal.damp(quick, delta))
 
 

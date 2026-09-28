@@ -2516,3 +2516,74 @@ Rettet:
 4. **Tester:** testpakken passerer (import, oppstart, soak og bot på to frø). Seks
    bot-runder gir median 184 s (v7.52: 159 s). Boten overlever litt lenger, blant annet fordi
    store fiender er lettere å treffe. I v7.54 skal vanskeligheten følge ferdighetene dine.
+
+## v7.54 – Fiender som tenker: seks svar, en spillermodell og vanskelighet etter ferdighet
+
+1. **Seks svar i stedet for én regel** (`scripts/mind.gd`, klassen `Mind`). Før fulgte nesten
+   alle fiender samme regel: «skli bort fra siktelinjen etter en reaksjonstid». Nå veier en
+   fiende som har sett siktet ditt i sin reaksjonstid, disse svarene mot hverandre:
+
+   | Svar | Hva den gjør | Mot hva | Fra |
+   |---|---|---|---|
+   | Unna | glir langs bjelken ut av linjen | det vanlige svaret | start |
+   | Over | skjærer tilbake over linjen til andre siden | en spiller som skyter dit de flykter | taktikk «finter» |
+   | Klatre | vinsjer seg opp snoren | lite plass til siden | start |
+   | Bløffe | blir stående med et trassig rykk og et glis | et dårlig eller forutseende skudd | start |
+   | Gjemme seg | glir inn bak en tyngre nabo lenger ned | når det finnes dekning (alle typer nå) | start |
+   | Vente | spenner seg og hopper unna i det kula slippes | lange holdetider | taktikk «unnvikelse» |
+
+   Hvert svar får poeng ut fra tre ting:
+   - situasjonen: hvor nær linjen går, plass på bjelken, kule i lufta, dekning og hvor de
+     andre skal;
+   - personligheten: dristig, varsom, lur eller sosial, avledet av temperament, trekk, humør
+     og type;
+   - det fiendene vet om deg.
+2. **Blandet strategi:** svaret trekkes med vekt exp(poeng/temperatur).
+   - Mot en ny spiller, eller en som er under press, er temperaturen høy, og fiendene famler.
+   - Mot en skarp spiller er temperaturen lav, og de velger blant de gode svarene. Da er de
+     smarte uten å være forutsigbare, og det lønner seg ikke å sikte på forhånd dit de pleier
+     å gå.
+   - Målt spredning i valgene er 1,3–2,3 bit (0 er alltid samme svar, 2,6 er helt tilfeldig).
+3. **Alt varsles på forhånd:**
+   - Øyet viser hvor fienden skal før den går (0,07–0,14 s).
+   - En klatring spenner seg og knirker. En bløff rykker og gliser. En som venter, skjelver.
+   - En som lokker, danser. En som synker for laget, ser ned og har to piler under seg.
+4. **Spillermodell som huskes mellom rundene** (`scripts/habits.gd`, lagres i Prefs):
+   - holdetid, favorittside og veggskudd;
+   - om du «straffer» unnvikelser, altså treffer den som nettopp unnvek innen 1,2 s;
+   - hvor ofte du skyter en kule til rett etter den første;
+   - en ferdighetsrating ut fra treffprosent og drap per minutt.
+
+   Hvordan modellen brukes:
+   - En firedel glemmes ved hver ny runde, så du kan lure dem ved å bytte stil.
+   - Når de merker at du skyter dit de flykter, sier spillet fra, og de krysser, bløffer og
+     klatrer oftere.
+   - Dagens utfordring bruker en nøytral modell, så alle konkurrerer på like vilkår.
+   - «Nullstill fremgang» sletter modellen.
+5. **Vanskelighet etter ferdighet, med regulator:**
+   - Fiendenes skarphet (0–1) er ferdigheten din, pluss litt per bølge, minus belastning.
+   - Belastningen stiger når du mister liv eller fiender står ved linjen, og faller igjen i
+     løpet av et halvt minutt. Slik snøballer ikke en dårlig periode.
+   - Taktikknivåene kommer fra bølge 2 inntil én bølge tidligere for sterke spillere og én
+     bølge senere for svake.
+6. **Lagspill:**
+   - En felles tavle viser hvor hver fiende skal, så de ikke flykter til samme sted.
+   - Fra taktikken «samarbeid»: én lokker ved å danse i siktelinjen, mens en partner på andre
+     siden synker med nesten dobbel fart. Taktikkortet sier «Én lokker, en annen synker – se
+     etter pilene».
+7. **Kommandøren** bruker nå også svarene og søker dekning, noe beskrivelsen i v7.52 lovet,
+   men koden ikke gjorde.
+8. **Tester:** testpakken passerer. Bot på tre nivåer, seks runder hver:
+
+   | Bot | v7.53 median | v7.54 median | Snitt-IQ | Spredning i valg |
+   |---|---|---|---|---|
+   | Svak (mer støy, treg) | 114 s | 112 s | 0,47 | 1,7 bit |
+   | Middels | 184 s | 202 s | 0,63 | 1,7 bit |
+   | Sterk (presis, rask) | 186 s | 187 s | 0,62 | 1,9 bit |
+
+   - I snitt er spillet like vanskelig som før, men fiendene er ulike. Vanlige valg: unna ca.
+     50 %, bløff ca. 25 %, klatring ca. 12 %, gjemme seg ca. 6 %, og over og vente sjelden.
+   - Skarpheten følger spilleren, selv om botene treffer omtrent like godt og derfor skilles
+     lite.
+   - Rapporten fra boten viser antall valg, snitt-IQ, drap, lagspill, andelen per svar og
+     entropien. Boten nullstiller spillermodellen før hver runde, så runder kan sammenlignes.

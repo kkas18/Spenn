@@ -64,6 +64,9 @@ var extra_quota := 0             # enemies that got through this wave (x4)
 # kind acts one way in one wave and another way in the next.
 var style := {}
 var pulse := Pulse.BUILD
+# How far your skill moves the tactics along (-1 a wave later .. 1 a wave
+# earlier), set as each wave starts from wave 2 (see Game, Habits).
+var skill_shift := 0
 var pulse_t := 12.0
 var pulse_len := 12.0
 var _rng := RandomNumberGenerator.new()
@@ -92,6 +95,7 @@ func reset() -> void:
 	cols.resize(COLS)
 	cols.fill(0.0)
 	wave_mood = WaveMood.NORMAL
+	skill_shift = 0
 	_set_pulse(Pulse.BUILD)
 
 
@@ -212,9 +216,10 @@ func cold_u() -> float:
 
 
 func tactic() -> Tactic:
+	var w := wave + (skill_shift if wave >= 2 else 0)
 	var t := 0
 	for i in TACTIC_WAVE.size():
-		if wave >= TACTIC_WAVE[i]:
+		if w >= TACTIC_WAVE[i]:
 			t = i
 	return t as Tactic
 

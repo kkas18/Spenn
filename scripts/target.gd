@@ -335,6 +335,15 @@ func _scar(a: float) -> void:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _ink
+	if rush_t > 0.0 and phase == Phase.HANGING:
+		# Sinking fast for the team: two arrows under it, running down.
+		var k := minf(1.0, rush_t / 0.3) * col.a
+		for i in 2:
+			var y := radius + 9.0 + i * 8.5 + fposmod(_clock * 16.0, 8.5)
+			var c := Color(Pal.CORAL.lerp(Pal.EYE, 0.25), 0.95 * k * (1.0 - i * 0.35))
+			var chev := PackedVector2Array([Vector2(-7.0, y - 4.5), Vector2(0.0, y + 2.0), Vector2(7.0, y - 4.5)])
+			f.draw_polyline(chev, Color(Pal.PUPIL, 0.45 * c.a), 4.4, true)
+			f.draw_polyline(chev, c, 2.6, true)
 	if mood == Mood.GRUMPY and anger > 0.35 and phase == Phase.HANGING:
 		# Steam from the top: two wisps rising and fading, faster when angrier.
 		for sx: float in [-1.0, 1.0]:
