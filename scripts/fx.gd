@@ -856,6 +856,10 @@ func _draw_moments() -> void:
 			var side := d.orthogonal()
 			var ln: float = m.len * grow * (0.7 + 0.3 * absf(sin(i * 1.7)))
 			var w: float = m.w * (0.6 + 0.4 * absf(cos(i * 1.3)))
+			if ln < 2.0 or w < 0.5:
+				# Not grown out yet (its first frame): a ray of no length is a
+				# polygon of no area, which cannot be drawn.
+				continue
 			_glow.draw_polygon(PackedVector2Array([at + side * w * 0.12, at + d * ln + side * w, at + d * ln - side * w, at - side * w * 0.12]),
 				PackedColorArray([Color(col, a), Color(col, 0.0), Color(col, 0.0), Color(col, a)]))
 		var br: float = lerpf(50.0, 150.0, grow) * (0.9 + 0.2 * k)
