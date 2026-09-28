@@ -7,7 +7,7 @@ extends Node2D
 ## off-centre hits make it wobble about the string. String: Verlet rope.
 ## Everything is drawn in world coordinates; the node itself stays at origin.
 
-enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS }
+enum Kind { RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS, CAPTAIN, SEER, SNEAK }
 enum Phase { OFF, HANGING, FALLING }
 
 const N := 10                  # rope points
@@ -15,13 +15,13 @@ const GRAVITY := 900.0
 const STRING_K := 120.0        # spring stiffness per unit mass (1/s²)
 const DAMPING := 1.1
 
-const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 22.0, Kind.SHIELD: 26.0, Kind.BOSS: 52.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0, Kind.PIPP: 22.0, Kind.PAKKIS: 26.0}
-const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1, Kind.PIPP: 1, Kind.PAKKIS: 1}
-const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35, Kind.PIPP: 15, Kind.PAKKIS: 35}
+const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 15.0, Kind.DROP: 22.0, Kind.SHIELD: 26.0, Kind.BOSS: 52.0, Kind.REEL: 24.0, Kind.SHADE: 26.0, Kind.MEDIC: 26.0, Kind.MIRROR: 27.0, Kind.PIPP: 22.0, Kind.PAKKIS: 26.0, Kind.CAPTAIN: 30.0, Kind.SEER: 26.0, Kind.SNEAK: 24.0}
+const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1, Kind.PIPP: 1, Kind.PAKKIS: 1, Kind.CAPTAIN: 2, Kind.SEER: 1, Kind.SNEAK: 1}
+const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35, Kind.PIPP: 15, Kind.PAKKIS: 35, Kind.CAPTAIN: 45, Kind.SEER: 40, Kind.SNEAK: 35}
 const ROD_HALF := 30.0
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
-const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2, Kind.PIPP: 0.55, Kind.PAKKIS: 1.0}
+const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2, Kind.PIPP: 0.55, Kind.PAKKIS: 1.0, Kind.CAPTAIN: 1.3, Kind.SEER: 0.9, Kind.SNEAK: 0.8}
 const SHIELD_HALF := deg_to_rad(62.0)   # Vokter: half-width of the front plate
 const BOSS_ARC_HALF := deg_to_rad(38.0) # Spinneren: half-width of each orbiting plate
 # Spinneren fights in three stages (by health left): two plates; three
@@ -46,12 +46,13 @@ const EVADE := {
 	Kind.MIRROR: [0.9, 70.0, 200.0, 0.0, 0.4],
 	Kind.PIPP: [0.5, 110.0, 380.0, 50.0, 0.0],
 	Kind.PAKKIS: [0.8, 90.0, 260.0, 0.0, 0.3],
+	Kind.CAPTAIN: [0.9, 70.0, 260.0, 0.0, 0.4],
 }
 # Material. Soft bodies are jelly: a ring of radial springs that dents
 # where it is struck, bulges elsewhere (area is kept), ripples round and
 # lags behind when the body is swung. Rigid bodies keep their shape; they
 # ring briefly, rock and spin instead.
-const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC, Kind.PIPP, Kind.PAKKIS]
+const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC, Kind.PIPP, Kind.PAKKIS, Kind.SEER, Kind.SNEAK]
 const SOFT_N := 18
 const SOFT_K := 340.0          # radial spring (1/s²)
 const SOFT_C := 7.5            # damping (1/s)
@@ -75,9 +76,9 @@ enum Trait { CURIOUS, SLEEPY, JITTERY, PROUD, SHY }
 # spins in and flashes, the Skygge fades in on the way).
 const ENTRY_SPEED := {Kind.DROP: 1700.0, Kind.HEAVY: 320.0, Kind.BOSS: 260.0, Kind.REEL: 420.0, Kind.MIRROR: 650.0}
 # Voice register by size and build: small ones squeak, big ones rumble.
-const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9, Kind.PIPP: 1.75, Kind.PAKKIS: 1.1}
+const VOICE_REG := {Kind.RING: 1.0, Kind.HEAVY: 0.62, Kind.SPLIT: 0.95, Kind.ROD: 0.82, Kind.DROP: 1.5, Kind.SHIELD: 0.75, Kind.BOSS: 0.5, Kind.REEL: 1.25, Kind.SHADE: 1.1, Kind.MEDIC: 1.18, Kind.MIRROR: 0.9, Kind.PIPP: 1.75, Kind.PAKKIS: 1.1, Kind.CAPTAIN: 0.7, Kind.SEER: 1.05, Kind.SNEAK: 1.3}
 
-const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9, Kind.PIPP: 1.15, Kind.PAKKIS: 0.9}
+const SPEED_MUL := {Kind.RING: 1.0, Kind.HEAVY: 0.85, Kind.SPLIT: 1.0, Kind.ROD: 1.1, Kind.DROP: 1.7, Kind.SHIELD: 0.9, Kind.BOSS: 0.45, Kind.REEL: 1.0, Kind.SHADE: 1.0, Kind.MEDIC: 0.9, Kind.MIRROR: 0.9, Kind.PIPP: 1.15, Kind.PAKKIS: 0.9, Kind.CAPTAIN: 0.85, Kind.SEER: 1.0, Kind.SNEAK: 1.0}
 
 var kind: Kind = Kind.RING
 var soft := false
@@ -229,10 +230,15 @@ var surprised := false          # the act ended in a drop (the game says so)
 # up stops the shove.
 enum Arm { NONE, WIND, SHOVE, BACK }
 const ARM_WIND := 0.6
+const ARM_REACH := 110.0          # the arm never reaches further than this past the body
 var arm := Arm.NONE
 var arm_t := 0.0
 var arm_to := Vector2.ZERO        # world point the hand reaches for
 var arm_victim: Target = null
+var arm_life := -1                 # the victim's `life` when the shove began
+## Counts this pooled body's lives: a new spawn is a new creature, and
+## anything holding on to the old one (an arm, a grudge) must let go.
+var life := 0
 var shoved := false               # the shove landed this frame (the game acts)
 var shove_cd := 0.0
 
@@ -245,6 +251,23 @@ var wants_vine := false
 var _charm_cd := 0.0
 var _ghost_t := 0.0
 var _pipp_hop := 1.5
+# The smart ones (see Smarts):
+#  - Kommandøren gives orders: `orders_cd` till the next, `order_flash`
+#    while one goes out; those it moves remember `ordered_by`.
+#  - Leseren reads a shot as it leaves the pouch and steps out of its path;
+#    then it is `tired_t` (eyes shut, no dodging) and `read_cd` recovers.
+#  - Luringen creeps down while nobody watches (`pace` up to PACE_SNEAK)
+#    and freezes, all innocence (`innocent`), the moment you look.
+var orders_cd := 1.5
+var order_flash := 0.0
+var ordered_by: Target = null
+var ordered_life := -1
+var tired_t := 0.0
+var read_cd := 0.0
+var read_flash := 0.0
+var pace := 1.0
+var innocent := 0.0
+const PACE_SNEAK := 2.6
 # Mood, on top of kind and temper, rolled at spawn: grumpy ones glare, steam
 # and get angrier (nearby misses, fallen friends) until they fly into a
 # rage and drop; cute ones blush and sparkle, hide behind others when aimed
@@ -370,7 +393,16 @@ var _pluck_cd := 0.0
 
 
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
+	life += 1
 	kind = k
+	orders_cd = randf_range(1.2, 2.2)
+	order_flash = 0.0
+	ordered_by = null
+	tired_t = 0.0
+	read_cd = 0.0
+	read_flash = 0.0
+	pace = 1.0
+	innocent = 0.0
 	soft = k in SOFT_KINDS
 	_m_key = -1
 	_sd.fill(0.0)
@@ -1190,7 +1222,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * SPEED_MUL[kind] * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
+					length += descent * SPEED_MUL[kind] * pace * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -1209,6 +1241,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_brain(dt)
 			_charm_step(dt)
 			_arm_step(dt)
+			_smart_step(dt)
 			_mood_step(dt)
 			_stance_step(dt)
 			_move_anchor(dt)
@@ -1729,6 +1762,7 @@ func begin_shove(v: Target) -> void:
 	arm = Arm.WIND
 	arm_t = 0.0
 	arm_victim = v
+	arm_life = v.life
 	arm_to = v.pos
 	voice("taunt" if mood == Mood.GRUMPY else "up", -6.0)
 
@@ -1743,6 +1777,23 @@ func cancel_shove() -> bool:
 	return true
 
 
+## The smart ones' own timers, and Luringen's creeping: it sinks fast while
+## nothing watches it and freezes the instant you aim at it or a ball comes
+## its way (the aim and flight reads are the game's, see Game._update_eyes).
+func _smart_step(dt: float) -> void:
+	order_flash = maxf(0.0, order_flash - dt)
+	tired_t = maxf(0.0, tired_t - dt)
+	read_cd = maxf(0.0, read_cd - dt)
+	read_flash = maxf(0.0, read_flash - dt)
+	if ordered_by != null and not (is_instance_valid(ordered_by) and ordered_by.life == ordered_life and ordered_by.is_hittable()):
+		ordered_by = null
+	if kind != Kind.SNEAK:
+		return
+	var watched := phase == Phase.HANGING and (aimed or incoming or alarm or threat_lvl > 0.3)
+	pace = move_toward(pace, 0.0 if watched else PACE_SNEAK, dt * (8.0 if watched else 1.6))
+	innocent = move_toward(innocent, 1.0 if watched else 0.0, dt * (6.0 if watched else 2.0))
+
+
 func _arm_step(dt: float) -> void:
 	shove_cd = maxf(0.0, shove_cd - dt)
 	if arm == Arm.NONE:
@@ -1752,14 +1803,19 @@ func _arm_step(dt: float) -> void:
 		arm_victim = null
 		return
 	arm_t += dt
-	if is_instance_valid(arm_victim) and arm_victim.is_hittable():
+	# The victim counts only while it is the same creature, still hanging:
+	# once it dies (and its pooled body may already hang somewhere else as
+	# a new enemy) the hand lets go and just finishes its motion.
+	if arm_victim != null and not (is_instance_valid(arm_victim) and arm_victim.life == arm_life and arm_victim.is_hittable()):
+		arm_victim = null
+		if arm == Arm.WIND:
+			cancel_shove()
+			return
+	if arm_victim != null:
 		arm_to = arm_victim.pos
 		if arm == Arm.WIND:
 			look_at = arm_victim.pos
 			has_look = true
-	elif arm == Arm.WIND:
-		cancel_shove()
-		return
 	match arm:
 		Arm.WIND:
 			if arm_t >= ARM_WIND:

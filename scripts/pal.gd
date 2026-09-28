@@ -51,19 +51,20 @@ const EYE := Color("E4E7EC")
 # kinds sit apart in hue and in lightness (they read in greyscale too),
 # nothing is gold (that is the ball's) or coral (that is danger), and the
 # Vokter (steel), Legen (pearl) and Speilet (silver) keep their materials.
-# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS
+# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS,
+# CAPTAIN (navy steel), SEER (violet), SNEAK (moss)
 # (Pipp is a pastel lilac chick, Pakkis a pastel pink knot: soft, childlike tones)
 const THEMES := [
 	# Emalje: cobalt, verdigris and plum, muted like fired enamel
-	[Color("5486D8"), Color("2F7D5A"), Color("4BB4C4"), Color("8A68C9"), Color("98D2E4"), Color("7E9CC9"), Color("A8508F"), Color("A9C46E"), Color("D98AA8"), Color("E9EAE4"), Color("B3C3D6"), Color("CDC0EE"), Color("EDB9C6")],
+	[Color("5486D8"), Color("2F7D5A"), Color("4BB4C4"), Color("8A68C9"), Color("98D2E4"), Color("7E9CC9"), Color("A8508F"), Color("A9C46E"), Color("D98AA8"), Color("E9EAE4"), Color("B3C3D6"), Color("CDC0EE"), Color("EDB9C6"), Color("3E4E7A"), Color("9A5BB0"), Color("6F9A5B")],
 	# Patina: greener, like old copper
-	[Color("5D9ED4"), Color("347A4F"), Color("53C0BC"), Color("7E6EC5"), Color("9BDBDF"), Color("7E9CC9"), Color("A5559B"), Color("B5C073"), Color("D58DB4"), Color("E9EAE4"), Color("B3C3D6"), Color("C5C0E9"), Color("E8B9CD")],
+	[Color("5D9ED4"), Color("347A4F"), Color("53C0BC"), Color("7E6EC5"), Color("9BDBDF"), Color("7E9CC9"), Color("A5559B"), Color("B5C073"), Color("D58DB4"), Color("E9EAE4"), Color("B3C3D6"), Color("C5C0E9"), Color("E8B9CD"), Color("415978"), Color("8C60AC"), Color("7A975E")],
 	# Blekk: deeper and richer
-	[Color("4475C7"), Color("257350"), Color("3CA4B4"), Color("7A59B9"), Color("86C0D2"), Color("7E9CC9"), Color("9B4382"), Color("99B45F"), Color("C87997"), Color("E9EAE4"), Color("B3C3D6"), Color("BAADDB"), Color("DAA6B3")],
+	[Color("4475C7"), Color("257350"), Color("3CA4B4"), Color("7A59B9"), Color("86C0D2"), Color("7E9CC9"), Color("9B4382"), Color("99B45F"), Color("C87997"), Color("E9EAE4"), Color("B3C3D6"), Color("BAADDB"), Color("DAA6B3"), Color("354570"), Color("8C4DA2"), Color("638E4F")],
 	# Lyng: warmer, toward heather
-	[Color("546CD8"), Color("2F7D6A"), Color("4B9CC4"), Color("9D68C9"), Color("98C3E4"), Color("7E9CC9"), Color("A8507D"), Color("98C46E"), Color("D98A98"), Color("E9EAE4"), Color("B3C3D6"), Color("D6C0EE"), Color("EDB9BC")],
+	[Color("546CD8"), Color("2F7D6A"), Color("4B9CC4"), Color("9D68C9"), Color("98C3E4"), Color("7E9CC9"), Color("A8507D"), Color("98C46E"), Color("D98A98"), Color("E9EAE4"), Color("B3C3D6"), Color("D6C0EE"), Color("EDB9BC"), Color("3E427A"), Color("AB5BB0"), Color("629A5B")],
 	# Frost: paler and lighter
-	[Color("76A1E7"), Color("438668"), Color("6AC4D2"), Color("A184D7"), Color("B3E5F4"), Color("7E9CC9"), Color("B4689E"), Color("BBD288"), Color("E8A5BE"), Color("E9EAE4"), Color("B3C3D6"), Color("E2D7FF"), Color("FED1DC")],
+	[Color("76A1E7"), Color("438668"), Color("6AC4D2"), Color("A184D7"), Color("B3E5F4"), Color("7E9CC9"), Color("B4689E"), Color("BBD288"), Color("E8A5BE"), Color("E9EAE4"), Color("B3C3D6"), Color("E2D7FF"), Color("FED1DC"), Color("4F5D83"), Color("A974BC"), Color("80A56F")],
 ]
 const THEME_TIME := 2.0
 

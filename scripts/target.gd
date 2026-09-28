@@ -62,7 +62,9 @@ func _draw_arm(f: Ink) -> void:
 	if up.y > 0.0:
 		up = -up
 	var near := radius + 16.0
-	var far := maxf(near, dist - (arm_victim.radius if is_instance_valid(arm_victim) else 18.0) + 4.0)
+	# Reach for the neighbour's side, but never further than an arm's
+	# length (a jelly arm stretches, it does not cross the room).
+	var far := clampf(dist - (arm_victim.radius if arm_victim != null else 18.0) + 4.0, near, radius + ARM_REACH)
 	# The hand's angle from the neighbour's direction toward straight up and
 	# over (raised), and its distance from the centre.
 	var th := 0.0
@@ -390,6 +392,19 @@ func _details(col: Color) -> void:
 		var sh := (view_dir.rotated(-body_rot) * radius * 0.35)
 		f.draw_line(Vector2(-radius * 0.7, radius * 0.1) + sh, Vector2(-radius * 0.1, -radius * 0.7) + sh, g, 3.0, true)
 		f.draw_line(Vector2(-radius * 0.35, radius * 0.45) + sh * 1.4, Vector2(radius * 0.2, -radius * 0.1) + sh * 1.4, Color(g, g.a * 0.6), 1.6, true)
+	if kind == Kind.SNEAK:
+		# Its hood: a dark cowl over the crown, and when caught out, a
+		# little tune whistled to nobody in particular.
+		var hood := Color(col.darkened(0.55), col.a)
+		f.draw_arc(Vector2(0, radius * 0.08), radius * 0.86, PI * 1.02, PI * 1.98, 24, hood, radius * 0.42, true)
+		f.draw_arc(Vector2(0, radius * 0.08), radius * 0.66, PI * 1.08, PI * 1.92, 20, Color(col.darkened(0.7), 0.6 * col.a), 1.4, true)
+		if innocent > 0.5:
+			var k := fposmod(_clock * 0.9, 1.0)
+			var np := Vector2(radius * 0.7 + k * 10.0, -radius * 0.2 - k * 18.0)
+			var na := (innocent - 0.5) * 2.0 * sin(PI * k) * col.a
+			f.disc(np, 2.6, Color(Pal.EYE, 0.85 * na))
+			f.draw_line(np + Vector2(2.4, 0), np + Vector2(2.4, -9), Color(Pal.EYE, 0.85 * na), 1.3, true)
+			f.draw_line(np + Vector2(2.4, -9), np + Vector2(6.0, -7), Color(Pal.EYE, 0.85 * na), 1.3, true)
 	if kind == Kind.SPLIT:
 		# Where it will come apart: a stitched seam across the top and the
 		# bottom of the rim.
@@ -414,6 +429,22 @@ func _details(col: Color) -> void:
 	var rv := Color(col.lightened(0.45), col.a)
 	var sh := Color(0, 0, 0, 0.4 * col.a)
 	match kind:
+		Kind.CAPTAIN:
+			# A brass helmet: a dome over the crown with a lit rim and a
+			# short crest, and brass pips at the shoulders. It flashes as an
+			# order goes out.
+			var brass := Color(Tok.PRIMARY.lerp(Tok.PRIMARY_HI, order_flash / 0.7), col.a)
+			var hc := Vector2(0, -radius * 0.12)
+			f.draw_arc(hc + Vector2(1.0, 1.5), radius * 0.86, PI * 1.08, PI * 1.92, 22, sh, radius * 0.3, true)
+			f.draw_arc(hc, radius * 0.86, PI * 1.08, PI * 1.92, 22, brass, radius * 0.3, true)
+			f.draw_arc(hc, radius * 0.72, PI * 1.1, PI * 1.9, 20, Color(Tok.PRIMARY_LO, col.a), 1.6, true)
+			f.draw_arc(hc, radius * 0.98, PI * 1.25, PI * 1.55, 10, Color(Tok.PRIMARY_HI, 0.8 * col.a), 1.4, true)
+			var top := hc + Vector2(0, -radius * 1.0)
+			f.draw_colored_polygon(PackedVector2Array([top + Vector2(-3, 2), top + Vector2(0, -9), top + Vector2(3, 2)]), brass)
+			for sx: float in [-1.0, 1.0]:
+				var ep := Vector2(sx * radius * 0.82, radius * 0.18)
+				f.disc(ep + Vector2(0.7, 0.9), 3.4, sh)
+				f.disc(ep, 3.2, brass)
 		Kind.HEAVY:
 			if hp > 1:
 				# Its armour: a riveted steel band round the ring (gone once
@@ -613,6 +644,9 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 				upper = maxf(upper, 0.26)
 			Kind.BOSS:
 				upper = maxf(upper, 0.18)
+	if kind == Kind.SEER and tired_t > 0.0:
+		# Spent after a read: drowsy, lids heavy, no dodging.
+		upper = maxf(upper, 0.8)
 	var lower := 0.0
 	if squint or tele_t > 0.0:
 		lower = 0.22
@@ -631,6 +665,9 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	if trait_kind == Trait.SHY and not aimed and not incoming:
 		# Shy: never quite meets your eye.
 		look = Vector2(-look.x * 0.6, look.y * 0.4 + 0.35)
+	if kind == Kind.SNEAK and innocent > 0.05:
+		# Caught: it looks anywhere but at you (up and away, whistling).
+		look = look.lerp(Vector2(0.62, -0.62), innocent)
 	var pupil := look * (er - pr - 1.2)
 	f.disc(pupil, pr, Pal.PUPIL)
 	f.disc(pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
@@ -648,6 +685,20 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
 			f.disc(Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+	if kind == Kind.SEER:
+		# The monocle: a brass rim round the eye on a fine chain; it flashes
+		# the instant the Seer reads your shot.
+		var rim := Color(Tok.PRIMARY, 0.95)
+		f.draw_arc(Vector2(0.8, 1.0), er + 3.0, 0.0, TAU, 28, Color(0, 0, 0, 0.35), 2.6, true)
+		f.draw_arc(Vector2.ZERO, er + 3.0, 0.0, TAU, 28, rim, 2.2, true)
+		f.draw_arc(Vector2.ZERO, er + 3.0, PI * 1.1, PI * 1.5, 8, Color(Tok.PRIMARY_HI, 0.9), 1.2, true)
+		var c0 := Vector2.from_angle(PI * 0.3) * (er + 3.0)
+		f.draw_polyline(PackedVector2Array([c0, c0 + Vector2(4, 6), c0 + Vector2(6, 14), c0 + Vector2(5, 20)]), Color(Tok.PRIMARY, 0.7), 1.2, true)
+		if read_flash > 0.0:
+			var k := read_flash / 0.45
+			var gp := Vector2(-er * 0.5, -er * 0.5)
+			f.draw_line(gp - Vector2(6, 0) * k, gp + Vector2(6, 0) * k, Color(1, 1, 1, 0.9 * k), 1.6, true)
+			f.draw_line(gp - Vector2(0, 6) * k, gp + Vector2(0, 6) * k, Color(1, 1, 1, 0.9 * k), 1.6, true)
 	if kind == Kind.DROP and upper < 0.5:
 		# The Dråpe's lashes: three quick flicks over the eye.
 		for k in 3:

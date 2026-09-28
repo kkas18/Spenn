@@ -2404,3 +2404,40 @@ Rettet:
      til `scripts/contacts.gd` (klassen `Contacts`, med en typet referanse til `Game`).
    - `game.gd` har fått klassenavnet `Game`.
    - Testpakken (soak og bot på to frø) passerer.
+
+## v7.52 – Smarte fiender, episke øyeblikk og armfeilen
+
+1. **Armfeilen (lange armer):** fiendene gjenbrukes fra en pool. Når offeret døde midt i et
+   dytt, fulgte armen den gjenbrukte kroppen dit den dukket opp som ny fiende, så den strakk
+   seg over skjermen. Målt rekkevidde hoppet fra 113 til 417 px.
+   - Hver kropp har nå et livsnummer (`life`, øker ved hver spawn). Armen slipper offeret når
+     det dør eller gjenbrukes, og fullfører bare bevegelsen.
+   - Armen når aldri lenger enn 110 px utenfor kroppen (`ARM_REACH`).
+   - Etter rettingen holder rekkevidden seg på ca. 115 px.
+2. **Tre nye, smarte fiender** (`scripts/smarts.gd`, klassen `Smarts`), hver med én tydelig
+   evne og ett tydelig motsvar:
+   - **Kommandøren:** åttekantet skall i marinestål med messinghjelm, fjærbusk og epåletter.
+     To liv, fra intensitet 2,7, og aldri to samtidig.
+     - Leser siktelinjen og beordrer opptil tre naboer i linjen ut av den. Hver ordre vises
+       som en messingtråd med en perle som løper ned.
+     - Holder selv dekning bak en nabo.
+     - Dør den, står troppen rådvill i 1,4 s, og trådene ryker med gnister.
+   - **Leseren:** fiolett gelé med monokkel og kjede.
+     - I det kula slippes, simulerer den den virkelige banen (tyngdekraft og vegger) for å
+       finne treffpunktet, og tar ett presist steg ut av banen (ca. 60 px).
+     - Et skudd som treffer om mindre enn 0,14 s, kan ikke unnvikes.
+     - Etterpå er den sliten i 1,1 s med tunge lokk, og kan ikke unnvike.
+     - Monokkelen blinker når den leser, og den etterlater to svake etterbilder.
+   - **Luringen:** en mosegrønn pære med hette.
+     - Sniker seg nedover med 2,6× fart når ingen ser på den.
+     - Fryser når du sikter på den eller en kule kommer, og spiller uskyldig: ser opp og
+       bort og plystrer.
+     - Målt uten sikte: +165 px på 2 s. Med sikte: +19 px.
+   - Alle tre har navn og forklaring på norsk og engelsk, erkefiendenavn og farger i alle fem
+     emaljetemaene.
+3. **Episke øyeblikk** (`fx.moment`, `fx.sweep`):
+   - Messingstråler vifter ut og dreier litt, med en myk lysblomst i sentrum. Brukes ved
+     bossdrap, Kommandørens fall, siste drap i en bølge og ny rekord.
+   - Når en bølge er ryddet, sveiper en lyslinje over feltet fra skinnen ned til farelinjen.
+   - Bare ett fullt øyeblikk om gangen: innen 1,6 s blir neste et mindre ekko.
+   - Med redusert bevegelse vokser og dreier ikke strålene, og sveipet vises ikke.

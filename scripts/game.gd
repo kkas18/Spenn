@@ -167,6 +167,7 @@ var slingshot: Slingshot
 var hud: Hud
 var fx: Fx
 var contacts: Contacts   # the contact physics (scripts/contacts.gd)
+var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
@@ -228,6 +229,7 @@ var _jolt_cd := 0.0
 
 func _ready() -> void:
 	contacts = Contacts.new(self)
+	smarts = Smarts.new(self)
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
@@ -494,6 +496,7 @@ func _on_record_broken() -> void:
 	fx.sparks(at, Pal.GOLD_LIGHT, 18)
 	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
 	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
+	fx.moment(at, Pal.GOLD_LIGHT, 0.7)
 	Sfx.play("record")
 	Sfx.strum([5, 6, 7, 8, 9, 10], 0.04, -2.0)
 	Sfx.haptic_pattern("record")
@@ -677,6 +680,14 @@ func _run_intros() -> void:
 	hud.intro(parts[0], parts[1] if parts.size() > 1 else "")
 	t.intro_t = 3.0
 	Sfx.play("intro")
+
+
+## The director's pick, with one house rule: a single Kommandør at a time.
+func _pick_kind() -> Target.Kind:
+	var k := director.pick_kind(_rng)
+	if k == Target.Kind.CAPTAIN and _any_kind(Target.Kind.CAPTAIN):
+		return Target.Kind.RING
+	return k
 
 
 func _best_slot(used: Array[float], slots: int) -> float:
@@ -864,7 +875,7 @@ func _pace(delta: float) -> void:
 		if _spawn_t <= 0.0:
 			_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
 			if _alive_count() < director.alive_cap():
-				_spawn_one(director.pick_kind(_rng))
+				_spawn_one(_pick_kind())
 	match director.poll_event():
 		Director.Event.FORMATION:
 			var k := director.formation_kind(_rng)
@@ -1010,6 +1021,10 @@ func _clear_wave() -> void:
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
 	Sfx.strum([0, 2, 4, 5, 7], 0.05, -2.0)
 	fx.shock(mid, 8.0, 380.0, 0.6)
+	# The wave's signature: light from the last kill, and a line of it
+	# sweeping the field from the rail down to the danger line.
+	fx.moment(_last_kill)
+	fx.sweep(layout.rail_y, layout.danger_y)
 	# Final-kill camera: the camera leans in on the last one and time all
 	# but stops; a gold ring runs out through the light fibres from the kill
 	# and a spark races along the rail.
@@ -1104,7 +1119,7 @@ func _update_eyes() -> void:
 		t.covered = false
 		if t.guard_of != null and (not is_instance_valid(t.guard_of) or not t.guard_of.is_hittable() or not t.guard_of.aimed):
 			t.guard_of = null
-		if t.aimed and (t.kind == Target.Kind.RING or t.mood == Target.Mood.CUTE):
+		if t.aimed and (t.kind == Target.Kind.RING or t.kind == Target.Kind.CAPTAIN or t.mood == Target.Mood.CUTE):
 			_find_cover(t, o)
 		_slide_room(t)
 		var nearest := INF
@@ -1120,6 +1135,7 @@ func _update_eyes() -> void:
 			t.look_at = slingshot.pouch
 			t.has_look = true
 	_guard_allies(path)
+	smarts.tick(path)
 	# Everything in the line of fire narrows its eye: it is watching you.
 	for t in targets:
 		t.squint = t.aimed or (t.threat_lvl > 0.2 and t.is_hittable())
@@ -1777,12 +1793,16 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
+		fx.moment(t.pos, Tok.PRIMARY_HI, 1.25)
 		fx.shake(3.0)
 		fx.focus(t.pos, 0.09, 1.3)
 		fx.aberrate(6.0)
 		fx.slowmo(0.3, 0.6)
 		Music.duck(4.0, 0.7)
 		Sfx.haptic(80, 0.9)
+	if kind == Target.Kind.CAPTAIN:
+		smarts.captain_down(t)
+		fx.moment(t.pos, Tok.PRIMARY_HI, 0.8)
 	if kind == Target.Kind.SPLIT:
 		_split(t)
 	elif kind == Target.Kind.DROP and t.variant == Target.Var.TWIN:
@@ -2889,7 +2909,7 @@ func _spawn_finale() -> void:
 		t.set_charm(1 + _rng.randi() % 5)
 	# It never comes alone: two grumpy escorts drop in beside it.
 	for i in 2:
-		var e := _spawn_one(director.pick_kind(_rng), 0.1)
+		var e := _spawn_one(_pick_kind(), 0.1)
 		if e:
 			e.set_mood(Target.Mood.GRUMPY)
 			e.aggression = minf(1.0, e.aggression + 0.15)

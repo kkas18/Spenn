@@ -553,6 +553,18 @@ func _mesh_build() -> void:
 			_fan(_round(r, 20), Vector2.ZERO, b)
 		Kind.PAKKIS:
 			_fan(_round(r, 24), Vector2.ZERO, b)
+		Kind.CAPTAIN:
+			# A shell badge: an octagon rimmed in a raised band.
+			_fan(_round(r - 2.0, 8), Vector2.ZERO, b)
+			_poly_tube(_round(r - 2.5, 8), 2.5, b)
+		Kind.SEER:
+			_fan(_round(r, 22), Vector2(-r * 0.15, -r * 0.2), b)
+		Kind.SNEAK:
+			# A pear hanging point-down: the Dråpe's outline turned over.
+			var pear := _drop_outline(r)
+			for i in pear.size():
+				pear[i] = Vector2(pear[i].x, minf(-pear[i].y, r * 1.35))
+			_fan(pear, Vector2(0.0, r * 0.1), b)
 		Kind.SHADE:
 			_fan(_crescent(r), Vector2(-r * 0.55, 0.0), b)
 		Kind.BOSS:

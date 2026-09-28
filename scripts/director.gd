@@ -384,6 +384,14 @@ func pick_kind(rng: RandomNumberGenerator) -> Target.Kind:
 		table.append([Target.Kind.PIPP, 0.9])
 	if i >= 2.2:
 		table.append([Target.Kind.PAKKIS, 0.55 + a * 0.5])
+	# The smart ones: the Sneak early (it teaches watching), the Seer once
+	# you shoot well, the Captain last (and never two at once, see Game).
+	if i >= 1.6:
+		table.append([Target.Kind.SNEAK, 0.6 + a * 0.6])
+	if i >= 2.3:
+		table.append([Target.Kind.SEER, 0.5 + a * 0.8])
+	if i >= 2.7:
+		table.append([Target.Kind.CAPTAIN, 0.4 + a * 0.5])
 	# The wave's mood tips the mix.
 	for e in table:
 		match wave_mood:
