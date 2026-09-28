@@ -86,49 +86,12 @@ SFX = {
 TARGET_RMS_DB = -20.0     # loudness of the active part of every sound
 PEAK_DB = -1.0
 
-# Mocking laughs (freesound.org, all CC0; see CREDITS.md): five families
-# from small and high to big and low, each take (freesound id, start s,
-# end s) of a longer recording. The game picks the family by the enemy's
-# kind and mood and pitches the take by its size (see Target.laugh_voice).
-LAUGHS = {
-    # small and light: a cartoon giggle
-    "giggle": [(513983, 0.12, 0.80), (19260, 0.0, 0.72), (576984, 0.02, 1.08),
-               (243378, 6.40, 7.18), (243378, 10.88, 11.64)],
-    # the sly ones: a mischievous snicker
-    "imp": [(205751, 0.04, 0.86), (580747, 0.04, 1.66), (417826, 0.14, 1.16),
-            (702394, 7.64, 9.10)],
-    # the crowd: a nasal cackle
-    "goblin": [(643664, 2.12, 3.08), (643664, 3.88, 4.58), (643664, 10.80, 11.74),
-               (643664, 12.74, 14.02), (173933, 0.54, 1.72), (173933, 2.74, 4.02)],
-    # the unimpressed: grown-up and condescending, down to a single "heh"
-    "sneer": [(343981, 0.02, 0.28), (842291, 0.22, 1.68), (697899, 0.90, 3.12),
-              (382906, 0.04, 2.40), (649082, 1.18, 3.06)],
-    # the Spinneren and the big ones: a deep villain's laugh
-    "evil": [(362330, 0.02, 2.92), (401332, 0.16, 3.58), (704363, 0.04, 2.06),
-             (466059, 1.22, 4.84), (646307, 0.0, 1.98)],
-}
-LAUGH_MAX = {"giggle": 1.1, "imp": 1.35, "goblin": 1.4, "sneer": 1.6, "evil": 2.2}
-LAUGH_HPF = {"giggle": 180.0, "imp": 150.0, "goblin": 150.0, "sneer": 110.0, "evil": 80.0}
-LAUGH_ENV_RATE = 30       # the loudness curve the laughing mouth follows, per second
-
-BAR = 4 * 60.0 / 124.0   # s: the three play tracks all run at 124 BPM
-
-# music name: (source mp3, loop start s or None, loop length in bars or
-# None, crossfade seconds, loudness)
-# A loop start cuts the loop out of the body of a longer piece, on its
-# downbeat (found from its onsets; its end repeats its start, see PLAN.md
-# v7.56). Loudness: None keeps the old match (RMS -18 dBFS), a number is a
-# K-weighted loudness (roughly LUFS) to match the play track's -15.4 by ear
-# rather than by meter, a touch lower for the busier pieces.
+# music name: (source mp3, loop length in samples or None, crossfade seconds)
 MUSIC = {
     # 124 BPM, 48 bars: the published loop version is cut on the bar.
-    "play": ("music_Mesmerizing_Galaxy_Loop.mp3", None, 48, 0.0, None),
+    "play": ("music_Mesmerizing_Galaxy_Loop.mp3", int(round(48 * 4 * 60.0 / 124.0 * 44100)), 0.0),
     # Not a loop: baked crossfade from the end back into the start.
-    "menu": ("music_Dreamy_Flashback.mp3", None, None, 3.0, None),
-    # The lift of the middle waves: 32 bars of the driving groove.
-    "lift": ("music_Brain_Dance.mp3", 29.543, 32, 0.0, -15.9),
-    # The Spinneren's: 16 bars of the steadiest, hardest stretch.
-    "boss": ("music_Cephalopod.mp3", 35.340, 16, 0.0, -16.4),
+    "menu": ("music_Dreamy_Flashback.mp3", None, 3.0),
 }
 
 # texture name: (source file, size)
@@ -391,145 +354,13 @@ def build_voices():
         sf.write(os.path.join(OUT, "sfx", name + "_0.ogg"), m, sr, format="OGG", subtype="VORBIS")
 
 
-def _hpf(m, sr, fc, order=3):
-    """Zero-phase Butterworth-shaped high-pass (in the frequency domain)."""
-    n = len(m)
-    size = 1 << int(np.ceil(np.log2(n + sr // 4)))
-    f = np.fft.rfftfreq(size, 1.0 / sr)
-    h = 1.0 / np.sqrt(1.0 + (fc / np.maximum(f, 1e-3)) ** (2 * order))
-    return np.fft.irfft(np.fft.rfft(m, size) * h, size)[:n]
-
-
-def _stft(m, n=1024, hop=256):
-    pad = np.concatenate([np.zeros(n), m, np.zeros(n)])
-    frames = np.lib.stride_tricks.sliding_window_view(pad, n)[::hop] * np.hanning(n)
-    return np.fft.rfft(frames, axis=1)
-
-
-def _istft(spec, length, n=1024, hop=256):
-    w = np.hanning(n)
-    frames = np.fft.irfft(spec, n, axis=1) * w
-    out = np.zeros(hop * (len(frames) - 1) + n)
-    norm = np.zeros_like(out)
-    for i, f in enumerate(frames):
-        out[i * hop:i * hop + n] += f
-        norm[i * hop:i * hop + n] += w * w
-    return (out / np.maximum(norm, 1e-6))[n:n + length]
-
-
-def _denoise(m, whole, strength=2.0, floor_db=-14.0):
-    """Spectral gate: the recording's noise is measured in its quietest
-    frames and taken off every bin, at most `floor_db`, with the gain
-    smoothed over time and frequency so it never warbles."""
-    p_all = np.abs(_stft(whole)) ** 2
-    e = p_all.sum(axis=1)
-    live = e > 1e-10
-    noise = p_all[live & (e <= np.percentile(e[live], 15))].mean(axis=0)
-    spec = _stft(m)
-    p = np.abs(spec) ** 2
-    g = np.clip(1.0 - strength * noise[None, :] / np.maximum(p, 1e-20), 10 ** (floor_db / 10.0), 1.0)
-    g = np.lib.stride_tricks.sliding_window_view(np.pad(g, ((1, 1), (2, 2)), mode="edge"), (3, 5)).mean(axis=(2, 3))
-    return _istft(spec * np.sqrt(g), len(m))
-
-
-def _env_rms(m, sr, hop_s):
-    hop = max(1, int(hop_s * sr))
-    pad = np.concatenate([np.zeros(hop), m, np.zeros(2 * hop)])
-    return np.array([np.sqrt(np.mean(pad[i:i + 2 * hop] ** 2)) for i in range(0, len(m), hop)])
-
-
-def _trim_laugh(m, sr, max_len):
-    """Silence off both ends; a take longer than `max_len` ends in the
-    quietest gap between syllables before it, never mid-syllable."""
-    step = int(0.005 * sr)
-    e = _env_rms(m, sr, 0.005)
-    on = np.nonzero(e > e.max() * 10 ** (-42 / 20.0))[0]
-    m = m[max(0, on[0] * step - int(0.008 * sr)): min(len(m), (on[-1] + 1) * step + int(0.03 * sr))]
-    cut = len(m)
-    if len(m) > max_len * sr:
-        e = _env_rms(m, sr, 0.01)
-        lo, hi = int((max_len - 0.4) / 0.01), int(max_len / 0.01)
-        cut = (lo + int(np.argmin(e[lo:hi]))) * int(0.01 * sr) + int(0.005 * sr)
-    m = m[:cut].copy()
-    fi = int(0.004 * sr)
-    fo = min(len(m) // 4, int(0.07 * sr))
-    m[:fi] *= np.linspace(0.0, 1.0, fi)
-    m[len(m) - fo:] *= np.cos(np.linspace(0.0, np.pi / 2, fo)) ** 2
-    return m
-
-
-def build_laughs():
-    """The mocking laughs: each take cut from its recording, high-passed,
-    cleaned of its background hiss, trimmed and levelled like every other
-    sound. Their loudness curves (one hex digit, 0..f, LAUGH_ENV_RATE
-    times a second) go to scripts/laughs.gd, so a laughing enemy's mouth
-    and bounce follow its voice."""
-    curves = {}
-    for fam, takes in LAUGHS.items():
-        curves[fam] = []
-        for i, (sid, s0, s1) in enumerate(takes):
-            d, sr = sf.read(os.path.join(SRC, FS % sid), always_2d=True)
-            whole = d.mean(axis=1)
-            m = whole[max(0, int((s0 - 0.03) * sr)): min(len(whole), int((s1 + 0.08) * sr))]
-            m = _hpf(m, sr, LAUGH_HPF[fam])
-            m = _denoise(m, whole)
-            m = _level(_trim_laugh(m, sr, LAUGH_MAX[fam]), sr)
-            path = os.path.join(OUT, "sfx", "laugh_%s_%d.ogg" % (fam, i))
-            sf.write(path, m, sr, format="OGG", subtype="VORBIS")
-            e = _env_rms(m, sr, 1.0 / LAUGH_ENV_RATE)
-            e = np.clip(e / max(np.percentile(e, 97), 1e-9), 0.0, 1.0)
-            curves[fam].append("".join("0123456789abcdef"[int(round(v * 15))] for v in e))
-            print("%-24s %5.2fs rms %5.1f pk %5.1f" % (os.path.basename(path), len(m) / sr,
-                  db(active_rms(m, sr)), db(np.abs(m).max())))
-    lines = [
-        "class_name Laughs",
-        "## Generated by tools/import_assets.py (build_laughs): do not edit.",
-        "## The mocking laughs (assets/sfx/laugh_<family>_<take>.ogg), and for each",
-        "## take its loudness RATE times a second as hex digits (0..f), which the",
-        "## laughing enemy's mouth and bounce follow.",
-        "",
-        "const RATE := %.1f" % LAUGH_ENV_RATE,
-        "const CURVES := {",
-    ]
-    for fam, cs in curves.items():
-        lines.append('\t"%s": [' % fam)
-        lines += ['\t\t"%s",' % c for c in cs]
-        lines.append("\t],")
-    lines.append("}")
-    with open(os.path.join(os.path.dirname(OUT), "scripts", "laughs.gd"), "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def _k_loudness(d, sr):
-    """Loudness with the K-weighting of ITU-R BS.1770 (a high shelf of
-    +4 dB from ~1.7 kHz and a high-pass at 38 Hz, in the frequency domain),
-    no gating: close to LUFS for music that never stops."""
-    n = len(d)
-    size = 1 << int(np.floor(np.log2(min(n, sr * 20))))
-    f = np.fft.rfftfreq(size, 1.0 / sr)
-    a = 10 ** (4 / 20.0)
-    h = np.sqrt((1 + (f / 1681.0) ** 2 * a * a) / (1 + (f / 1681.0) ** 2)) * (f / 38.0) ** 2 / np.sqrt(1 + (f / 38.0) ** 4)
-    total, count = 0.0, 0
-    for i in range(0, n - size + 1, size):
-        for ch in range(d.shape[1]):
-            total += np.sum(np.abs(np.fft.rfft(d[i:i + size, ch]) * h) ** 2) / size ** 2 * 2
-        count += 1
-    return 10 * np.log10(total / count) - 0.691
-
-
-def build_music(names=None):
+def build_music():
     os.makedirs(os.path.join(OUT, "music"), exist_ok=True)
-    for name, (src, start, bars, xfade, loud) in MUSIC.items():
-        if names and name not in names:
-            continue
+    for name, (src, loop_len, xfade) in MUSIC.items():
         d, sr = sf.read(os.path.join(SRC, src), always_2d=True)
-        if start is None:
-            env = np.abs(d).max(axis=1)
-            nz = np.nonzero(env > 1e-3)[0]
-            d = d[nz[0]:]
-        else:
-            d = d[int(round(start * sr)):]
-        loop_len = int(round(bars * BAR * sr)) if bars else None
+        env = np.abs(d).max(axis=1)
+        nz = np.nonzero(env > 1e-3)[0]
+        d = d[nz[0]:]
         if loop_len:
             # Fold the few samples that ring past the loop point back into
             # the start (10 ms equal-power) so the seam never clicks.
@@ -544,11 +375,8 @@ def build_music(names=None):
             t = np.linspace(0.0, 1.0, n)[:, None]
             head = d[:n] * np.sin(t * np.pi / 2) + d[-n:] * np.cos(t * np.pi / 2)
             d = np.concatenate([head, d[n:-n]])
-        # Match the tracks' loudness, keep headroom.
-        if loud is None:
-            g = 10 ** ((-18.0 - db(np.sqrt(np.mean(d ** 2)))) / 20.0)
-        else:
-            g = 10 ** ((loud - _k_loudness(d, sr)) / 20.0)
+        # Match both tracks to the same loudness, keep headroom.
+        g = 10 ** ((-18.0 - db(np.sqrt(np.mean(d ** 2)))) / 20.0)
         g = min(g, 10 ** (-1.0 / 20.0) / np.abs(d).max())
         d = (d * g).astype(np.float32)
         path = os.path.join(OUT, "music", name + ".ogg")
@@ -587,6 +415,5 @@ if __name__ == "__main__":
     build_harp()
     build_surge()
     build_voices()
-    build_laughs()
     build_music()
     build_particles()

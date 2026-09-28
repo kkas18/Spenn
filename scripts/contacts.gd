@@ -101,11 +101,11 @@ func target_contacts() -> void:
 				g._knock_sfx_cd = 0.07
 				var loud := linear_to_db(clampf(closing / 600.0, 0.15, 0.75))
 				if a.soft and c.soft:
-					Sfx.play("squish", randf_range(1.05, 1.25), loud - 4.0, contact)
+					Sfx.play("squish", randf_range(1.05, 1.25), loud - 4.0)
 				elif not a.soft and not c.soft:
-					Sfx.play("clank", randf_range(1.1, 1.3), loud - 3.0, contact)
+					Sfx.play("clank", randf_range(1.1, 1.3), loud - 3.0)
 				else:
-					Sfx.play("knock", randf_range(0.9, 1.1), loud, contact)
+					Sfx.play("knock", randf_range(0.9, 1.1), loud)
 				Sfx.haptic(6, 0.2)
 	# Ropes slide around the bodies they meet instead of passing through,
 	# and bodies keep inside the walls.
@@ -186,7 +186,7 @@ func ball_contacts() -> void:
 			c.friction(n, a.vel, jn, 0.15, 1.0)
 			a.impact(-n)
 			c.impact(n)
-			Sfx.play("clank", randf_range(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0, (a.pos + c.pos) * 0.5)
+			Sfx.play("clank", randf_range(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0)
 
 
 func collide(b: Ball) -> void:
@@ -208,7 +208,7 @@ func collide(b: Ball) -> void:
 				g._on_cut(b, t)
 			else:
 				g.fx.sparks(b.pos, Pal.INK_DIM, 6)
-				Sfx.play("twang", 1.2, -6.0, b.pos)
+				Sfx.play("twang", 1.2, -6.0)
 				Sfx.haptic(8, 0.2)
 			continue
 		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:

@@ -170,7 +170,6 @@ var contacts: Contacts   # the contact physics (scripts/contacts.gd)
 var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
 var mind: Mind           # how every enemy answers your aim (scripts/mind.gd)
 var habits := Habits.new()  # what they know of you, kept between runs (scripts/habits.gd)
-var jeers: Jeers         # who laughs at you, and when (scripts/jeers.gd)
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
@@ -193,7 +192,6 @@ var _origin := Vector2.ZERO
 var _time := 0.0
 var _knock_sfx_cd := 0.0
 var _shot_seq := 0
-var _last_shot_t := -10.0       # when the last ball was loosed (game time)
 var _shots := {}                # shot id -> {"balls": n, "hit": bool}
 var _last_tap := -10.0
 var _last_tap_pos := Vector2.ZERO
@@ -237,8 +235,6 @@ func _ready() -> void:
 	contacts = Contacts.new(self)
 	smarts = Smarts.new(self)
 	mind = Mind.new(self)
-	jeers = Jeers.new(self)
-	Target.jeers = jeers
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
@@ -476,8 +472,6 @@ func _start_run() -> void:
 	habits.restore({} if daily else Prefs.habits)
 	habits.begin_run()
 	mind.reset()
-	jeers.reset()
-	_last_shot_t = -10.0
 	hud.bar.score = 0
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
@@ -677,15 +671,6 @@ func _boss_alive() -> bool:
 	return false
 
 
-## The music for this moment of the run (see Music): the calm groove for
-## the first wave, the lifted one every other wave after it (so neither
-## loops for long), and the Spinneren's own while it hangs there.
-func _music_track() -> String:
-	if _boss_alive():
-		return "boss"
-	return "lift" if director.wave % 2 == 0 else "play"
-
-
 ## First time a kind ever appears it gets a short card and a marker ring.
 func _maybe_intro(t: Target) -> void:
 	if not Prefs.seen.has(t.intro_id()) and not _intro_queue.has(t):
@@ -781,9 +766,7 @@ func _process(delta: float) -> void:
 		_spawn_minions()
 		_medic_work()
 		_boss_stages()
-		jeers.tick()
 		Music.intensity = clampf(director.intensity() / 5.0 + (0.3 if director.pulse == Director.Pulse.PEAK else 0.0), 0.0, 1.0)
-		Music.track = _music_track()
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
@@ -1470,7 +1453,7 @@ func _medic_work() -> void:
 		fx.link(m.pos, best.pos, Pal.MEDIC_BADGE)
 		m.watch(best, 1.2)
 		fx.ring(best.pos, Pal.MEDIC_BADGE, best.radius + 12.0)
-		Sfx.play("fade", 1.35, -6.0, best.pos)
+		Sfx.play("fade", 1.35, -6.0)
 
 
 ## Spinneren moving to its next stage: the old plates shatter off, a
@@ -1485,7 +1468,7 @@ func _boss_stages() -> void:
 		fx.punch(0.03)
 		fx.shake(2.5)
 		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20, false, 2)
-		Sfx.play("metal", 0.8, 0.0, t.pos)
+		Sfx.play("metal", 0.8)
 		Sfx.play("whoosh", 0.7, -4.0)
 		Sfx.haptic(40, 0.7)
 
@@ -1551,7 +1534,7 @@ func _on_mirror(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.sparks(contact, Pal.EYE, 8)
 	fx.ring(contact, Pal.MIRROR, 20.0)
 	fx.popup(Loc.t("popup.mirror"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
-	Sfx.play("clank", 1.35, -5.0, contact)
+	Sfx.play("clank", 1.35, -5.0)
 	Sfx.note(7, -9.0)
 	Sfx.haptic(10, 0.3)
 
@@ -1563,7 +1546,7 @@ func _pop_bubble(t: Target, at: Vector2) -> void:
 	fx.ring(t.pos, Pal.MEDIC_BADGE, t.radius + 14.0)
 	fx.sparks(at, Pal.MEDIC_BADGE, 8)
 	fx.popup(Loc.t("popup.bubble"), at + Vector2(0, -18), Pal.MEDIC_BADGE, 16)
-	Sfx.play("burst", 1.45, -8.0, at)
+	Sfx.play("burst", 1.45, -8.0)
 	Sfx.haptic(10, 0.3)
 
 
@@ -1581,7 +1564,7 @@ func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.sparks(contact, Pal.METAL_LIGHT, 6)
 	fx.ring(contact, Pal.METAL_LIGHT, 14.0)
 	fx.popup(Loc.t("popup.blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
-	Sfx.play("clank", randf_range(0.95, 1.08), -3.0, contact)
+	Sfx.play("clank", randf_range(0.95, 1.08), -3.0)
 	Sfx.haptic(10, 0.3)
 
 
@@ -1622,7 +1605,6 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		# Heavy balls: armour takes two blows' worth.
 		t.hp -= 1
 	habits.note_hit(t, _time)
-	jeers.hit(t)
 	if t.kind == Target.Kind.SEER and t.tired_t > 0.0:
 		_feat("seer")
 	elif t.kind == Target.Kind.SNEAK and t.pace > 1.5:
@@ -1816,7 +1798,7 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	var kind := t.kind
 	if not killed:
 		if t.soft:
-			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud, t.pos)
+			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
 		else:
 			_material_knock(t, hits, loud)
 		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
@@ -1830,16 +1812,16 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 			fx.burst(kind, at, rot, r, col, Vector2.ZERO)
 			fx.puff(at, col, 2, r * 1.3, 0.32))
 		# Jelly bursts wetly; the smaller it is, the higher it sounds.
-		Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud, at)
-		Sfx.play("squish", 1.1, loud - 6.0, at)
+		Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		Sfx.play("squish", 1.1, loud - 6.0)
 	else:
 		var boss := kind == Target.Kind.BOSS
 		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
 		fx.shards(t.pos, col, 6 if boss else 2, t.vel)
 		fx.puff(t.pos, col, 6 if boss else 2, t.radius * (1.8 if boss else 1.3), 0.32)
-		Sfx.play("burst", randf_range(0.92, 1.08), loud, t.pos)
+		Sfx.play("burst", randf_range(0.92, 1.08), loud)
 		_material_knock(t, hits, loud)
-	Sfx.play("snap", randf_range(0.95, 1.1), -8.0, t.pos)
+	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
 		fx.moment(t.pos, Tok.PRIMARY_HI, 1.25)
@@ -1863,15 +1845,15 @@ func _material_knock(t: Target, hits: int, loud: float) -> void:
 	var p := 1.0 + 0.06 * (hits - 1)
 	match t.kind:
 		Target.Kind.ROD:
-			Sfx.play("wood", p, loud, t.pos)
+			Sfx.play("wood", p, loud)
 		Target.Kind.SHIELD, Target.Kind.REEL:
-			Sfx.play("clank", p, loud, t.pos)
+			Sfx.play("clank", p, loud)
 		Target.Kind.BOSS:
-			Sfx.play("metal", p * 0.9, loud, t.pos)
+			Sfx.play("metal", p * 0.9, loud)
 		Target.Kind.MIRROR:
-			Sfx.play("metal", p * 1.3, loud, t.pos)
+			Sfx.play("metal", p * 1.3, loud)
 		_:
-			Sfx.play("hit", p, loud, t.pos)
+			Sfx.play("hit", p, loud)
 
 
 ## String severed: double points, and it ignores armour and health.
@@ -1907,7 +1889,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
 	fx.popup("+%d" % gained, b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
-	Sfx.play("cut", randf_range(0.95, 1.08), 0.0, b.pos)
+	Sfx.play("cut", randf_range(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
 	_charge(CHARGE_KILL)
 	_skill(Skill.CUT, b.pos)
@@ -2037,11 +2019,9 @@ func _breach(t: Target) -> void:
 	fx.shock(at, 12.0, 240.0, 0.5)
 	fx.aberrate(5.0)
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20, false, 2)
-	Sfx.play("breach", 1.0, 0.0, at)
+	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
-	# The ones hanging nearby enjoy it: the boldest laughs out loud (at
-	# the last knot someone always does), the rest dance.
-	jeers.breach(at, lives <= 0)
+	# The ones hanging nearby enjoy it.
 	for o in targets:
 		if o != t and o.is_hittable() and o.pos.distance_to(t.pos) < 260.0 * layout.scale:
 			o.taunt()
@@ -2316,7 +2296,7 @@ func _announce_evolve(t: Target) -> void:
 	fx.popup(Loc.t("evolve.pop"), t.pos + Vector2(0, -t.radius - 30.0), Pal.INK, 18)
 	fx.ring(t.pos, t.color(), 60.0)
 	fx.puff(t.pos, Pal.INK, 4, 22.0, 0.15)
-	Sfx.play("clank", 0.8, 0.0, t.pos)
+	Sfx.play("clank", 0.8)
 	t.voice("taunt")
 	if not _evolve_told:
 		_evolve_told = true
@@ -2649,7 +2629,7 @@ func _break_charm(t: Target) -> void:
 	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16, false, 0)
 	fx.sparks(at, col, 8)
 	fx.ring(at, col, 26.0)
-	Sfx.play("burst", 1.7, -6.0, at)
+	Sfx.play("burst", 1.7, -6.0)
 	Sfx.haptic(10, 0.3)
 
 
@@ -2915,7 +2895,7 @@ func _land_shove(a: Target, v: Target) -> void:
 		a.push(Vector2(-dir * 90.0, 0), a.pos + Vector2(dir * a.radius, 0))
 	fx.puff(at, Pal.INK, 4, 14.0, 0.25)
 	fx.sparks(at, Pal.INK_DIM, 4)
-	Sfx.play("knock", 1.35 if grumpy else 1.6, -6.0, at)
+	Sfx.play("knock", 1.35 if grumpy else 1.6, -6.0)
 	Sfx.play("whoosh", 1.4, -10.0)
 	Sfx.haptic(8, 0.25)
 	_name_trick("shove.name" if grumpy else "shove.nudge", a.pos)
@@ -3171,7 +3151,6 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 		director.record_aim(vel.normalized().x)
 		habits.note_shot(_time)
 		habits.note_side(vel.normalized().x)
-		_last_shot_t = _time
 		if _release_hold >= 0.0:
 			director.record_hold(_release_hold)
 			habits.note_hold(_release_hold)

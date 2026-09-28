@@ -72,18 +72,9 @@ func body_xform() -> Transform2D:
 		var env := sin(PI * _taunt / TAUNT_TIME)
 		wig = sin(_taunt * TAU * 3.2) * 0.28 * env
 		bob = Vector2(0, -absf(sin(_taunt * TAU * 3.2)) * 5.0 * env)
-	var lift := Transform2D.IDENTITY
-	if laugh_amt > 0.0:
-		# Laughing: it bobs up with each "ha", stretching a little, and
-		# leans back into it; the small ones shake with the giggles.
-		bob.y -= laugh_amt * radius * 0.12
-		wig -= 0.07 * laugh_amt * (1.0 if life % 2 == 0 else -1.0)
-		if radius < 26.0:
-			wig += sin(_clock * 38.0) * 0.05 * laugh_amt
-		lift = Transform2D(0.0, Vector2(1.0 - 0.03 * laugh_amt, 1.0 + 0.05 * laugh_amt), 0.0, Vector2.ZERO)
 	var body := Transform2D(body_rot + wig, Vector2.ZERO) * Transform2D(0.0, Vector2(maxf(absf(tilt_x), 0.08) * signf(tilt_x + 0.0001), 1.0), 0.0, Vector2.ZERO)
 	var ds := depth_scale()
-	return Transform2D(0.0, pos + render_off + _jit + bob) * lift * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
+	return Transform2D(0.0, pos + render_off + _jit + bob) * squash * body * Transform2D(0.0, Vector2(ds, ds), 0.0, Vector2.ZERO)
 
 
 ## Steel chain along the string: links every 7 px, alternately seen flat

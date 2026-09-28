@@ -726,7 +726,6 @@ func _build_settings() -> void:
 		[SetRow.Kind.STEPS, "settings.effects", func() -> int: return Prefs.sfx_volume, func(v: int) -> void:
 			Prefs.set_sfx(v)
 			Sfx.play("countdown")],
-		[SetRow.Kind.SWITCH, "settings.laughs", func() -> int: return int(Prefs.laughs), func(_v: int) -> void: Prefs.toggle_laughs()],
 		null,
 		[SetRow.Kind.SWITCH, "settings.aimGuide", func() -> int: return int(Prefs.aim_guide), func(_v: int) -> void: Prefs.toggle_aim_guide()],
 		[SetRow.Kind.SWITCH, "settings.tilt", func() -> int: return int(Prefs.tilt), func(_v: int) -> void: Prefs.toggle_tilt()],
@@ -783,7 +782,7 @@ func _build_settings() -> void:
 		r.kind = g[0]
 		r.key = g[1]
 		r.getter = g[2]
-		r.glyph = {"settings.music": "note", "settings.effects": "speaker", "settings.laughs": "laugh", "settings.aimGuide": "aim", "settings.tilt": "tilt",
+		r.glyph = {"settings.music": "note", "settings.effects": "speaker", "settings.aimGuide": "aim", "settings.tilt": "tilt",
 			"settings.reducedMotion": "motion", "settings.haptics": "vibrate", "settings.language": "globe", "settings.reset": "restart"}.get(g[1], "")
 		r.first = first
 		r.theme_type_variation = &"RowButton"
@@ -1410,18 +1409,6 @@ static func glyph(ci: CanvasItem, id: String, c: Vector2, s: float, col: Color) 
 			line.call([Vector2(5, 12), Vector2(12, 12)])
 			line.call([Vector2(3, 16), Vector2(12, 16)])
 			ci.draw_arc(o + Vector2(16, 12) * s, 4.5 * s, 0.0, TAU, 16, col, lw, true)
-		"laugh":
-			# A speech bubble with a laughing face in it: two happy arches
-			# and a wide open mouth.
-			ci.draw_arc(o + Vector2(12, 10.5) * s, 8.5 * s, PI * 0.72, PI * 2.62, 36, col, lw, true)
-			line.call([Vector2(6.2, 16.5), Vector2(4.5, 21), Vector2(9.5, 18.5)])
-			for ex: float in [8.8, 15.2]:
-				line.call([Vector2(ex - 1.7, 8.9), Vector2(ex, 7.3), Vector2(ex + 1.7, 8.9)])
-			var mouth := PackedVector2Array()
-			for k in 9:
-				var a := PI * k / 8.0
-				mouth.append(o + Vector2(12.0 + cos(a) * 3.4, 11.8 + sin(a) * 2.9) * s)
-			ci.draw_colored_polygon(mouth, col)
 		"vibrate":
 			ci.draw_rect(Rect2(o + Vector2(8, 4) * s, Vector2(8, 16) * s), col, false, lw)
 			line.call([Vector2(4, 8), Vector2(2.5, 10), Vector2(4, 12), Vector2(2.5, 14), Vector2(4, 16)])
