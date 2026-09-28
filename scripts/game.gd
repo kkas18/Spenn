@@ -200,6 +200,7 @@ var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
 var _punish_told := false
+var _wave_clean := true         # no knot lost this wave (see the "clean" achievement)
 var _last_kill := Vector2.ZERO
 var _cocky_t := 0.0             # after a breach the survivors get cocky
 var daily := false              # this run is the daily challenge
@@ -436,6 +437,7 @@ func _start_run() -> void:
 	waves_cleared = 0
 	_habit_told = false
 	_punish_told = false
+	_wave_clean = true
 	_tactic_told = 0
 	flows = 0
 	_evolve_told = false
@@ -1003,6 +1005,9 @@ func _wave_tick(delta: float) -> void:
 			director.wave_break -= delta
 			if director.wave_break <= 0.0:
 				director.next_wave()
+				_wave_clean = true
+				if director.wave >= 5:
+					_feat("wave5")
 				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
 				_spawn_t = 0.3
 				# A new wave, a new colour theme, eased in.
@@ -1024,6 +1029,8 @@ func _wave_tick(delta: float) -> void:
 
 func _clear_wave() -> void:
 	waves_cleared += 1
+	if _wave_clean:
+		_feat("clean")
 	var bonus := (100 + 50 * director.wave) * _mult() * _surge()
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.46)
 	_add_score(bonus, mid)
@@ -1086,6 +1093,7 @@ func _update_ball_light() -> void:
 ## slide along the rail before it would run into a neighbour.
 func _update_eyes() -> void:
 	var aiming := slingshot.is_aiming() and slingshot.power >= Slingshot.MIN_POWER
+	fx.aiming = aiming
 	var o := layout.pouch_rest()
 	var path := slingshot.predict() if aiming and slingshot.power > 0.3 else PackedVector2Array()
 	var flights: Array[PackedVector2Array] = []
@@ -1232,8 +1240,10 @@ func _flight(b: Ball) -> PackedVector2Array:
 	var p := b.pos
 	var v := b.vel
 	var dt := 1.0 / 30.0
+	var w := gust * GUST_BALL
 	for i in 18:
 		v.y += Ball.GRAVITY * dt
+		v.x += w * dt
 		p += v * dt
 		out.append(p)
 	return out
@@ -1437,7 +1447,7 @@ func _medic_work() -> void:
 			continue
 		if best.hp < Target.HP[best.kind]:
 			best.hp += 1
-			fx.popup("+1", best.pos + Vector2(0, -best.radius - 14.0), Pal.MEDIC_BADGE, 18)
+			fx.popup("+1", best.pos + Vector2(0, -best.radius - 14.0), Pal.MEDIC_BADGE, 18, false, 0)
 		else:
 			best.patched = true
 		fx.link(m.pos, best.pos, Pal.MEDIC_BADGE)
@@ -1457,7 +1467,7 @@ func _boss_stages() -> void:
 		fx.shards(t.pos, Pal.METAL_LIGHT, 5, Vector2.ZERO)
 		fx.punch(0.03)
 		fx.shake(2.5)
-		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20)
+		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20, false, 2)
 		Sfx.play("metal", 0.8)
 		Sfx.play("whoosh", 0.7, -4.0)
 		Sfx.haptic(40, 0.7)
@@ -1595,6 +1605,10 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		# Heavy balls: armour takes two blows' worth.
 		t.hp -= 1
 	habits.note_hit(t, _time)
+	if t.kind == Target.Kind.SEER and t.tired_t > 0.0:
+		_feat("seer")
+	elif t.kind == Target.Kind.SNEAK and t.pace > 1.5:
+		_feat("sneak")
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = 0
 	var gained := t.points() * b.hits * _mult() * _surge()
@@ -1649,6 +1663,8 @@ func _read_skills(b: Ball, at: Vector2, was_close: bool) -> void:
 ## (a triple kill is a double paid twice).
 func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	skill_counts[s] += 1
+	if s == Skill.BANK and skill_counts[s] >= 3:
+		_feat("bank")
 	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
 	_add_score(pts, at)
 	var text := Loc.t(SKILL_KEY[s])
@@ -1708,7 +1724,7 @@ func _charge(v: float) -> void:
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
 		# New players: say once what the gold in the rail is building to.
-		fx.popup(Loc.t("overload.hint"), Vector2(layout.center_x, layout.rail_y + 44.0), Pal.GOLD_LIGHT, 15)
+		fx.popup(Loc.t("overload.hint"), Vector2(layout.center_x, layout.rail_y + 44.0), Pal.GOLD_LIGHT, 15, false, 2)
 	if charge >= 1.0:
 		_begin_overload()
 
@@ -1716,6 +1732,8 @@ func _charge(v: float) -> void:
 func _begin_overload() -> void:
 	overload_t = OVERLOAD_TIME
 	overloads += 1
+	if overloads >= 3:
+		_feat("overload")
 	rail.hot = true
 	Ball.hot = true
 	backdrop.heat = 1.0
@@ -1845,6 +1863,8 @@ func _on_cut(b: Ball, t: Target) -> void:
 	b.vel *= 0.45
 	_mark_hit(b)
 	cuts += 1
+	if cuts >= 3:
+		_feat("cuts")
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
@@ -1902,6 +1922,16 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	director.count_kill()
 	backdrop.send_energy(t.pos, t.color())
 	run_kills += 1
+	_feat("first")
+	if _chain >= 5:
+		_feat("chain")
+	if t.rush_t > 0.0:
+		_feat("team")
+	match t.kind:
+		Target.Kind.BOSS:
+			_feat("boss")
+		Target.Kind.CAPTAIN:
+			_feat("captain")
 	# The neighbours follow the fall with their eyes; the closest flinch.
 	for n in targets:
 		if n != t and n.is_hittable():
@@ -1966,6 +1996,7 @@ func _kill_bonus(t: Target, gained: int) -> int:
 ## the field is yanked up a little as relief.
 func _breach(t: Target) -> void:
 	lives -= 1
+	_wave_clean = false
 	habits.note_life_lost()
 	hud.bar.lose_life(lives)
 	var at := Vector2(t.pos.x, layout.danger_y)
@@ -1987,7 +2018,7 @@ func _breach(t: Target) -> void:
 	fx.puff(at, Pal.CORAL, 3, 46.0, 0.3)
 	fx.shock(at, 12.0, 240.0, 0.5)
 	fx.aberrate(5.0)
-	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
+	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20, false, 2)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
 	# The ones hanging nearby enjoy it.
@@ -2053,6 +2084,8 @@ func _show_results() -> void:
 		habits.end_run(director.elapsed, run_kills)
 		Prefs.habits = habits.store()
 	Prefs.record_run(_run_stats())
+	Prefs.add_run({"score": score, "wave": director.wave, "secs": int(director.elapsed),
+		"acc": int(round(100.0 * director.hits / maxf(1.0, director.shots))), "day": Meta.today(), "daily": daily})
 	var prev := Prefs.daily_record() if daily else Prefs.record
 	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
@@ -2071,6 +2104,8 @@ func _show_results() -> void:
 ## Tells the team what it knows: its tactic tier, the player's rhythm and
 ## the column shot at least. Says it once when the rhythm is learned.
 func _learn_tick() -> void:
+	if director.elapsed >= 300.0:
+		_feat("five")
 	var tac := director.tactic()
 	Target.tactic = tac
 	Target.rhythm = director.rhythm_known()
@@ -2157,7 +2192,7 @@ func _hazard_tick(delta: float) -> void:
 			_announce_evolve(t)
 		if t.fled:
 			t.fled = false
-			fx.popup(Loc.t("gold.fled"), Vector2(t.anchor.x, layout.rail_y + 60.0), Pal.GOLD_LIGHT, 16)
+			fx.popup(Loc.t("gold.fled"), Vector2(t.anchor.x, layout.rail_y + 60.0), Pal.GOLD_LIGHT, 16, false, 0)
 	Target.evolve_on = director.wave >= HAZARD_FROM
 	if _hazard == Hazard.NONE:
 		return
@@ -2186,6 +2221,7 @@ func _hazard_tick(delta: float) -> void:
 				_gust_whoosh = _rng.randf_range(1.6, 2.6)
 				Sfx.play("whoosh", _rng.randf_range(0.6, 0.8), 2.0)
 			backdrop.gust = gust
+			slingshot.wind = gust * GUST_BALL
 			if _hazard_t >= GUST_TIME:
 				_end_hazard()
 		Hazard.BLACKOUT:
@@ -2227,6 +2263,7 @@ func _end_hazard() -> void:
 	_hazard_in = -1.0
 	gust = 0.0
 	backdrop.gust = 0.0
+	slingshot.wind = 0.0
 	backdrop.warn = 0.0
 	_set_dark(0.0)
 
@@ -2279,7 +2316,7 @@ func _acro_tick(delta: float) -> void:
 			if t.rescued:
 				t.rescued = false
 				director.wave_killed = maxi(0, director.wave_killed - 1)
-				fx.popup(Loc.t("acro.caught"), t.pos + Vector2(0, -t.radius - 28.0), Pal.CORAL, 18)
+				fx.popup(Loc.t("acro.caught"), t.pos + Vector2(0, -t.radius - 28.0), Pal.CORAL, 18, false, 0)
 				Sfx.voice("taunt", 1.0, 3, -4.0)
 			fx.puff(t.pos + Vector2(0, -t.radius), Pal.INK, 2, 12.0, 0.1)
 		if t.slipped:
@@ -2532,6 +2569,19 @@ func _free_mover(t: Target) -> bool:
 		and t.rope_host == null and t.guard_of == null and t.acro == Target.Acro.NONE and t.playdead <= 0.0 and not t.golden
 
 
+## An achievement won for the first time: a brass card names it and says
+## how it was done (see Feats).
+func _feat(id: String) -> void:
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	if not Feats.unlock(id):
+		return
+	var parts := Loc.t("feat." + id).split("|")
+	hud.card(Loc.t("feat.title") + " · " + parts[0], parts[1] if parts.size() > 1 else "", 2.0)
+	Sfx.play("clear", 1.2, -4.0)
+	Sfx.haptic(20, 0.4)
+
+
 ## Names a trick the first time it is pulled this run.
 func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if _told.has(key):
@@ -2541,7 +2591,7 @@ func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if Prefs.hints.has(key):
 		# Explained before (in an earlier run): just its name, smaller, and
 		# the badge on the body says the rest.
-		fx.popup(text.get_slice(" – ", 0), at + Vector2(0, -60.0), col, 16)
+		fx.popup(text.get_slice(" – ", 0), at + Vector2(0, -60.0), col, 16, false, 0)
 		Sfx.play("tease", 1.05, -9.0)
 		return
 	Prefs.hints[key] = true
@@ -2576,7 +2626,7 @@ func _break_charm(t: Target) -> void:
 	t.take_charm()
 	var pts := CHARM_BREAK * _mult()
 	_add_score(pts, at)
-	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16)
+	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16, false, 0)
 	fx.sparks(at, col, 8)
 	fx.ring(at, col, 26.0)
 	Sfx.play("burst", 1.7, -6.0)
@@ -3023,7 +3073,7 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 			lives += 1
 			hud.bar.lives = lives
 			hud.bar.knot_shake = 1.0
-			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18)
+			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18, false, 2)
 			Sfx.play("clear", 1.1)
 			Sfx.haptic(25, 0.5)
 
@@ -3050,6 +3100,8 @@ func _finish_ball(b: Ball) -> void:
 		return
 	director.record_shot(s.hit)
 	habits.note_result(s.hit, s.get("banked", false))
+	if director.shots >= 40 and director.hits >= director.shots * 0.9:
+		_feat("sharp")
 	if s.hit:
 		_flow_add(FLOW_HIT)
 		streak += 1

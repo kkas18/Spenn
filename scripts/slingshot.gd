@@ -41,6 +41,7 @@ var pouch_vel := Vector2.ZERO
 var pouch_rot := 0.0
 var power := 0.0
 var aim_dir := Vector2.UP
+var wind := 0.0                # px/s² a gust pushes the ball sideways (the guide bends with it)
 
 var _ammo: Array[int] = []
 var _reload := 0.0
@@ -578,6 +579,7 @@ func predict(max_t := 1.2) -> PackedVector2Array:
 	while t < max_t:
 		t += dt
 		v.y += Ball.GRAVITY * dt
+		v.x += wind * dt
 		p += v * dt
 		if p.x < Ball.RADIUS:
 			p.x = Ball.RADIUS

@@ -128,6 +128,10 @@ func _decide(t: Target) -> void:
 		return
 	counts[pick] += 1
 	var now := g._time
+	if released and pick != Option.HOLD:
+		# Out of the way of a ball already flying: a faint afterimage stays
+		# where it was, so a miss shows why.
+		g.fx.afterimage(t.pos, t.radius, t.color(), -dir if pick == Option.ACROSS else dir)
 	match pick:
 		Option.AWAY:
 			t.mind_slide(dest_a, speed, _tell())
@@ -166,6 +170,7 @@ func _spring(t: Target) -> void:
 		dir = -dir
 	var x := t.anchor.x + dir * need * 1.2
 	t.wait_t = 0.0
+	g.fx.afterimage(t.pos, t.radius, t.color(), dir)
 	t.mind_slide(x, float(prof[2]) * 1.5 * sc, 0.03)
 	# Hanging on a string, the body would lag the hook: it springs too.
 	t.vel.x += dir * 260.0 * sc

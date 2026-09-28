@@ -143,6 +143,7 @@ var phase: Phase = Phase.OFF
 var hp := 1
 var radius := 30.0
 var size_k := 1.0              # this one's size (see SIZE)
+var posed := false             # shown in the collection, not in a run (see pose)
 var rod_half := ROD_HALF       # the Pendel's half length, by its size
 var anchor := Vector2.ZERO
 var length := 100.0            # rest length of the string
@@ -443,6 +444,7 @@ var _pluck_cd := 0.0
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
 	life += 1
 	kind = k
+	posed = false
 	orders_cd = randf_range(1.2, 2.2)
 	order_flash = 0.0
 	ordered_by = null
@@ -629,6 +631,23 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 
 
 ## Most are calm early on; the mix grows livelier as aggression rises.
+## Shown in the collection (see Hud.CodexTile): at `at`, no string, its
+## kind's usual size, calm, facing you. Nothing steps it; it only blinks
+## and breathes (Target._process).
+func pose(k: Kind, at: Vector2) -> void:
+	spawn(k, at + Vector2(0.0, -60.0), 60.0, 60.0, 0.0)
+	size_k = 1.0
+	radius = RADIUS[k]
+	rod_half = ROD_HALF
+	depth = 0.0
+	temper = Temper.CALM
+	pos = at
+	prev_pos = at
+	rope_alpha = 0.0
+	posed = true
+	_m_key = -1
+
+
 func _roll_temper() -> Temper:
 	var r := randf()
 	var a := aggression

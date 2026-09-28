@@ -32,6 +32,8 @@ var stats := {}                # lifetime counters (see record_run)
 var daily_date := 0
 var daily_best := 0
 var habits := {}               # what the enemies know of the player (see Habits)
+var feats := {}                # achievements won: id -> the day (see Feats)
+var best_runs: Array = []      # the ten best runs: {"score", "wave", "secs", "acc", "day", "daily"}
 
 var _cfg := ConfigFile.new()
 
@@ -62,6 +64,8 @@ func _ready() -> void:
 		daily_date = int(_cfg.get_value("meta", "daily_date", 0))
 		daily_best = int(_cfg.get_value("meta", "daily_best", 0))
 		habits = _cfg.get_value("meta", "habits", {})
+		feats = _cfg.get_value("meta", "feats", {})
+		best_runs = _cfg.get_value("meta", "best_runs", [])
 	_fill_missions()
 	if lang == "":
 		lang = "no" if OS.get_locale_language() in ["nb", "nn", "no"] else "en"
@@ -169,12 +173,32 @@ func record_run(run: Dictionary) -> void:
 	save()
 
 
-## Clears the record, the statistics, today's best, the missions and what
-## the enemies have learned about you. Unlocked ball skins (and the one in
-## use), settings and the enemies already introduced are kept.
+## A finished run for the list of best runs: its place (1..10), or 0
+## when it did not make the list.
+func add_run(run: Dictionary) -> int:
+	var place := best_runs.size()
+	for i in best_runs.size():
+		if int(run.get("score", 0)) > int(best_runs[i].get("score", 0)):
+			place = i
+			break
+	if place >= 10:
+		return 0
+	best_runs.insert(place, run)
+	if best_runs.size() > 10:
+		best_runs.resize(10)
+	save()
+	return place + 1
+
+
+## Clears the record, the statistics, today's best, the missions, the
+## achievements, the best runs and what the enemies have learned about you.
+## Unlocked ball skins (and the one in use), settings and the enemies
+## already introduced are kept.
 func reset_progress() -> void:
 	record = 0
 	habits = {}
+	feats = {}
+	best_runs = []
 	stats = {}
 	total_points = 0
 	daily_best = 0
@@ -236,4 +260,6 @@ func save() -> void:
 	_cfg.set_value("meta", "daily_date", daily_date)
 	_cfg.set_value("meta", "daily_best", daily_best)
 	_cfg.set_value("meta", "habits", habits)
+	_cfg.set_value("meta", "feats", feats)
+	_cfg.set_value("meta", "best_runs", best_runs)
 	_cfg.save(PATH)

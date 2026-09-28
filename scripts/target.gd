@@ -255,8 +255,8 @@ func _face_ink() -> void:
 			var d := Vector2.from_angle(-orbit * 0.35 + i * TAU / 24.0)
 			var long := i % 6 == 0
 			f.draw_line(pos + d * rr, pos + d * (rr + (5.0 if long else 2.5)), Color(Tok.PRIMARY, 0.5 if long else 0.28), 1.2, true)
-		# Health: brass studs, dark once spent.
-		var hp_max: int = HP[kind]
+		# Health: brass studs, dark once spent (not on show in the collection).
+		var hp_max: int = 0 if posed else HP[kind]
 		for i in hp_max:
 			var x := (i - (hp_max - 1) * 0.5) * 11.0
 			var p := pos + Vector2(x, radius + 40.0)

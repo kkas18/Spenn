@@ -33,6 +33,10 @@ var _sparks: Array[CPUParticles2D] = []
 var _next_spark := 0
 var _popups: Array[Dictionary] = []
 var _next_popup := 0
+# While you aim (set by the game), the field is kept quiet: a flavour line
+# (prio 0) is left out, and the lines already up fade back a little.
+var aiming := false
+var _hush := 0.0
 var _shake_t := 0.0
 var _shake_amp := 0.0
 var _hitstop_live := false
@@ -142,7 +146,7 @@ func _ready() -> void:
 	for i in TOKEN_POOL:
 		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
-		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20, "accent": false})
+		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20, "accent": false, "prio": 1})
 	for i in PUFF_POOL:
 		_puffs.append({"t": -1.0, "life": 0.8, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
 			"spin": 0.0, "s0": 10.0, "s1": 30.0, "col": Pal.INK, "a": 0.3, "tex": 0})
@@ -471,7 +475,20 @@ func _step_waves(rd: float) -> void:
 
 ## A score or label that rises and fades. `accent` (skill shots) pops in
 ## larger and underlines itself with a gold rule drawn out from the centre.
-func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false) -> void:
+func _young_popups() -> int:
+	var n := 0
+	for q in _popups:
+		if q.t >= 0.0 and q.t < 0.6:
+			n += 1
+	return n
+
+
+## A line of text that rises from `at` and fades. `prio`: 0 flavour (a
+## trick's name, a quip; dropped while you aim or when the field already
+## has three lines up), 1 information (the default), 2 must be seen.
+func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false, prio := 1) -> void:
+	if prio <= 0 and (aiming or _young_popups() >= 3):
+		return
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
 	p.t = 0.0
@@ -481,6 +498,7 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 	p.col = col
 	p.size = size
 	p.accent = accent
+	p.prio = prio
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x if font else 80.0
 	var half := w * 0.5
 	var x := clampf(at.x, l.margin + half, l.size.x - l.margin - half)
@@ -815,6 +833,7 @@ func _process(delta: float) -> void:
 				d.t = -1.0
 			else:
 				any = true
+	_hush = move_toward(_hush, 1.0 if aiming else 0.0, delta / 0.2)
 	for p in _popups:
 		if p.t >= 0.0:
 			p.t += delta
@@ -1033,6 +1052,7 @@ func _draw() -> void:
 		var k: float = p.t / POPUP_LIFE
 		var rise := ease(k, 0.35) * POPUP_RISE
 		var alpha := 1.0 if k < 0.55 else 1.0 - (k - 0.55) / 0.45
+		alpha *= 1.0 - 0.45 * _hush * (0.0 if int(p.get("prio", 1)) >= 2 else 1.0)
 		var s := 1.0 + (0.3 if p.accent else 0.12) * maxf(0.0, 1.0 - k * 8.0)
 		var pos: Vector2 = p.pos - Vector2(0, rise)
 		var w := font.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size).x

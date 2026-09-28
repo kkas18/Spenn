@@ -122,9 +122,11 @@ func _first_contact(b: Ball, s: Target) -> Vector2:
 	var w := g.layout.size.x
 	var rr := s.radius + Ball.RADIUS + 4.0
 	var t := 0.0
+	var wind: float = g.gust * Game.GUST_BALL
 	while t < READ_HORIZON:
 		t += dt
 		v.y += Ball.GRAVITY * dt
+		v.x += wind * dt
 		p += v * dt
 		if p.x < Ball.RADIUS:
 			p.x = Ball.RADIUS

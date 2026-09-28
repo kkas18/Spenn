@@ -2579,7 +2579,7 @@ Rettet:
    |---|---|---|---|---|
    | Svak (mer støy, treg) | 114 s | 112 s | 0,47 | 1,7 bit |
    | Middels | 184 s | 202 s | 0,63 | 1,7 bit |
-   | Sterk (presis, rask) | 186 s | 187 s | 0,62 | 1,9 bit |
+   | Sterk (presis, rask) | 186 s | 183 s | 0,63 | 1,9 bit |
 
    - I snitt er spillet like vanskelig som før, men fiendene er ulike. Vanlige valg: unna ca.
      50 %, bløff ca. 25 %, klatring ca. 12 %, gjemme seg ca. 6 %, og over og vente sjelden.
@@ -2587,3 +2587,58 @@ Rettet:
      lite.
    - Rapporten fra boten viser antall valg, snitt-IQ, drap, lagspill, andelen per svar og
      entropien. Boten nullstiller spillermodellen før hver runde, så runder kan sammenlignes.
+
+## v7.55 – Mindre støy, samling (fiender, prestasjoner, beste runder)
+
+1. **Siktelinjen bøyer seg med vinden:** i et vindkast bøyer siktelinjen seg nå, slik kula
+   faktisk gjør. Før viste den en rett bane mens kula drev av, og det var en av grunnene til
+   «hvorfor bommet jeg?». Et typisk vindkast flytter treffpunktet ca. 12 px. Fiendenes egne
+   beregninger av kulebaner tar også hensyn til vinden, både «kule på vei» og Leserens
+   beregning.
+2. **Mindre tekst i feltet:**
+   - Popup-tekster har tre nivåer: pynt, informasjon og «må ses».
+   - Pynt (navn på triks du alt har fått forklart, knuste merker, en fanget akrobat, gull
+     som flyktet, Legens «+1») vises ikke mens du sikter, eller når feltet alt har tre tekster.
+   - Mens du sikter, dempes tekstene som alt står der, til 55 %. Unntaket er det som må ses:
+     mistet knute, ekstra knute, bosstrinn og hint om overbelastning.
+3. **Bom som forklarer seg selv:** en fiende som hopper unna en kule som alt er i lufta,
+   etterlater et svakt spøkelsesbilde der den var. Da ser du hvorfor du bommet, uten tekst.
+4. **Samling** (nytt pokal-token i menyen) med tre faner. Panelet holder samme høyde, så det
+   ikke hopper når du bytter fane.
+   - **Fiender:**
+     - Alle 16 typer vises fire i bredden.
+     - Typer du har møtt, henger der som ekte fiender: samme tegning som i spillet, og de
+       blunker og puster. Ikke møtte vises som mørke flater med spørsmålstegn.
+     - Trykk på en fiende for å lese hva den gjør, og hvordan du slår den.
+     - Toppen viser «12 av 16 møtt».
+   - **Prestasjoner:** 14 stykker, hver med en gravert skive (se tabellen under). De du har
+     tatt, lyser i gull. Når du tar en ny, kommer et messingkort i spillet.
+   - **Beste runder:** de ti beste med plass, poeng, bølge, tid, treffprosent og dato, og et
+     merke for dagens utfordring.
+
+   | Prestasjon | Krav |
+   |---|---|
+   | Første knekk | første fiende |
+   | Bankeren | tre vegg-treff i én runde |
+   | Kjedereaksjon | kjede på fem |
+   | Snorkutter | tre snorer kappet i én runde |
+   | Bølgebryter | bølge 5 |
+   | Uten riper | en bølge uten å miste en knute |
+   | Kjempefall | Spinneren knust |
+   | Uten sjef | en Kommandør tatt ned |
+   | Lest og slått | Leseren truffet mens den er sliten |
+   | Tatt på fersken | Luringen truffet mens den sniker seg ned |
+   | Overbelastet | tre overbelastninger i én runde |
+   | Fem minutter | holdt ut i fem minutter |
+   | Mesterskytter | 90 % treff etter minst 40 skudd i en runde |
+   | Lagknuser | den som synker, knust mens partneren lokker |
+
+5. **Lagring:** prestasjoner og beste runder lagres i `Prefs` («Nullstill fremgang» sletter
+   dem).
+6. **Nye graverte ikoner:** pokal, skjold, krone, hjelm, øye, hette og piler.
+7. **Tester:**
+   - Testpakken passerer (import, oppstart, soak og bot på to frø).
+   - Seks runder med middels bot gir median 168 s, innenfor tidligere spenn (v7.52: 159 s,
+     v7.53: 184 s, v7.54: 202 s). Litt ned fra v7.54 fordi fiendene nå også leser vinden, og
+     fordi sky fiender hopper litt lenger unna.
+   - Vinden er sjekket numerisk: siktelinjen og kula driver like langt, i snitt 11,6 px.
