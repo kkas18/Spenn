@@ -2441,3 +2441,78 @@ Rettet:
    - Når en bølge er ryddet, sveiper en lyslinje over feltet fra skinnen ned til farelinjen.
    - Bare ett fullt øyeblikk om gangen: innen 1,6 s blir neste et mindre ekko.
    - Med redusert bevegelse vokser og dreier ikke strålene, og sveipet vises ikke.
+
+## v7.53 – Gelé 2.0, tau som holder seg på sin side, og ulike størrelser
+
+1. **Gelé 2.0 (modusbasert myk kropp):** omrisset er summen av formmodusene m = 2–5
+   (cos mθ og sin mθ), og hver av dem er en egen dempet fjær, slik en ekte geléklump
+   svinger.
+   - Frekvensene følger en dråpes (Rayleigh): høyere moduser svinger raskere, og store
+     kropper tregere. Dempingen øker med m, så små krusninger dør raskt, mens den brede
+     klemmen svinger noen ganger.
+   - Modus 0 finnes ikke, så arealet holdes. Modus 1 finnes heller ikke: å flytte hele
+     omrisset er å flytte kroppen, og det gjør snoren og kontaktene.
+   - **Treff:** et mykt innadrettet dytt der det treffer. Kroppen blir flat der og buler ut
+     på sidene, svinger tilbake og roer seg på ca. 0,4 s.
+   - **Kropper som hviler mot hverandre:** får en rolig, flat flekk så lenge de ligger
+     inntil, i stedet for å bli hamret hvert fysikksteg. Bare ekte støt over 70 px/s får
+     dem til å vugge. Flere naboer som presser samtidig, flater den ikke mer ut enn den
+     dypeste enkeltflekken.
+   - **Hengende:** en svak dråpeform langs snoren, med spissen mot tauet og bredere nede.
+     Den blir litt tydeligere når tauet drar hardt (et sprett), og litt rundere når det
+     henger slakt.
+   - **Faller på gulvet:** geléen får en bulk nedenfra.
+   - **Tegning:**
+     - En myk grense (L·tanh(d/L), L = 30 % av radien) gjør at omrisset aldri bretter seg.
+     - Normalene vris med skråningen, så en bulk skygges som en bulk.
+     - Formen regnes bare om når den har endret seg.
+     - Resultatet er billigere enn før: 0,26 mot 0,31 ms per bilde.
+   - **Ansiktet** følger den brede klemmen (modus 2 som en strekk). Den gamle affine
+     klemmen er redusert til et lite tegneseregrep på toppen.
+   - **Årsaken til uroen i bildet:** signalet for «hvor hardt den svinges» var støy fra
+     tauløseren (i snitt 518 px/s² i en rolig folkemengde). Formen styres nå av hvor
+     hardt tauet faktisk drar.
+   - **Målt i en rolig folkemengde uten skudd:**
+
+     | | Før | Nå |
+     |---|---|---|
+     | Uønsket vugging i snitt (av radien) | 7,1 % | 1,0 % |
+     | Verste tilfelle | 30 % | 10–16 % (landinger og støt) |
+
+   - **Øyenbryn på ringfiender** tegnes som strektegning, lyse med mørk kant. Når de går ut
+     over ringen, leses de da som bryn, ikke som riper. Kinn og rødming holdes inne i hullet.
+2. **Tau som ikke går gjennom hverandre:**
+   - **Tau på omtrent samme dybde** henger i samme plan. Hvert par som møtes, holder siden
+     det møttes på (krokenes rekkefølge langs bjelken), i alle høyder begge når ned til,
+     også kroppene i enden.
+     - Der de kommer nærmere enn 3,5 px, skyves begge unna. Lette tau gir mer etter enn
+       tunge kropper.
+     - Punktene flyttes sammen med sin forrige posisjon, så skyvet gir ingen fart og
+       ingen dirring.
+   - **Når en krok glir forbi en annen** langs bjelken, må tauene krysse. Paret får lov:
+     den som tegnes foran, svinger litt mot deg og den andre bort, til de henger i hvert
+     sitt plan. Når de har kommet fra hverandre, holdes den nye siden.
+   - **Tau på ulik dybde** krysser fritt:
+     - Tau lenger bak er tynnere og mørkere, som kroppene.
+     - Fiendene tegnes i dybderekkefølge, så den nærmeste alltid går foran.
+   - **Målt:** kryssinger mellom tau på samme dybde gikk fra 4,4 til ca. 0,1 per bilde.
+     Resten er par som er i ferd med å skilles i dybden.
+3. **Ulike størrelser:** hver fiende får sin egen størrelse innenfor et spenn for typen.
+   Spinneren er alltid seg selv.
+
+   | Fiende | Størrelse (× radius) |
+   |---|---|
+   | Ring | 0,78–1,3 |
+   | Dråpe | 0,8–1,25 |
+   | Kommandør | 1,0–1,2 |
+   | Pipp | 0,82–1,05 |
+   | Luringen | 0,8–1,05 |
+
+   - Massen følger arealet, så store fiender er tyngre å dytte og å slå løs.
+   - Små fiender synker litt raskere (1/√størrelse) og gir flere poeng (poeng/størrelse).
+     Store fiender er tregere og gir færre poeng.
+   - Pendelens lengde følger størrelsen.
+   - Varianten «stor» beholder sin egen størrelse, og en mester blir aldri over 1,4×.
+4. **Tester:** testpakken passerer (import, oppstart, soak og bot på to frø). Seks
+   bot-runder gir median 184 s (v7.52: 159 s). Boten overlever litt lenger, blant annet fordi
+   store fiender er lettere å treffe. I v7.54 skal vanskeligheten følge ferdighetene dine.

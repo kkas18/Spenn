@@ -19,6 +19,11 @@ const RADIUS := {Kind.RING: 30.0, Kind.HEAVY: 34.0, Kind.SPLIT: 32.0, Kind.ROD: 
 const HP := {Kind.RING: 1, Kind.HEAVY: 2, Kind.SPLIT: 1, Kind.ROD: 1, Kind.DROP: 1, Kind.SHIELD: 1, Kind.BOSS: 8, Kind.REEL: 1, Kind.SHADE: 1, Kind.MEDIC: 1, Kind.MIRROR: 1, Kind.PIPP: 1, Kind.PAKKIS: 1, Kind.CAPTAIN: 2, Kind.SEER: 1, Kind.SNEAK: 1}
 const POINTS := {Kind.RING: 10, Kind.HEAVY: 20, Kind.SPLIT: 10, Kind.ROD: 15, Kind.DROP: 5, Kind.SHIELD: 25, Kind.BOSS: 40, Kind.REEL: 20, Kind.SHADE: 25, Kind.MEDIC: 30, Kind.MIRROR: 35, Kind.PIPP: 15, Kind.PAKKIS: 35, Kind.CAPTAIN: 45, Kind.SEER: 40, Kind.SNEAK: 35}
 const ROD_HALF := 30.0
+# Each individual has its own size within its kind's range (a scale on the
+# radius): mass goes with its area, a small one drops a little faster and
+# is worth more, a big one is slower and worth less. The Spinneren is
+# always itself.
+const SIZE := {Kind.RING: Vector2(0.78, 1.3), Kind.HEAVY: Vector2(0.9, 1.2), Kind.SPLIT: Vector2(0.85, 1.2), Kind.ROD: Vector2(0.85, 1.2), Kind.DROP: Vector2(0.8, 1.25), Kind.SHIELD: Vector2(0.9, 1.15), Kind.BOSS: Vector2(1.0, 1.0), Kind.REEL: Vector2(0.85, 1.2), Kind.SHADE: Vector2(0.85, 1.2), Kind.MEDIC: Vector2(0.9, 1.15), Kind.MIRROR: Vector2(0.9, 1.15), Kind.PIPP: Vector2(0.82, 1.05), Kind.PAKKIS: Vector2(0.85, 1.2), Kind.CAPTAIN: Vector2(1.0, 1.2), Kind.SEER: Vector2(0.85, 1.12), Kind.SNEAK: Vector2(0.8, 1.05)}
 const HOOK_LEN := 11.5         # rail pivot -> bottom of the hook eyelet
 const HOOK_TILT := 0.8
 const MASS := {Kind.RING: 1.0, Kind.HEAVY: 1.6, Kind.SPLIT: 1.1, Kind.ROD: 1.25, Kind.DROP: 0.6, Kind.SHIELD: 1.3, Kind.BOSS: 3.5, Kind.REEL: 0.9, Kind.SHADE: 0.9, Kind.MEDIC: 0.9, Kind.MIRROR: 1.2, Kind.PIPP: 0.55, Kind.PAKKIS: 1.0, Kind.CAPTAIN: 1.3, Kind.SEER: 0.9, Kind.SNEAK: 0.8}
@@ -48,16 +53,30 @@ const EVADE := {
 	Kind.PAKKIS: [0.8, 90.0, 260.0, 0.0, 0.3],
 	Kind.CAPTAIN: [0.9, 70.0, 260.0, 0.0, 0.4],
 }
-# Material. Soft bodies are jelly: a ring of radial springs that dents
-# where it is struck, bulges elsewhere (area is kept), ripples round and
-# lags behind when the body is swung. Rigid bodies keep their shape; they
-# ring briefly, rock and spin instead.
+# Material. Soft bodies are jelly. The outline's departure from a circle is
+# the sum of shape modes m = 2..5 (cos mθ and sin mθ each), every one its
+# own damped spring, as a real drop of jelly wobbles:
+#  - frequencies follow a drop's (Rayleigh): higher modes are faster, and
+#    bigger bodies slower;
+#  - damping grows with m, so small ripples die quickly while the broad
+#    squash wobbles a few times;
+#  - there is no mode 0 (the area is kept) and no mode 1 (moving the whole
+#    outline is moving the body, which the string and contacts already do);
+#  - a strike drives the modes with a smooth inward push at the contact
+#    (it flattens there and bulges at the sides); a resting contact sets a
+#    quiet flat patch instead of hammering; hanging, it sags a little along
+#    its string and is drawn to a point where the string holds it, a little
+#    more while the string pulls hard.
+# Rigid bodies keep their shape; they ring briefly, rock and spin instead.
 const SOFT_KINDS := [Kind.RING, Kind.SPLIT, Kind.DROP, Kind.SHADE, Kind.MEDIC, Kind.PIPP, Kind.PAKKIS, Kind.SEER, Kind.SNEAK]
-const SOFT_N := 18
-const SOFT_K := 340.0          # radial spring (1/s²)
-const SOFT_C := 7.5            # damping (1/s)
-const SOFT_COUPLE := 900.0     # neighbour coupling: dents spread as ripples
-const SOFT_INERTIA := 0.0011   # how far the jelly sloshes per px/s² of swing
+const JELLY_M: Array[int] = [2, 3, 4, 5]
+const JELLY_W2 := 15.0          # rad/s: the squash mode of a 30 px body (~2.4 Hz)
+const JELLY_Z2 := 0.16          # its damping ratio; mode m has JELLY_Z2 · m / 2
+const JELLY_SIGMA := 0.55       # rad: how wide a strike's push is
+const JELLY_LIMIT := 0.3        # soft cap on the departure, as a fraction of the radius
+const JELLY_SAG := 0.035        # hanging: stretched along the string by this much
+const JELLY_PINCH := 0.05       # ... and drawn to a point where it holds
+const JELLY_PRESS := 0.14       # the deepest flat patch a resting contact makes
 const POP_TIME := 0.08
 
 # Temperament, rolled per target so no two behave quite alike.
@@ -89,9 +108,16 @@ var _pupil_scale := 1.0
 var _mouth_w := 1.0
 var _smile := 1.0               # resting mouth: < 0 a pout, 1 a smile
 var curious_in := 3.0           # the game uses it to pick a neighbour to look at
-var _sd := PackedFloat32Array()  # soft: radial displacement per spoke (px)
-var _sv := PackedFloat32Array()  # soft: radial velocity per spoke
-var _last_vel := Vector2.ZERO
+# Jelly state: for each mode in JELLY_M its cos and sin amplitude (px), in
+# pairs; their velocities; the shape it is being pulled toward (sag, pinch
+# and contact patches); and this step's contact presses, gathered by the
+# contacts and taken in on the next step.
+var _ja := PackedFloat32Array()
+var _jv := PackedFloat32Array()
+var _jt := PackedFloat32Array()
+var _jp := PackedFloat32Array()
+var _pull := 0.0                    # the string's pull this step, in body weights
+var _pull_f := 1.0                  # ... smoothed (what the jelly's sag follows)
 var _ring_t := 1.0             # rigid: time since the last knock (metal ring)
 var _ring_dir := Vector2.RIGHT
 var _wander_t := 3.0           # idle drift along the rail
@@ -116,6 +142,8 @@ var _queued_speed := 0.0
 var phase: Phase = Phase.OFF
 var hp := 1
 var radius := 30.0
+var size_k := 1.0              # this one's size (see SIZE)
+var rod_half := ROD_HALF       # the Pendel's half length, by its size
 var anchor := Vector2.ZERO
 var length := 100.0            # rest length of the string
 var goal_length := 100.0       # drop-in target length
@@ -376,11 +404,18 @@ var _clock := 0.0
 var _body: Node2D                  # lit layer: string, shadow, body (see rendering)
 var _face: Node2D                  # face layer: eye, mouth, details
 var _xf := Transform2D.IDENTITY    # this frame's body transform
+var _fxf := Transform2D.IDENTITY   # ... and the face's (it follows the jelly's squash)
 var _jit := Vector2.ZERO           # this frame's tremble, shared by every layer
 var _m_base := PackedVector2Array() # rest positions (jelly moves from these)
+var _m_uv0 := PackedVector2Array()  # rest normals (band-coded, as _m_uv)
 var _m_dv := PackedInt32Array()     # vertices the jelly moves
 var _m_dd := PackedVector2Array()   # ... along this direction
-var _m_ds := PackedFloat32Array()   # ... by the surface at this spoke
+var _m_dn := PackedVector2Array()   # ... their rest normals
+var _m_da := PackedInt32Array()     # ... and the angle each sits at (index into _m_cs)
+var _m_cs := PackedFloat32Array()   # per angle: cos mθ, sin mθ for each jelly mode
+var _m_ang := {}                    # angle key -> index, while building
+var _m_amp := -1.0                  # the jelly's size when last applied (skip if unchanged)
+var _m_sig := PackedFloat32Array()  # its mode amplitudes then
 var _m_mem := 0                     # leading vertices: the membrane
 var _m_dim := Vector2i(-1, -1)      # vertex range at reduced alpha (cracked ring)
 var _m_key := -1
@@ -405,9 +440,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	innocent = 0.0
 	soft = k in SOFT_KINDS
 	_m_key = -1
-	_sd.fill(0.0)
-	_sv.fill(0.0)
-	_last_vel = Vector2.ZERO
+	_jelly_reset()
 	_ring_t = 1.0
 	_wander_t = randf_range(2.0, 5.0)
 	_queued_x = NAN
@@ -433,7 +466,10 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 		_eye_scale *= 1.3
 		_pupil_scale *= 1.15
 	hp = HP[k]
-	radius = RADIUS[k]
+	var sr: Vector2 = SIZE[k]
+	size_k = randf_range(sr.x, sr.y)
+	radius = RADIUS[k] * size_k
+	rod_half = ROD_HALF * size_k
 	anchor = anchor_pos
 	length = start_len
 	goal_length = target_len
@@ -469,6 +505,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_vain_in = randf_range(4.0, 8.0)
 	# Armoured kinds keep to the middle plane: their plates are world-sized.
 	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
+	_rope_side.clear()
+	_depth_sort()
 	_pluck_cd = 0.0
 	aimed = false
 	enraged = false
@@ -715,8 +753,8 @@ func taunt() -> void:
 	_taunt = 0.0
 	_blink_t = 0.12
 	if soft:
-		for i in SOFT_N:
-			_sv[i] += cos(3.0 * i * TAU / SOFT_N) * 90.0 * (radius / 30.0)
+		# A three-lobed wiggle.
+		_jv[2] += 110.0 * (radius / 30.0)
 	var now := Time.get_ticks_msec()
 	if now - _last_tease_ms > 1600:
 		_last_tease_ms = now
@@ -749,41 +787,156 @@ func jolt(scale: float) -> void:
 	_dodge_cd = maxf(_dodge_cd, 1.2)
 
 
-## A strike on a soft body: the spokes near the contact are driven inward
-## (the dent), the rest take up the displaced area on the next step.
+## A strike on a soft body: a smooth inward push centred on the contact
+## drives the shape modes, so it flattens where it was hit and bulges at the
+## sides (the area is kept), then wobbles back. Soft touches below ~40 px/s
+## do nothing: a resting contact presses (see press) instead of striking.
 func dent(at: Vector2, speed: float) -> void:
 	if not soft:
 		_ring_t = 0.0
 		_ring_dir = (pos - at).normalized()
 		return
-	var la := (at - pos).angle() - body_rot
-	var k := clampf(speed * 0.55, 60.0, 520.0) * (radius / 30.0)
-	for i in SOFT_N:
-		var d := angle_difference(la, i * TAU / SOFT_N)
-		_sv[i] -= k * exp(-pow(d / 0.6, 2.0))
+	var k := clampf((speed - 40.0) * 0.5, 0.0, 440.0) * (radius / 30.0)
+	if k <= 0.0:
+		return
+	var phi := (at - pos).angle() - body_rot
+	for j in JELLY_M.size():
+		var m := JELLY_M[j]
+		var w := k * _jelly_w(m)
+		_jv[j * 2] -= w * cos(m * phi)
+		_jv[j * 2 + 1] -= w * sin(m * phi)
+
+
+## A body resting against this one at `at`: a quiet flat patch there,
+## `deep` px deep at the contact, for as long as it lasts (gathered for the
+## next step). Only the broad modes carry it, so part of it shows as a
+## gentle squash along the contact, as a pressed ball flattens.
+func press(at: Vector2, deep: float) -> void:
+	if not soft or deep <= 0.0:
+		return
+	var d := minf(deep, radius * JELLY_PRESS) / _jelly_sum()
+	var phi := (at - pos).angle() - body_rot
+	for j in JELLY_M.size():
+		var m := JELLY_M[j]
+		var w := d * _jelly_w(m)
+		_jp[j * 2] -= w * cos(m * phi)
+		_jp[j * 2 + 1] -= w * sin(m * phi)
+
+
+## How much of a smooth push of width JELLY_SIGMA goes into mode `m`
+## (worked out once: [weight per mode..., their sum, the norm of a press]).
+static var _jw := PackedFloat32Array()
+
+
+static func _jelly_w(m: int) -> float:
+	if _jw.is_empty():
+		var sum := 0.0
+		var sq := 0.0
+		for k: int in JELLY_M:
+			var w := exp(-0.5 * pow(k * JELLY_SIGMA, 2.0))
+			_jw.append(w)
+			sum += w
+			sq += w * w
+		_jw.append(sum)
+		_jw.append(sqrt(sq) / sum)
+	return _jw[m - JELLY_M[0]]
+
+
+## The push's depth at its centre per unit (the sum of the weights).
+static func _jelly_sum() -> float:
+	_jelly_w(JELLY_M[0])
+	return _jw[JELLY_M.size()]
+
+
+## The size of the mode amplitudes of the deepest press (per px of depth).
+static func _jelly_norm() -> float:
+	_jelly_w(JELLY_M[0])
+	return _jw[JELLY_M.size() + 1]
+
+
+## The jelly's broad squash (its m = 2 mode, capped as it is drawn) as a
+## stretch in body space, for the face to follow.
+func jelly_stretch() -> Transform2D:
+	if not soft or _ja.size() < 2:
+		return Transform2D.IDENTITY
+	var a := _ja[0]
+	var b := _ja[1]
+	var amp := sqrt(a * a + b * b)
+	if amp < 0.05:
+		return Transform2D.IDENTITY
+	var lim := JELLY_LIMIT * radius
+	var e := lim * tanh(amp / lim) / radius
+	var th := atan2(b, a) * 0.5
+	return Transform2D(th, Vector2.ZERO) * Transform2D(0.0, Vector2(1.0 + e, 1.0 - e), 0.0, Vector2.ZERO) * Transform2D(-th, Vector2.ZERO)
+
+
+func _jelly_reset() -> void:
+	# (Packed arrays are values: each member is sized and cleared itself.)
+	var n := JELLY_M.size() * 2
+	_ja.resize(n)
+	_ja.fill(0.0)
+	_jv.resize(n)
+	_jv.fill(0.0)
+	_jt.resize(n)
+	_jt.fill(0.0)
+	_jp.resize(n)
+	_jp.fill(0.0)
+	_pull_f = 1.0
+	_m_amp = -1.0
+
+
+## The outline's departure from the circle (px, before the soft cap) at
+## body-space angle `th`.
+func jelly_at(th: float) -> float:
+	var d := 0.0
+	for j in JELLY_M.size():
+		var m := JELLY_M[j]
+		d += _ja[j * 2] * cos(m * th) + _ja[j * 2 + 1] * sin(m * th)
+	return d
 
 
 func _soft_step(dt: float) -> void:
 	if not soft or dt <= 0.0:
 		return
-	var acc := (vel - _last_vel) / dt
-	_last_vel = vel
-	acc = acc.limit_length(9000.0)
-	var mean := 0.0
-	var lim := radius * 0.28
-	for i in SOFT_N:
-		var dir := Vector2.from_angle(i * TAU / SOFT_N + body_rot)
-		var lap := _sd[(i + SOFT_N - 1) % SOFT_N] + _sd[(i + 1) % SOFT_N] - 2.0 * _sd[i]
-		var f := -SOFT_K * _sd[i] - SOFT_C * _sv[i] + SOFT_COUPLE * lap * 0.25
-		# Inertia: speeding up to the right, the jelly lags to the left.
-		f += acc.dot(dir) * SOFT_INERTIA * radius
-		_sv[i] += f * dt
-	for i in SOFT_N:
-		_sd[i] = clampf(_sd[i] + _sv[i] * dt, -lim, lim)
-		mean += _sd[i]
-	mean /= SOFT_N
-	for i in SOFT_N:
-		_sd[i] -= mean
+	# How hard the string pulls (1 holding its weight at rest; more as it
+	# bounces or swings through, none when slack), smoothed.
+	_pull_f = lerpf(_pull_f, _pull, 1.0 - exp(-dt * 12.0))
+	# The shape it is drawn toward: hanging, stretched along the string and
+	# drawn to a point where it holds, a little more while the string pulls
+	# hard (a bounce on it) and a little less while it is slack (in a crowd
+	# strings go slack and taut all the time, so only gently); falling
+	# free, round. Plus any resting contacts.
+	_jt.fill(0.0)
+	if phase == Phase.HANGING and _attached:
+		var stretch := 1.0 + 0.35 * clampf(_pull_f - 1.0, -1.0, 1.0)
+		var up := _pts[N - 2] - pos
+		var alpha := (up.angle() if up.length_squared() > 1.0 else -PI * 0.5) - body_rot
+		var e := JELLY_SAG * stretch * radius
+		var p := JELLY_PINCH * stretch * radius
+		for j in JELLY_M.size():
+			var m := JELLY_M[j]
+			var c := (e if m == 2 else 0.0) + p * _jelly_w(m)
+			_jt[j * 2] = c * cos(m * alpha)
+			_jt[j * 2 + 1] = c * sin(m * alpha)
+	# Several neighbours pressing at once flatten it no more than the deepest
+	# single patch could (their sum is scaled back).
+	var pn := 0.0
+	for i in _jp.size():
+		pn += _jp[i] * _jp[i]
+	var cap := radius * JELLY_PRESS * _jelly_norm()
+	var ks := 1.0 if pn <= cap * cap else cap / sqrt(pn)
+	for i in _jt.size():
+		_jt[i] += _jp[i] * ks
+	_jp.fill(0.0)
+	var w_scale := JELLY_W2 * sqrt(30.0 / maxf(radius, 8.0)) / sqrt(8.0)
+	for j in JELLY_M.size():
+		var m := JELLY_M[j]
+		var w := w_scale * sqrt(float(m * (m - 1) * (m + 2)))
+		var c := 2.0 * JELLY_Z2 * (m * 0.5) * w
+		for k in 2:
+			var i := j * 2 + k
+			_jv[i] += (-w * w * (_ja[i] - _jt[i]) - c * _jv[i]) * dt
+			_ja[i] += _jv[i] * dt
 
 
 func is_hittable() -> bool:
@@ -795,21 +948,28 @@ func is_solid() -> bool:
 	return is_hittable() and hidden_amt < 0.6
 
 
+## Its worth: a small one is harder to hit and pays more, a big one less.
 func points() -> int:
-	return POINTS[kind]
+	return maxi(1, roundi(POINTS[kind] / size_k))
 
 
+## How fast it drops, by kind and size (small ones a little quicker).
 func speed_mul() -> float:
-	return SPEED_MUL[kind]
+	return SPEED_MUL[kind] / sqrt(size_k)
+
+
+## Its body's own mass: its kind's, by its size (area).
+func body_mass() -> float:
+	return MASS[kind] * size_k * size_k
 
 
 func mass() -> float:
-	return MASS[kind] * (1.5 if variant == Var.BIG else 1.0) * (1.4 if champion else 1.0)
+	return body_mass() * (1.5 if variant == Var.BIG else 1.0) * (1.4 if champion else 1.0)
 
 
 ## Circle used for target-to-target contact (the rod uses its half span).
 func contact_radius() -> float:
-	return ROD_HALF + radius * 0.4 if kind == Kind.ROD else radius
+	return rod_half + radius * 0.4 if kind == Kind.ROD else radius
 
 
 ## A falling body meets the walls and the floor like a real object: it
@@ -838,6 +998,7 @@ func _debris_bounce(screen_h: float) -> void:
 		_floor_hits += 1
 		squash_t = 0.0
 		squash_dir = Vector2.UP
+		dent(pos + Vector2(0, r), speed * 0.7)
 		if speed > 120.0 and _floor_hits <= 2:
 			var loud := linear_to_db(clampf(speed / 1400.0, 0.1, 0.55))
 			if soft:
@@ -874,7 +1035,7 @@ func keep_in(w: float) -> void:
 	if kind == Kind.ROD:
 		# The Pendel reaches along its axis too: half its length, as far as
 		# it points sideways.
-		r += absf(cos(body_rot)) * ROD_HALF
+		r += absf(cos(body_rot)) * rod_half
 	if pos.x < r:
 		pos.x = r
 		vel.x = absf(vel.x) * 0.45
@@ -923,7 +1084,7 @@ func rope_avoid(o: Target) -> void:
 func closest_point(p: Vector2) -> Vector2:
 	if kind != Kind.ROD:
 		return pos
-	var axis := Vector2.RIGHT.rotated(body_rot) * ROD_HALF
+	var axis := Vector2.RIGHT.rotated(body_rot) * rod_half
 	var a := pos - axis
 	var b := pos + axis
 	return Geometry2D.get_closest_point_to_segment(p, a, b)
@@ -1000,7 +1161,7 @@ func cut() -> void:
 ## Returns true if the target died from this hit. `at` is the contact point:
 ## off-centre contacts add torque, so the body wobbles about its string.
 func hit(impulse: Vector2, at: Vector2) -> bool:
-	var m: float = MASS[kind]
+	var m := body_mass()
 	vel += impulse / m
 	var arm := at - pos
 	ang_vel += clampf(arm.cross(impulse) / (radius * radius * m) * 0.9, -14.0, 14.0)
@@ -1044,7 +1205,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 
 ## Knock from a neighbour or a near miss: no damage, only motion.
 func push(impulse: Vector2, at: Vector2) -> void:
-	var m: float = MASS[kind]
+	var m := body_mass()
 	vel += impulse / m
 	ang_vel += clampf((at - pos).cross(impulse) / (radius * radius * m) * 0.6, -6.0, 6.0)
 
@@ -1108,10 +1269,10 @@ func rope_contact(p: Vector2, p0: Vector2, v: Vector2, r: float) -> Vector2:
 			# Tension grows with the weight below and with the pull.
 			# Per 1/120 s substep: a full crossing (a handful of substeps)
 			# takes roughly a fifth to a third of the ball's speed across it.
-			var k := clampf(0.02 + 0.012 * MASS[kind] + dev / 1400.0, 0.02, 0.06)
+			var k := clampf(0.02 + 0.012 * body_mass() + dev / 1400.0, 0.02, 0.06)
 			dv -= dir * into * k
 			var along := float(i + t) / last
-			vel += dir * into * k * along * 0.35 / MASS[kind]
+			vel += dir * into * k * along * 0.35 / body_mass()
 			ang_vel += clampf((p - pos).cross(dir * into * k) * 0.0004, -3.0, 3.0)
 	if touched and dv == Vector2.ZERO:
 		dv = Vector2(0.0001, 0.0)
@@ -1126,45 +1287,178 @@ func consume_pluck() -> bool:
 	return true
 
 
-## Two strings that meet push each other apart and slide past, instead of
-## passing through one another.
+## Strings at about the same depth hang in one plane and cannot pass
+## through each other. Each pair that meets keeps the side it met on (its
+## hooks' order along the rail) at every height both strings reach, the
+## bodies at their ends included (see _rope_order). Strings at clearly
+## different depths hang in different planes and cross freely; the nearer
+## is drawn in front (see _depth_sort). When a hook slides past the other
+## along the rail the strings must cross: the pair lets them, until they
+## have come apart, and then keeps the new side.
+const ROPE_GAP := 3.5
+const ROPE_DEPTH := 0.5         # depth apart at which strings are in different planes
+const ROPE_FORGET := 30         # steps after which a pair that no longer meets is forgotten
+static var rope_clock := 0      # contact steps so far (see Contacts.target_contacts)
+var _rope_side := {}            # other's instance id -> [side, last step met, passing]
+
+
 func rope_rope(o: Target) -> void:
 	if not _attached or not o._attached or rope_alpha < 0.5 or o.rope_alpha < 0.5:
 		return
-	var ax0 := minf(_pts[0].x, pos.x) - 6.0
-	var ax1 := maxf(_pts[0].x, pos.x) + 6.0
-	var bx0 := minf(o._pts[0].x, o.pos.x)
-	var bx1 := maxf(o._pts[0].x, o.pos.x)
-	for i in N:
-		ax0 = minf(ax0, _pts[i].x - 6.0)
-		ax1 = maxf(ax1, _pts[i].x + 6.0)
-		bx0 = minf(bx0, o._pts[i].x)
-		bx1 = maxf(bx1, o._pts[i].x)
-	if ax1 < bx0 or bx1 < ax0:
+	var id := o.get_instance_id()
+	var hook := o._pts[0].x - _pts[0].x
+	var hook_side := signf(hook) if absf(hook) > 2.0 else 0.0
+	var e: Array = _rope_side.get(id, [])
+	if e.is_empty() or int(e[1]) < rope_clock - ROPE_FORGET:
+		# Newly met: the side is their hooks' order (their bodies', when
+		# the hooks are level). Met already crossed (they came together at
+		# different depths), they are left to part.
+		var sd := hook_side if hook_side != 0.0 else signf(o.pos.x - pos.x + 0.001)
+		e = [sd, rope_clock, _ropes_cross(o)]
+		_rope_side[id] = e
+	e[1] = rope_clock
+	if not e[2] and hook_side != 0.0 and hook_side != e[0]:
+		# The hooks have passed each other along the rail.
+		e[0] = hook_side
+		e[2] = true
+	elif not e[2] and (rope_clock + id) % 8 == 0 and _ropes_cross(o):
+		# Now and then a check that the strings did not slip through.
+		e[2] = true
+	if e[2]:
+		if _ropes_cross(o):
+			_part_in_depth(o)
+			return
+		e[2] = false
+		e[0] = hook_side if hook_side != 0.0 else signf(o.pos.x - pos.x + 0.001)
+	if absf(seen_depth() - o.seen_depth()) >= ROPE_DEPTH:
 		return
-	const GAP := 4.0
-	for i in range(1, N - 1):
+	var side: float = e[0]
+	_rope_order(o, side)
+	o._rope_order(self, -side)
+
+
+## Two strings that have to cross (their hooks passed each other): the one
+## drawn in front sways toward you and the other away, until they hang in
+## two planes, as real strings would pass one in front of the other.
+func _part_in_depth(o: Target) -> void:
+	if absf(seen_depth() - o.seen_depth()) >= ROPE_DEPTH + 0.1:
+		return
+	var front := 1.0 if get_index() > o.get_index() else -1.0
+	_z_vel += front * 0.04
+	o._z_vel -= front * 0.04
+
+
+## Keeps this string, and the body at its end, on side `s` of `o`'s string
+## (s > 0: `o` is to the right) at every height both reach, and clear of
+## `o`'s body. Where it has come within ROPE_GAP (or crossed), both give
+## way: the light strings more than the bodies. The points are moved with
+## their previous positions, so a push adds no speed (no jitter). Both
+## strings hang from the rail and run down, so the other string's point at
+## each height is found by walking down it once.
+func _rope_order(o: Target, s: float) -> void:
+	var top := maxf(_pts[0].y, o._pts[0].y)
+	var o_rad := o.shape_radius()
+	var my_rad := shape_radius()
+	var j := 0
+	var last := N - 1
+	for i in range(1, N):
 		var p := _pts[i]
-		for j in N - 1:
-			var a: Vector2 = o._pts[j]
-			var b: Vector2 = o._pts[j + 1]
-			var q := Geometry2D.get_closest_point_to_segment(p, a, b)
-			var d := p - q
-			var l := d.length()
-			if l >= GAP:
-				continue
-			var n := d / l if l > 0.001 else Vector2(signf(pos.x - o.pos.x + 0.01), 0.0)
-			var push := (GAP - l) * 0.5
-			_pts[i] += n * push
-			var seg := b - a
-			var t := clampf((q - a).dot(seg) / maxf(seg.length_squared(), 0.001), 0.0, 1.0)
-			if j > 0:
-				o._pts[j] -= n * push * (1.0 - t)
-			if j + 1 < N - 1:
-				o._pts[j + 1] -= n * push * t
-			# The rub passes a little sideways drift to both bodies.
-			vel += n * push * 2.0
-			o.vel -= n * push * 2.0
+		var body := i == last
+		while j < last - 1 and o._pts[j + 1].y < p.y:
+			j += 1
+		var v := 0.0
+		var by_line := false
+		var a := o._pts[j]
+		var b := o._pts[j + 1]
+		if p.y >= a.y and p.y <= b.y:
+			# Beside the other string: the full gap from a little below the
+			# rail (up there the hooks set the spacing), and a body's
+			# radius when it is this string's body.
+			var t := (p.y - a.y) / (b.y - a.y) if b.y - a.y > 0.001 else 0.5
+			var x := lerpf(a.x, b.x, t)
+			var need := ROPE_GAP * clampf((p.y - top) / 40.0, 0.0, 1.0) + (my_rad if body else 0.0)
+			v = need - s * (x - p.x)
+			by_line = true
+		if not body:
+			# Beside the other body: clear of its outline at this height.
+			var c := o.closest_point(p)
+			var dy := p.y - c.y
+			if absf(dy) < o_rad:
+				var need := sqrt(o_rad * o_rad - dy * dy) + ROPE_GAP
+				var vb := need - s * (c.x - p.x)
+				if vb > v:
+					v = vb
+					by_line = false
+		if v <= 0.0:
+			continue
+		v = minf(v, 6.0)
+		var mine := 0.25 if body else 0.5
+		var dx := -s * v * mine
+		if body:
+			pos.x += dx
+			if s * vel.x > 0.0:
+				vel.x *= 0.7
+		else:
+			_pts[i].x += dx
+			_prev[i].x += dx
+		var ox := s * v * (1.0 - mine)
+		if by_line:
+			var t := clampf((p.y - a.y) / maxf(b.y - a.y, 0.001), 0.0, 1.0)
+			o._give_way(j, ox * (1.0 - t))
+			o._give_way(j + 1, ox * t)
+		else:
+			o._give_way(last, ox)
+
+
+## Moves string point `k` by `dx` sideways (the hook stays put; the last
+## point is the body, which is heavier and moves less).
+func _give_way(k: int, dx: float) -> void:
+	if k <= 0 or dx == 0.0:
+		return
+	if k == N - 1 and _attached:
+		pos.x += dx * 0.5
+		if signf(vel.x) == -signf(dx):
+			vel.x *= 0.7
+		return
+	_pts[k].x += dx
+	_prev[k].x += dx
+
+
+## Whether the two strings cross anywhere.
+func _ropes_cross(o: Target) -> bool:
+	for i in N - 1:
+		var a := _pts[i]
+		var b := _pts[i + 1]
+		for k in N - 1:
+			if Geometry2D.segment_intersects_segment(a, b, o._pts[k], o._pts[k + 1]) != null:
+				return true
+	return false
+
+
+## Draws this target in depth order among the others: back ones first, so
+## a nearer body or string always passes in front of one further back.
+func _depth_sort() -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	var me := get_index()
+	var dest := -1
+	var last_t := -1
+	for c in parent.get_children():
+		if c == self or not (c is Target):
+			continue
+		var ci := c.get_index()
+		last_t = ci
+		if dest < 0 and (c as Target).depth > depth:
+			dest = ci
+	if dest < 0:
+		if last_t < 0:
+			return
+		dest = last_t if me < last_t else last_t + 1
+	elif me < dest:
+		dest -= 1
+	if dest != me:
+		parent.move_child(self, dest)
 
 
 func startle(from: Vector2) -> void:
@@ -1222,7 +1516,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				elif playdead > 0.0:
 					_dead_step(dt)
 				else:
-					length += descent * SPEED_MUL[kind] * pace * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
+					length += descent * speed_mul() * pace * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
 			if panicked():
@@ -1625,10 +1919,11 @@ func _evolve_step(dt: float) -> void:
 	kind = Kind.HEAVY
 	soft = false
 	hp = HP[Kind.HEAVY]
-	radius = RADIUS[Kind.HEAVY]
+	var hs: Vector2 = SIZE[Kind.HEAVY]
+	size_k = clampf(size_k, hs.x, hs.y)
+	radius = RADIUS[Kind.HEAVY] * size_k
 	_m_key = -1
-	_sd.fill(0.0)
-	_sv.fill(0.0)
+	_jelly_reset()
 	flash_t = 0.07
 	squash_t = 0.0
 	startle_t = 0.4
@@ -1678,7 +1973,9 @@ func slide_now(x: float, speed: float) -> void:
 func set_variant(v: int) -> void:
 	variant = v as Var
 	if variant == Var.BIG:
-		radius *= 1.35 if kind == Kind.DROP else 1.25
+		# The big variant is its own size, whatever this one rolled.
+		size_k = 1.0
+		radius = RADIUS[kind] * (1.35 if kind == Kind.DROP else 1.25)
 		hp = maxi(hp, 2)
 		_eye_scale *= 1.2
 		_m_key = -1
@@ -1687,7 +1984,7 @@ func set_variant(v: int) -> void:
 ## A wave's finale: bigger, tougher, grumpy.
 func make_champion() -> void:
 	champion = true
-	radius *= 1.15
+	radius = minf(radius * 1.15, RADIUS[kind] * 1.4)
 	hp += 2
 	_eye_scale *= 1.1
 	_m_key = -1
@@ -1997,7 +2294,7 @@ func _release() -> void:
 func _fly_step(dt: float, danger_y: float, danger_band: float) -> void:
 	_acro_t += dt
 	vel.y += GRAVITY * dt
-	vel.x += wind * dt / MASS[kind]
+	vel.x += wind * dt / body_mass()
 	pos += vel * dt
 	body_rot += spin * dt
 	danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
@@ -2048,7 +2345,7 @@ func _try_grab(h: Target) -> bool:
 		_prev[i] = _pts[i]
 	_rope_len = length
 	# The rope takes the pull: a little of the momentum passes to the host.
-	h.vel += vel * 0.3 * MASS[kind] / MASS[h.kind]
+	h.vel += vel * 0.3 * body_mass() / h.body_mass()
 	h.ang_vel += signf(vel.x) * 1.5
 	h.startle_t = 0.35
 	spin = 0.0
@@ -2122,20 +2419,22 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 
 func _body_step(dt: float) -> void:
 	vel.y += GRAVITY * dt
-	vel.x += wind * dt / MASS[kind]
+	vel.x += wind * dt / body_mass()
 	# They are alive: when the hook has moved on, the body pulls itself back
 	# under it instead of trailing for seconds on a long string.
 	if kind != Kind.ROD and acro != Acro.PUMP:
 		var off := anchor.x - pos.x
 		if absf(off) > 10.0:
-			vel.x += clampf(off * 6.0, -700.0, 700.0) * dt / MASS[kind]
+			vel.x += clampf(off * 6.0, -700.0, 700.0) * dt / body_mass()
 	var d := pos - anchor
 	var dist := d.length()
+	_pull = 0.0
 	if dist > length and dist > 0.001:
 		var dir := d / dist
 		# Near the danger line the string pulls tighter (stiffer, less bounce).
 		var k := STRING_K * (1.0 + danger * 0.9)
 		vel -= dir * k * (dist - length) * dt
+		_pull = k * (dist - length) / GRAVITY
 		# Extra damping along the string keeps the bounce elastic but calm.
 		vel -= dir * vel.dot(dir) * (2.2 + danger * 2.0) * dt
 	# Pumping, it works with the swing: far less loss than at rest.
@@ -2197,9 +2496,9 @@ func _snap(impulse: Vector2) -> void:
 	phase = Phase.FALLING
 	crushed.clear()
 	_attached = false
-	vel = impulse * 0.5 / MASS[kind] + Vector2(0, -120)
+	vel = impulse * 0.5 / body_mass() + Vector2(0, -120)
 	# Keep the wobble it already had; heavier bodies tumble slower.
-	spin = ang_vel * 0.5 + randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0) / MASS[kind]
+	spin = ang_vel * 0.5 + randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0) / body_mass()
 	# Whip recoil: the freed rope springs upward for a few frames.
 	for i in range(1, N):
 		var k := float(i) / (N - 1)
@@ -2223,7 +2522,7 @@ func seen_depth() -> float:
 func _z_step(dt: float) -> void:
 	# Pendulum rate g/L; heavier bodies are pushed less. Held to ±0.9.
 	var w2 := GRAVITY / maxf(length, 60.0)
-	_z_vel += (push_z * 1.4 / MASS[kind] - w2 * z_swing - 1.4 * _z_vel) * dt
+	_z_vel += (push_z * 1.4 / body_mass() - w2 * z_swing - 1.4 * _z_vel) * dt
 	z_swing = clampf(z_swing + _z_vel * dt, -0.9, 0.9)
 
 

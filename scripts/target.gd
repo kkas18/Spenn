@@ -8,6 +8,7 @@ extends "res://scripts/target_look.gd"
 var _ink := Ink.new()              # the face's drawing, sent as one triangle array
 var _face_tick := 0
 var _face_phase := 0
+var _eo := Vector2.ZERO            # the eye being drawn: its centre in body space
 static var _made := 0
 
 
@@ -16,8 +17,7 @@ func _ready() -> void:
 	_made += 1
 	_pts.resize(N)
 	_prev.resize(N)
-	_sd.resize(SOFT_N)
-	_sv.resize(SOFT_N)
+	_jelly_reset()
 	_setup_canvas()
 	visible = false
 
@@ -165,8 +165,9 @@ func _process(delta: float) -> void:
 	_update_eye(delta)
 	_jit = _tremble()
 	_xf = body_xform()
+	_fxf = _xf * jelly_stretch()
 	_body.transform = _xf
-	_face.transform = _xf
+	_face.transform = _fxf
 	_body.queue_redraw()
 	# The face follows the body every frame through its transform; its
 	# drawing (blinks, glances, moods) is refreshed at half rate, alternate
@@ -206,7 +207,7 @@ func _face_ink() -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
 	var f := _ink
-	var inv := _xf.affine_inverse()
+	var inv := _fxf.affine_inverse()
 	f.draw_set_transform_matrix(inv)
 	if fray_t > 0.0 and _attached and rope_alpha > 0.0:
 		# Frayed: a few loose fibres at the nearest point, blinking faster
@@ -611,6 +612,7 @@ func _eye_parts() -> void:
 ## One eye at `eo` (body space) of radius `er`; `side` is -1/1 for one of a
 ## pair (the Spinneren's), 0 for a single eye.
 func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
+	_eo = eo
 	var bx := Transform2D(0.0, eo)
 	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
@@ -678,13 +680,14 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 		_lid(f, er, lower, false, skin, lash)
 	if mood == Mood.CUTE:
 		var cheek := minf(er * 1.3, radius * 0.6)
+		var cr := minf(er * 0.3, radius * 0.18)
 		for sx: float in [-1.0, 1.0]:
-			f.disc(Vector2(sx * cheek, er * 0.95), minf(er * 0.3, radius * 0.18), Color(Pal.SHADE, 0.35))
+			f.disc(_in_hole(Vector2(sx * cheek, er * 0.95), cr + 1.0), cr, Color(Pal.SHADE, 0.35))
 		f.disc(pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
 	if trait_kind == Trait.SHY and aimed and soft:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
-			f.disc(Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+			f.disc(_in_hole(Vector2(sx * er * 1.25, er * 0.95), er * 0.32 + 1.0), er * 0.32, Color(Pal.SHADE, 0.28))
 	if kind == Kind.SEER:
 		# The monocle: a brass rim round the eye on a fine chain; it flashes
 		# the instant the Seer reads your shot.
@@ -778,7 +781,10 @@ func _lid_curve(f: Ink, er: float, y: float, bow: float, col: Color, w: float) -
 
 
 ## One brow, as a fine arc above the eye; `inner_y` and `outer_y` are in
-## eye radii (negative is up), `sx` the side.
+## eye radii (negative is up), `sx` the side. On a ring body the brow runs
+## from the dark hole onto the ring; there it is drawn in line-art style, a
+## pale stroke edged in dark, so it reads as a brow on either (a bare pale
+## stroke on the ring reads as a scratch).
 func _brow(f: Ink, er: float, sx: float, inner_y: float, outer_y: float, col: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 6:
@@ -786,4 +792,21 @@ func _brow(f: Ink, er: float, sx: float, inner_y: float, outer_y: float, col: Co
 		var x := lerpf(0.28, 1.12, t) * er * sx
 		var y := lerpf(inner_y, outer_y, t) * er - sin(PI * t) * er * 0.12
 		pts.append(Vector2(x, y))
+	if _hole() > 0.0:
+		f.draw_polyline(pts, Color(Pal.PUPIL, col.a * 0.7), 3.6, true)
+		f.draw_polyline(pts, Color(col, minf(1.0, col.a * 1.25)), 1.5, true)
+		return
 	f.draw_polyline(pts, col, 1.7, true)
+
+
+## A point of the face (eye space, see _eo) kept `pad` px inside a ring
+## body's hole, so what is drawn on the dark recess never spills onto the
+## ring itself.
+func _in_hole(p: Vector2, pad: float) -> Vector2:
+	var h := _hole()
+	if h <= 0.0:
+		return p
+	var q := _eo + p
+	var lim := maxf(1.0, h - pad)
+	var l := q.length()
+	return p if l <= lim or l < 0.001 else q * (lim / l) - _eo

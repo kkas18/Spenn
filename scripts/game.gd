@@ -2882,6 +2882,7 @@ func _twin(t: Target) -> void:
 		var len := anchor.distance_to(p)
 		d.aggression = t.aggression
 		d.spawn(Target.Kind.DROP, anchor, len, len, 0.0)
+		d.size_k = 13.0 / Target.RADIUS[Target.Kind.DROP]
 		d.radius = 13.0
 		d.pos = p
 		d.vel = Vector2(side * 140.0, -80.0)
