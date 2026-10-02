@@ -33,6 +33,10 @@ var _sparks: Array[CPUParticles2D] = []
 var _next_spark := 0
 var _popups: Array[Dictionary] = []
 var _next_popup := 0
+# While you aim (set by the game), the field is kept quiet: a flavour line
+# (prio 0) is left out, and the lines already up fade back a little.
+var aiming := false
+var _hush := 0.0
 var _shake_t := 0.0
 var _shake_amp := 0.0
 var _hitstop_live := false
@@ -73,6 +77,20 @@ var _glow: Node2D
 const TEX_SOFT := preload("res://assets/particles/soft.png")
 var targets: Array[Target] = []   # popups keep clear of these (set by Game)
 var _links: Array[Dictionary] = []
+var _orders: Array[Dictionary] = []   # a Kommandør's orders: brass threads to its squad
+var _snaps: Array[Dictionary] = []    # order threads snapping as it falls
+var _ghosts: Array[Dictionary] = []   # a Leseren's afterimages as it steps aside
+const ORDER_LIFE := 0.7
+const SNAP_LIFE := 0.45
+const GHOST_LIFE := 0.38
+# The big moments (see moment()): brass light shafts fanning from a point,
+# a soft bloom, and for a cleared wave a line of light sweeping the field.
+var _shafts: Array[Dictionary] = []
+var _sweep: Dictionary = {}
+var _epic_cd := 0.0
+const SHAFT_LIFE := 0.95
+const SWEEP_TIME := 0.7
+const EPIC_GAP := 1.6            # s before another full epic moment
 var _later: Array[Dictionary] = []   # calls due after a delay (game time)
 var _charms: Array[Dictionary] = []  # trick charms in flight between targets
 var _puffs: Array[Dictionary] = []
@@ -128,7 +146,7 @@ func _ready() -> void:
 	for i in TOKEN_POOL:
 		_tokens.append({"t": -1.0, "from": Vector2.ZERO, "to": Vector2.ZERO, "ctrl": Vector2.ZERO, "delay": 0.0})
 	for i in POPUP_POOL:
-		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20, "accent": false})
+		_popups.append({"t": -1.0, "text": "", "pos": Vector2.ZERO, "col": Pal.INK, "size": 20, "accent": false, "prio": 1})
 	for i in PUFF_POOL:
 		_puffs.append({"t": -1.0, "life": 0.8, "pos": Vector2.ZERO, "vel": Vector2.ZERO, "rot": 0.0,
 			"spin": 0.0, "s0": 10.0, "s1": 30.0, "col": Pal.INK, "a": 0.3, "tex": 0})
@@ -206,6 +224,54 @@ func link(a: Vector2, b: Vector2, col: Color) -> void:
 			return
 	if _links.size() < 6:
 		_links.append({"a": a, "b": b, "col": col, "t": 0.0})
+
+
+## A Kommandør's order to `to`: a fine brass thread from one to the other
+## (following both as they move), a bright bead running down it, then fading.
+func order(from: Target, to: Target) -> void:
+	if _orders.size() < 8:
+		_orders.append({"a": from, "al": from.life, "b": to, "bl": to.life, "t": 0.0})
+
+
+## An order thread snapping (its Kommandør fell): each half whips back to
+## its end, with a few sparks where it broke.
+func snap_thread(a: Vector2, b: Vector2) -> void:
+	if _snaps.size() < 8:
+		_snaps.append({"a": a, "b": b, "t": 0.0})
+	sparks(a.lerp(b, 0.5), Tok.PRIMARY_HI, 4)
+
+
+## A big moment at `at` (a boss or a Kommandør falling, the last kill of a
+## wave, a record broken): brass shafts of light fan out and turn a little,
+## a soft bloom swells under them, and fade. Only one full moment at a time:
+## a second within EPIC_GAP gets a smaller echo, so they never pile up.
+## With reduced motion the shafts do not grow or turn; they only fade.
+func moment(at: Vector2, col := Tok.PRIMARY_HI, scale := 1.0) -> void:
+	var full := _epic_cd <= 0.0
+	if full:
+		_epic_cd = EPIC_GAP
+	var k := scale * (1.0 if full else 0.55)
+	_shafts.append({"at": at, "col": col, "t": 0.0, "n": 9 if full else 6,
+		"len": 460.0 * k, "w": 30.0 * k, "rot": _rng.randf() * TAU, "spin": _rng.randf_range(-0.2, 0.2), "a": 0.5 if full else 0.3})
+	if _shafts.size() > 3:
+		_shafts.pop_front()
+
+
+## A line of light sweeping down the field from `y0` to `y1` (a wave is
+## cleared): a bright hairline on a soft band.
+func sweep(y0: float, y1: float, col := Tok.PRIMARY_HI) -> void:
+	if Prefs.reduced_motion:
+		return
+	_sweep = {"t": 0.0, "y0": y0, "y1": y1, "col": col}
+
+
+## Afterimages of a body that just stepped aside (`dir` -1/1): two faint
+## copies left along the way, fading one after the other.
+func afterimage(at: Vector2, r: float, col: Color, dir: float) -> void:
+	if Prefs.reduced_motion:
+		return
+	for k in 2:
+		_ghosts.append({"pos": at + Vector2(dir * r * 0.55 * k, 0.0), "r": r, "col": col, "t": -0.05 * k})
 
 
 ## Runs `cb` after `delay` seconds of game time (slowed by hit-stop).
@@ -293,7 +359,7 @@ func burst(kind: int, at: Vector2, rot: float, radius: float, col: Color, base_v
 		_splash(at, radius, col, inherit)
 		return
 	match kind:
-		Target.Kind.RING, Target.Kind.HEAVY, Target.Kind.SHIELD, Target.Kind.REEL:
+		Target.Kind.RING, Target.Kind.HEAVY, Target.Kind.SHIELD, Target.Kind.REEL, Target.Kind.CAPTAIN:
 			var pieces := 6 if kind != Target.Kind.HEAVY else 8
 			var rr := radius - 5.0
 			for i in pieces:
@@ -409,7 +475,20 @@ func _step_waves(rd: float) -> void:
 
 ## A score or label that rises and fades. `accent` (skill shots) pops in
 ## larger and underlines itself with a gold rule drawn out from the centre.
-func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false) -> void:
+func _young_popups() -> int:
+	var n := 0
+	for q in _popups:
+		if q.t >= 0.0 and q.t < 0.6:
+			n += 1
+	return n
+
+
+## A line of text that rises from `at` and fades. `prio`: 0 flavour (a
+## trick's name, a quip; dropped while you aim or when the field already
+## has three lines up), 1 information (the default), 2 must be seen.
+func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false, prio := 1) -> void:
+	if prio <= 0 and (aiming or _young_popups() >= 3):
+		return
 	var p := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % POPUP_POOL
 	p.t = 0.0
@@ -419,6 +498,7 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 	p.col = col
 	p.size = size
 	p.accent = accent
+	p.prio = prio
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x if font else 80.0
 	var half := w * 0.5
 	var x := clampf(at.x, l.margin + half, l.size.x - l.margin - half)
@@ -574,6 +654,12 @@ func clear() -> void:
 	_later.clear()
 	_charms.clear()
 	_links.clear()
+	_orders.clear()
+	_snaps.clear()
+	_shafts.clear()
+	_sweep = {}
+	_epic_cd = 0.0
+	_ghosts.clear()
 	_flashes.clear()
 	_waves.clear()
 	_step_waves(0.0)
@@ -650,6 +736,38 @@ func _process(delta: float) -> void:
 			_links.erase(k)
 		else:
 			any = true
+	for o in _orders.duplicate():
+		o.t += delta
+		var alive: bool = is_instance_valid(o.a) and is_instance_valid(o.b) and o.a.life == o.al and o.b.life == o.bl and o.a.is_hittable() and o.b.is_hittable()
+		if o.t > ORDER_LIFE or not alive:
+			_orders.erase(o)
+		else:
+			any = true
+	for k in _snaps.duplicate():
+		k.t += delta
+		if k.t > SNAP_LIFE:
+			_snaps.erase(k)
+		else:
+			any = true
+	_epic_cd = maxf(0.0, _epic_cd - delta)
+	for m in _shafts.duplicate():
+		m.t += delta
+		if m.t > SHAFT_LIFE:
+			_shafts.erase(m)
+		else:
+			any = true
+	if not _sweep.is_empty():
+		_sweep.t += delta
+		if _sweep.t > SWEEP_TIME + 0.25:
+			_sweep = {}
+		else:
+			any = true
+	for g in _ghosts.duplicate():
+		g.t += delta
+		if g.t > GHOST_LIFE:
+			_ghosts.erase(g)
+		else:
+			any = true
 	for c in _charms.duplicate():
 		c.t += delta
 		if is_instance_valid(c.to) and c.to.is_hittable():
@@ -715,6 +833,7 @@ func _process(delta: float) -> void:
 				d.t = -1.0
 			else:
 				any = true
+	_hush = move_toward(_hush, 1.0 if aiming else 0.0, delta / 0.2)
 	for p in _popups:
 		if p.t >= 0.0:
 			p.t += delta
@@ -732,10 +851,85 @@ func _process(delta: float) -> void:
 ## Additive layer: a bloom where each flash went off, growing and fading
 ## over 0.22 s.
 func _draw_glow() -> void:
+	_draw_moments()
 	for f in _flashes:
 		var k: float = f.t / 0.22
 		var r: float = f.r * lerpf(1.6, 3.2, 1.0 - pow(1.0 - k, 2.0))
 		_glow.draw_texture_rect(TEX_SOFT, Rect2(f.at - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.35 * (1.0 - k) * (1.0 - k)))
+
+
+## Additive: the moments' shafts and bloom, and the sweep.
+func _draw_moments() -> void:
+	var calm := Prefs.reduced_motion
+	for m in _shafts:
+		var k: float = m.t / SHAFT_LIFE
+		var grow := 1.0 if calm else Motion.ease_value(Motion.Ease.EXIT, clampf(m.t / 0.3, 0.0, 1.0))
+		var a: float = m.a * (1.0 - k) * (1.0 - k) * minf(1.0, m.t / 0.05)
+		var at: Vector2 = m.at
+		var col: Color = m.col
+		var rot: float = m.rot + (0.0 if calm else m.spin * m.t)
+		var n: int = m.n
+		for i in n:
+			var ang := rot + i * TAU / n + 0.18 * sin(i * 2.3)
+			var d := Vector2.from_angle(ang)
+			var side := d.orthogonal()
+			var ln: float = m.len * grow * (0.7 + 0.3 * absf(sin(i * 1.7)))
+			var w: float = m.w * (0.6 + 0.4 * absf(cos(i * 1.3)))
+			if ln < 2.0 or w < 0.5:
+				# Not grown out yet (its first frame): a ray of no length is a
+				# polygon of no area, which cannot be drawn.
+				continue
+			_glow.draw_polygon(PackedVector2Array([at + side * w * 0.12, at + d * ln + side * w, at + d * ln - side * w, at - side * w * 0.12]),
+				PackedColorArray([Color(col, a), Color(col, 0.0), Color(col, 0.0), Color(col, a)]))
+		var br: float = lerpf(50.0, 150.0, grow) * (0.9 + 0.2 * k)
+		_glow.draw_texture_rect(TEX_SOFT, Rect2(at - Vector2(br, br), Vector2(br, br) * 2.0), false, Color(col, 0.45 * a))
+	if not _sweep.is_empty():
+		var e := Motion.ease_value(Motion.Ease.STANDARD, clampf(_sweep.t / SWEEP_TIME, 0.0, 1.0))
+		var fade := 1.0 - clampf((_sweep.t - SWEEP_TIME) / 0.25, 0.0, 1.0)
+		var y: float = lerpf(_sweep.y0, _sweep.y1, e)
+		var col: Color = _sweep.col
+		var w := l.size.x if l else 720.0
+		var band := 46.0
+		_glow.draw_polygon(PackedVector2Array([Vector2(0, y - band), Vector2(w, y - band), Vector2(w, y), Vector2(0, y)]),
+			PackedColorArray([Color(col, 0.0), Color(col, 0.0), Color(col, 0.22 * fade), Color(col, 0.22 * fade)]))
+		_glow.draw_line(Vector2(0, y), Vector2(w, y), Color(col, 0.7 * fade), 1.6, true)
+
+
+## The smart enemies' marks: order threads (a gentle sag, a bead running
+## from the Kommandør to its soldier), threads snapping, and afterimages.
+func _draw_smart() -> void:
+	for o in _orders:
+		var k: float = o.t / ORDER_LIFE
+		var a := minf(1.0, o.t / 0.08) * (1.0 - smoothstep(0.55, 1.0, k))
+		var p0: Vector2 = o.a.pos
+		var p1: Vector2 = o.b.pos
+		var mid := p0.lerp(p1, 0.5) + Vector2(0, 16.0)
+		var pts := PackedVector2Array()
+		for i in 13:
+			var u := i / 12.0
+			pts.append(p0.lerp(mid, u).lerp(mid.lerp(p1, u), u))
+		draw_polyline(pts, Color(0, 0, 0, 0.3 * a), 2.6, true)
+		draw_polyline(pts, Color(Tok.PRIMARY, 0.8 * a), 1.4, true)
+		var run := clampf(o.t / 0.28, 0.0, 1.0)
+		if run < 1.0:
+			var bp := p0.lerp(mid, run).lerp(mid.lerp(p1, run), run)
+			draw_circle(bp, 5.0, Color(Tok.PRIMARY_HI, 0.25 * a), true, -1.0, true)
+			draw_circle(bp, 2.4, Color(Tok.PRIMARY_HI, a), true, -1.0, true)
+	for k in _snaps:
+		var e := Motion.ease_value(Motion.Ease.EXIT, float(k.t) / SNAP_LIFE)
+		var a := 1.0 - float(k.t) / SNAP_LIFE
+		var m: Vector2 = k.a.lerp(k.b, 0.5)
+		for end: Vector2 in [k.a, k.b]:
+			var tip := m.lerp(end, e)
+			var bow := (end - m).orthogonal().normalized() * 6.0 * (1.0 - e) * sin(e * 9.0)
+			draw_polyline(PackedVector2Array([tip, tip.lerp(end, 0.5) + bow, end]), Color(Tok.PRIMARY, 0.75 * a), 1.4, true)
+	for g in _ghosts:
+		if g.t < 0.0:
+			continue
+		var a := 1.0 - float(g.t) / GHOST_LIFE
+		var c: Color = g.col
+		draw_circle(g.pos, g.r, Color(c, 0.18 * a), true, -1.0, true)
+		draw_arc(g.pos, g.r, 0.0, TAU, 32, Color(c.lightened(0.3), 0.45 * a), 1.4, true)
 
 
 func _draw() -> void:
@@ -769,6 +963,7 @@ func _draw() -> void:
 	for k in _links:
 		var a := 1.0 - float(k.t) / 0.5
 		draw_dashed_line(k.a, k.b, Color(k.col, 0.5 * a), 2.0, 7.0, true)
+	_draw_smart()
 	for r in _rings:
 		if r.t < 0.0:
 			continue
@@ -857,6 +1052,7 @@ func _draw() -> void:
 		var k: float = p.t / POPUP_LIFE
 		var rise := ease(k, 0.35) * POPUP_RISE
 		var alpha := 1.0 if k < 0.55 else 1.0 - (k - 0.55) / 0.45
+		alpha *= 1.0 - 0.45 * _hush * (0.0 if int(p.get("prio", 1)) >= 2 else 1.0)
 		var s := 1.0 + (0.3 if p.accent else 0.12) * maxf(0.0, 1.0 - k * 8.0)
 		var pos: Vector2 = p.pos - Vector2(0, rise)
 		var w := font.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size).x

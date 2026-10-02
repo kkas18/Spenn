@@ -2404,3 +2404,266 @@ Rettet:
      til `scripts/contacts.gd` (klassen `Contacts`, med en typet referanse til `Game`).
    - `game.gd` har fått klassenavnet `Game`.
    - Testpakken (soak og bot på to frø) passerer.
+
+## v7.52 – Smarte fiender, episke øyeblikk og armfeilen
+
+1. **Armfeilen (lange armer):** fiendene gjenbrukes fra en pool. Når offeret døde midt i et
+   dytt, fulgte armen den gjenbrukte kroppen dit den dukket opp som ny fiende, så den strakk
+   seg over skjermen. Målt rekkevidde hoppet fra 113 til 417 px.
+   - Hver kropp har nå et livsnummer (`life`, øker ved hver spawn). Armen slipper offeret når
+     det dør eller gjenbrukes, og fullfører bare bevegelsen.
+   - Armen når aldri lenger enn 110 px utenfor kroppen (`ARM_REACH`).
+   - Etter rettingen holder rekkevidden seg på ca. 115 px.
+2. **Tre nye, smarte fiender** (`scripts/smarts.gd`, klassen `Smarts`), hver med én tydelig
+   evne og ett tydelig motsvar:
+   - **Kommandøren:** åttekantet skall i marinestål med messinghjelm, fjærbusk og epåletter.
+     To liv, fra intensitet 2,7, og aldri to samtidig.
+     - Leser siktelinjen og beordrer opptil tre naboer i linjen ut av den. Hver ordre vises
+       som en messingtråd med en perle som løper ned.
+     - Holder selv dekning bak en nabo.
+     - Dør den, står troppen rådvill i 1,4 s, og trådene ryker med gnister.
+   - **Leseren:** fiolett gelé med monokkel og kjede.
+     - I det kula slippes, simulerer den den virkelige banen (tyngdekraft og vegger) for å
+       finne treffpunktet, og tar ett presist steg ut av banen (ca. 60 px).
+     - Et skudd som treffer om mindre enn 0,14 s, kan ikke unnvikes.
+     - Etterpå er den sliten i 1,1 s med tunge lokk, og kan ikke unnvike.
+     - Monokkelen blinker når den leser, og den etterlater to svake etterbilder.
+   - **Luringen:** en mosegrønn pære med hette.
+     - Sniker seg nedover med 2,6× fart når ingen ser på den.
+     - Fryser når du sikter på den eller en kule kommer, og spiller uskyldig: ser opp og
+       bort og plystrer.
+     - Målt uten sikte: +165 px på 2 s. Med sikte: +19 px.
+   - Alle tre har navn og forklaring på norsk og engelsk, erkefiendenavn og farger i alle fem
+     emaljetemaene.
+3. **Episke øyeblikk** (`fx.moment`, `fx.sweep`):
+   - Messingstråler vifter ut og dreier litt, med en myk lysblomst i sentrum. Brukes ved
+     bossdrap, Kommandørens fall, siste drap i en bølge og ny rekord.
+   - Når en bølge er ryddet, sveiper en lyslinje over feltet fra skinnen ned til farelinjen.
+   - Bare ett fullt øyeblikk om gangen: innen 1,6 s blir neste et mindre ekko.
+   - Med redusert bevegelse vokser og dreier ikke strålene, og sveipet vises ikke.
+
+## v7.53 – Gelé 2.0, tau som holder seg på sin side, og ulike størrelser
+
+1. **Gelé 2.0 (modusbasert myk kropp):** omrisset er summen av formmodusene m = 2–5
+   (cos mθ og sin mθ), og hver av dem er en egen dempet fjær, slik en ekte geléklump
+   svinger.
+   - Frekvensene følger en dråpes (Rayleigh): høyere moduser svinger raskere, og store
+     kropper tregere. Dempingen øker med m, så små krusninger dør raskt, mens den brede
+     klemmen svinger noen ganger.
+   - Modus 0 finnes ikke, så arealet holdes. Modus 1 finnes heller ikke: å flytte hele
+     omrisset er å flytte kroppen, og det gjør snoren og kontaktene.
+   - **Treff:** et mykt innadrettet dytt der det treffer. Kroppen blir flat der og buler ut
+     på sidene, svinger tilbake og roer seg på ca. 0,4 s.
+   - **Kropper som hviler mot hverandre:** får en rolig, flat flekk så lenge de ligger
+     inntil, i stedet for å bli hamret hvert fysikksteg. Bare ekte støt over 70 px/s får
+     dem til å vugge. Flere naboer som presser samtidig, flater den ikke mer ut enn den
+     dypeste enkeltflekken.
+   - **Hengende:** en svak dråpeform langs snoren, med spissen mot tauet og bredere nede.
+     Den blir litt tydeligere når tauet drar hardt (et sprett), og litt rundere når det
+     henger slakt.
+   - **Faller på gulvet:** geléen får en bulk nedenfra.
+   - **Tegning:**
+     - En myk grense (L·tanh(d/L), L = 30 % av radien) gjør at omrisset aldri bretter seg.
+     - Normalene vris med skråningen, så en bulk skygges som en bulk.
+     - Formen regnes bare om når den har endret seg.
+     - Resultatet er billigere enn før: 0,26 mot 0,31 ms per bilde.
+   - **Ansiktet** følger den brede klemmen (modus 2 som en strekk). Den gamle affine
+     klemmen er redusert til et lite tegneseregrep på toppen.
+   - **Årsaken til uroen i bildet:** signalet for «hvor hardt den svinges» var støy fra
+     tauløseren (i snitt 518 px/s² i en rolig folkemengde). Formen styres nå av hvor
+     hardt tauet faktisk drar.
+   - **Målt i en rolig folkemengde uten skudd:**
+
+     | | Før | Nå |
+     |---|---|---|
+     | Uønsket vugging i snitt (av radien) | 7,1 % | 1,0 % |
+     | Verste tilfelle | 30 % | 10–16 % (landinger og støt) |
+
+   - **Øyenbryn på ringfiender** tegnes som strektegning, lyse med mørk kant. Når de går ut
+     over ringen, leses de da som bryn, ikke som riper. Kinn og rødming holdes inne i hullet.
+2. **Tau som ikke går gjennom hverandre:**
+   - **Tau på omtrent samme dybde** henger i samme plan. Hvert par som møtes, holder siden
+     det møttes på (krokenes rekkefølge langs bjelken), i alle høyder begge når ned til,
+     også kroppene i enden.
+     - Der de kommer nærmere enn 3,5 px, skyves begge unna. Lette tau gir mer etter enn
+       tunge kropper.
+     - Punktene flyttes sammen med sin forrige posisjon, så skyvet gir ingen fart og
+       ingen dirring.
+   - **Når en krok glir forbi en annen** langs bjelken, må tauene krysse. Paret får lov:
+     den som tegnes foran, svinger litt mot deg og den andre bort, til de henger i hvert
+     sitt plan. Når de har kommet fra hverandre, holdes den nye siden.
+   - **Tau på ulik dybde** krysser fritt:
+     - Tau lenger bak er tynnere og mørkere, som kroppene.
+     - Fiendene tegnes i dybderekkefølge, så den nærmeste alltid går foran.
+   - **Målt:** kryssinger mellom tau på samme dybde gikk fra 4,4 til ca. 0,1 per bilde.
+     Resten er par som er i ferd med å skilles i dybden.
+3. **Ulike størrelser:** hver fiende får sin egen størrelse innenfor et spenn for typen.
+   Spinneren er alltid seg selv.
+
+   | Fiende | Størrelse (× radius) |
+   |---|---|
+   | Ring | 0,78–1,3 |
+   | Dråpe | 0,8–1,25 |
+   | Kommandør | 1,0–1,2 |
+   | Pipp | 0,82–1,05 |
+   | Luringen | 0,8–1,05 |
+
+   - Massen følger arealet, så store fiender er tyngre å dytte og å slå løs.
+   - Små fiender synker litt raskere (1/√størrelse) og gir flere poeng (poeng/størrelse).
+     Store fiender er tregere og gir færre poeng.
+   - Pendelens lengde følger størrelsen.
+   - Varianten «stor» beholder sin egen størrelse, og en mester blir aldri over 1,4×.
+4. **Tester:** testpakken passerer (import, oppstart, soak og bot på to frø). Seks
+   bot-runder gir median 184 s (v7.52: 159 s). Boten overlever litt lenger, blant annet fordi
+   store fiender er lettere å treffe. I v7.54 skal vanskeligheten følge ferdighetene dine.
+
+## v7.54 – Fiender som tenker: seks svar, en spillermodell og vanskelighet etter ferdighet
+
+1. **Seks svar i stedet for én regel** (`scripts/mind.gd`, klassen `Mind`). Før fulgte nesten
+   alle fiender samme regel: «skli bort fra siktelinjen etter en reaksjonstid». Nå veier en
+   fiende som har sett siktet ditt i sin reaksjonstid, disse svarene mot hverandre:
+
+   | Svar | Hva den gjør | Mot hva | Fra |
+   |---|---|---|---|
+   | Unna | glir langs bjelken ut av linjen | det vanlige svaret | start |
+   | Over | skjærer tilbake over linjen til andre siden | en spiller som skyter dit de flykter | taktikk «finter» |
+   | Klatre | vinsjer seg opp snoren | lite plass til siden | start |
+   | Bløffe | blir stående med et trassig rykk og et glis | et dårlig eller forutseende skudd | start |
+   | Gjemme seg | glir inn bak en tyngre nabo lenger ned | når det finnes dekning (alle typer nå) | start |
+   | Vente | spenner seg og hopper unna i det kula slippes | lange holdetider | taktikk «unnvikelse» |
+
+   Hvert svar får poeng ut fra tre ting:
+   - situasjonen: hvor nær linjen går, plass på bjelken, kule i lufta, dekning og hvor de
+     andre skal;
+   - personligheten: dristig, varsom, lur eller sosial, avledet av temperament, trekk, humør
+     og type;
+   - det fiendene vet om deg.
+2. **Blandet strategi:** svaret trekkes med vekt exp(poeng/temperatur).
+   - Mot en ny spiller, eller en som er under press, er temperaturen høy, og fiendene famler.
+   - Mot en skarp spiller er temperaturen lav, og de velger blant de gode svarene. Da er de
+     smarte uten å være forutsigbare, og det lønner seg ikke å sikte på forhånd dit de pleier
+     å gå.
+   - Målt spredning i valgene er 1,3–2,3 bit (0 er alltid samme svar, 2,6 er helt tilfeldig).
+3. **Alt varsles på forhånd:**
+   - Øyet viser hvor fienden skal før den går (0,07–0,14 s).
+   - En klatring spenner seg og knirker. En bløff rykker og gliser. En som venter, skjelver.
+   - En som lokker, danser. En som synker for laget, ser ned og har to piler under seg.
+4. **Spillermodell som huskes mellom rundene** (`scripts/habits.gd`, lagres i Prefs):
+   - holdetid, favorittside og veggskudd;
+   - om du «straffer» unnvikelser, altså treffer den som nettopp unnvek innen 1,2 s;
+   - hvor ofte du skyter en kule til rett etter den første;
+   - en ferdighetsrating ut fra treffprosent og drap per minutt.
+
+   Hvordan modellen brukes:
+   - En firedel glemmes ved hver ny runde, så du kan lure dem ved å bytte stil.
+   - Når de merker at du skyter dit de flykter, sier spillet fra, og de krysser, bløffer og
+     klatrer oftere.
+   - Dagens utfordring bruker en nøytral modell, så alle konkurrerer på like vilkår.
+   - «Nullstill fremgang» sletter modellen.
+5. **Vanskelighet etter ferdighet, med regulator:**
+   - Fiendenes skarphet (0–1) er ferdigheten din, pluss litt per bølge, minus belastning.
+   - Belastningen stiger når du mister liv eller fiender står ved linjen, og faller igjen i
+     løpet av et halvt minutt. Slik snøballer ikke en dårlig periode.
+   - Taktikknivåene kommer fra bølge 2 inntil én bølge tidligere for sterke spillere og én
+     bølge senere for svake.
+6. **Lagspill:**
+   - En felles tavle viser hvor hver fiende skal, så de ikke flykter til samme sted.
+   - Fra taktikken «samarbeid»: én lokker ved å danse i siktelinjen, mens en partner på andre
+     siden synker med nesten dobbel fart. Taktikkortet sier «Én lokker, en annen synker – se
+     etter pilene».
+7. **Kommandøren** bruker nå også svarene og søker dekning, noe beskrivelsen i v7.52 lovet,
+   men koden ikke gjorde.
+8. **Tester:** testpakken passerer. Bot på tre nivåer, seks runder hver:
+
+   | Bot | v7.53 median | v7.54 median | Snitt-IQ | Spredning i valg |
+   |---|---|---|---|---|
+   | Svak (mer støy, treg) | 114 s | 112 s | 0,47 | 1,7 bit |
+   | Middels | 184 s | 202 s | 0,63 | 1,7 bit |
+   | Sterk (presis, rask) | 186 s | 183 s | 0,63 | 1,9 bit |
+
+   - I snitt er spillet like vanskelig som før, men fiendene er ulike. Vanlige valg: unna ca.
+     50 %, bløff ca. 25 %, klatring ca. 12 %, gjemme seg ca. 6 %, og over og vente sjelden.
+   - Skarpheten følger spilleren, selv om botene treffer omtrent like godt og derfor skilles
+     lite.
+   - Rapporten fra boten viser antall valg, snitt-IQ, drap, lagspill, andelen per svar og
+     entropien. Boten nullstiller spillermodellen før hver runde, så runder kan sammenlignes.
+
+## v7.55 – Mindre støy, samling (fiender, prestasjoner, beste runder)
+
+1. **Siktelinjen bøyer seg med vinden:** i et vindkast bøyer siktelinjen seg nå, slik kula
+   faktisk gjør. Før viste den en rett bane mens kula drev av, og det var en av grunnene til
+   «hvorfor bommet jeg?». Et typisk vindkast flytter treffpunktet ca. 12 px. Fiendenes egne
+   beregninger av kulebaner tar også hensyn til vinden, både «kule på vei» og Leserens
+   beregning.
+2. **Mindre tekst i feltet:**
+   - Popup-tekster har tre nivåer: pynt, informasjon og «må ses».
+   - Pynt (navn på triks du alt har fått forklart, knuste merker, en fanget akrobat, gull
+     som flyktet, Legens «+1») vises ikke mens du sikter, eller når feltet alt har tre tekster.
+   - Mens du sikter, dempes tekstene som alt står der, til 55 %. Unntaket er det som må ses:
+     mistet knute, ekstra knute, bosstrinn og hint om overbelastning.
+3. **Bom som forklarer seg selv:** en fiende som hopper unna en kule som alt er i lufta,
+   etterlater et svakt spøkelsesbilde der den var. Da ser du hvorfor du bommet, uten tekst.
+4. **Samling** (nytt pokal-token i menyen) med tre faner. Panelet holder samme høyde, så det
+   ikke hopper når du bytter fane.
+   - **Fiender:**
+     - Alle 16 typer vises fire i bredden.
+     - Typer du har møtt, henger der som ekte fiender: samme tegning som i spillet, og de
+       blunker og puster. Ikke møtte vises som mørke flater med spørsmålstegn.
+     - Trykk på en fiende for å lese hva den gjør, og hvordan du slår den.
+     - Toppen viser «12 av 16 møtt».
+   - **Prestasjoner:** 14 stykker, hver med en gravert skive (se tabellen under). De du har
+     tatt, lyser i gull. Når du tar en ny, kommer et messingkort i spillet.
+   - **Beste runder:** de ti beste med plass, poeng, bølge, tid, treffprosent og dato, og et
+     merke for dagens utfordring.
+
+   | Prestasjon | Krav |
+   |---|---|
+   | Første knekk | første fiende |
+   | Bankeren | tre vegg-treff i én runde |
+   | Kjedereaksjon | kjede på fem |
+   | Snorkutter | tre snorer kappet i én runde |
+   | Bølgebryter | bølge 5 |
+   | Uten riper | en bølge uten å miste en knute |
+   | Kjempefall | Spinneren knust |
+   | Uten sjef | en Kommandør tatt ned |
+   | Lest og slått | Leseren truffet mens den er sliten |
+   | Tatt på fersken | Luringen truffet mens den sniker seg ned |
+   | Overbelastet | tre overbelastninger i én runde |
+   | Fem minutter | holdt ut i fem minutter |
+   | Mesterskytter | 90 % treff etter minst 40 skudd i en runde |
+   | Lagknuser | den som synker, knust mens partneren lokker |
+
+5. **Lagring:** prestasjoner og beste runder lagres i `Prefs` («Nullstill fremgang» sletter
+   dem).
+6. **Nye graverte ikoner:** pokal, skjold, krone, hjelm, øye, hette og piler.
+7. **Tester:**
+   - Testpakken passerer (import, oppstart, soak og bot på to frø).
+   - Seks runder med middels bot gir median 168 s, innenfor tidligere spenn (v7.52: 159 s,
+     v7.53: 184 s, v7.54: 202 s). Litt ned fra v7.54 fordi fiendene nå også leser vinden, og
+     fordi sky fiender hopper litt lenger unna.
+   - Vinden er sjekket numerisk: siktelinjen og kula driver like langt, i snitt 11,6 px.
+
+## v7.57 – Ingen musikk i spillet, og et elegant bølgeskifte
+
+v7.56 (hånlatter, ny miks, nye spor) ble tatt ut igjen etter tilbakemelding. Lyden er som i
+v7.55, med to endringer.
+
+1. **Ingen musikk under spill:** bare menyen har musikk. Når en runde starter, lukker
+   menymusikken seg (lavpass ned mot 900 Hz) og tones ut. Pause og game over er stille.
+   «Mesmerizing Galaxy» er fjernet fra spillet og krediteringen (−1,6 MB). Det som før
+   fulgte musikkens takt (lysdråper, pulser), går i sitt eget rolige tempo.
+2. **Koreografert bølgeskifte i tre steg** (før stablet 3–4 lydsignaler seg på ca. 2 s, og
+   fiendene kom 0,3 s etter tittelen):
+   - **Klarert:** siste knall og sakte film, så én kadens i klokkelyden fra tonestigen. Den
+     er en stigende c-moll-brytning som lander i en varm C-dur-akkord idet tiden går normalt
+     igjen.
+   - **Pust:** stille pause. Belønningen får én myk klokke på kadensens akkord.
+   - **Neste bølge:** en baklengs klang svulmer i 0,65 s og lander som én klokketone idet
+     «BØLGE N» settes. Fiendene kommer først 1,1 s etter tittelen.
+   - Pausen mellom bølgene er 2,9 s (før 2,0). Kadensen og løftet spilles på Strings-bussen
+     med hall og uten effektkompressor, så de beholder formen.
+3. **Målt i opptak (Movie Maker):** kadensen lander 0,8 s etter siste treff, belønningen
+   ca. 2 s, løftet 2,8 s og «BØLGE 2» 3,5 s, uten overlapp. Ingen musikk under spill
+   (under −90 dB).
+4. **Tester:** testpakken passerer. Seks runder med middels bot gir median 178 s (v7.55:
+   168 s), altså ingen endring i balansen.

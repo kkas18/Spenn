@@ -14,7 +14,7 @@ enum Wave { SPAWNING, CLEARING, BREAK }
 
 const EVENT_EVERY := 38.0
 const BREATHER := 4.0
-const WAVE_BREAK := 2.0
+const WAVE_BREAK := 2.9          # s (game time) from a cleared wave to the next title
 const HURRY_AT := 2            # this many left of a spent wave: they hurry
 # Habits: which side the player favours (-1 left .. 1 right, an average of
 # where the shots go). Spawns lean the other way, and past HABIT_TELL the
@@ -64,6 +64,9 @@ var extra_quota := 0             # enemies that got through this wave (x4)
 # kind acts one way in one wave and another way in the next.
 var style := {}
 var pulse := Pulse.BUILD
+# How far your skill moves the tactics along (-1 a wave later .. 1 a wave
+# earlier), set as each wave starts from wave 2 (see Game, Habits).
+var skill_shift := 0
 var pulse_t := 12.0
 var pulse_len := 12.0
 var _rng := RandomNumberGenerator.new()
@@ -92,6 +95,7 @@ func reset() -> void:
 	cols.resize(COLS)
 	cols.fill(0.0)
 	wave_mood = WaveMood.NORMAL
+	skill_shift = 0
 	_set_pulse(Pulse.BUILD)
 
 
@@ -212,9 +216,10 @@ func cold_u() -> float:
 
 
 func tactic() -> Tactic:
+	var w := wave + (skill_shift if wave >= 2 else 0)
 	var t := 0
 	for i in TACTIC_WAVE.size():
-		if wave >= TACTIC_WAVE[i]:
+		if w >= TACTIC_WAVE[i]:
 			t = i
 	return t as Tactic
 
@@ -384,6 +389,14 @@ func pick_kind(rng: RandomNumberGenerator) -> Target.Kind:
 		table.append([Target.Kind.PIPP, 0.9])
 	if i >= 2.2:
 		table.append([Target.Kind.PAKKIS, 0.55 + a * 0.5])
+	# The smart ones: the Sneak early (it teaches watching), the Seer once
+	# you shoot well, the Captain last (and never two at once, see Game).
+	if i >= 1.6:
+		table.append([Target.Kind.SNEAK, 0.6 + a * 0.6])
+	if i >= 2.3:
+		table.append([Target.Kind.SEER, 0.5 + a * 0.8])
+	if i >= 2.7:
+		table.append([Target.Kind.CAPTAIN, 0.4 + a * 0.5])
 	# The wave's mood tips the mix.
 	for e in table:
 		match wave_mood:

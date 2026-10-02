@@ -221,7 +221,8 @@ func _step_fibres(rd: float) -> void:
 	_drops = _drops.filter(func(d: Dictionary) -> bool: return d.t < d.dur + 0.1)
 	if Prefs.reduced_motion or l == null:
 		return
-	# Drops fall on the beat while the play track runs; in the menu, at an
+	# Drops fall on the beat while a track keeps time (none does now: the
+	# game plays without music); otherwise, and in the menu, at an
 	# unhurried random pace.
 	var b := Music.beat()
 	if b >= 0.0:
@@ -418,7 +419,7 @@ func _draw_wall_shadows() -> void:
 			_ink_l.draw_line(t.anchor + Vector2(0, 8), p, Color(sc, 0.1 * a), 2.0)
 		var stretch := 1.0
 		if t.kind == Target.Kind.ROD:
-			stretch = (Target.ROD_HALF + t.radius) / t.radius
+			stretch = (t.rod_half + t.radius) / t.radius
 		_layer.draw_set_transform(p, t.body_rot, Vector2(stretch, 1.0))
 		_layer.draw_texture_rect(SOFT, Rect2(-r, -r, r * 2.0, r * 2.0), false, Color(sc, al))
 	_layer.draw_set_transform(Vector2.ZERO)
