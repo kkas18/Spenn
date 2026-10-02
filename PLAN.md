@@ -2642,3 +2642,28 @@ Rettet:
      v7.53: 184 s, v7.54: 202 s). Litt ned fra v7.54 fordi fiendene nå også leser vinden, og
      fordi sky fiender hopper litt lenger unna.
    - Vinden er sjekket numerisk: siktelinjen og kula driver like langt, i snitt 11,6 px.
+
+## v7.57 – Ingen musikk i spillet, og et elegant bølgeskifte
+
+v7.56 (hånlatter, ny miks, nye spor) ble tatt ut igjen etter tilbakemelding. Lyden er som i
+v7.55, med to endringer.
+
+1. **Ingen musikk under spill:** bare menyen har musikk. Når en runde starter, lukker
+   menymusikken seg (lavpass ned mot 900 Hz) og tones ut. Pause og game over er stille.
+   «Mesmerizing Galaxy» er fjernet fra spillet og krediteringen (−1,6 MB). Det som før
+   fulgte musikkens takt (lysdråper, pulser), går i sitt eget rolige tempo.
+2. **Koreografert bølgeskifte i tre steg** (før stablet 3–4 lydsignaler seg på ca. 2 s, og
+   fiendene kom 0,3 s etter tittelen):
+   - **Klarert:** siste knall og sakte film, så én kadens i klokkelyden fra tonestigen. Den
+     er en stigende c-moll-brytning som lander i en varm C-dur-akkord idet tiden går normalt
+     igjen.
+   - **Pust:** stille pause. Belønningen får én myk klokke på kadensens akkord.
+   - **Neste bølge:** en baklengs klang svulmer i 0,65 s og lander som én klokketone idet
+     «BØLGE N» settes. Fiendene kommer først 1,1 s etter tittelen.
+   - Pausen mellom bølgene er 2,9 s (før 2,0). Kadensen og løftet spilles på Strings-bussen
+     med hall og uten effektkompressor, så de beholder formen.
+3. **Målt i opptak (Movie Maker):** kadensen lander 0,8 s etter siste treff, belønningen
+   ca. 2 s, løftet 2,8 s og «BØLGE 2» 3,5 s, uten overlapp. Ingen musikk under spill
+   (under −90 dB).
+4. **Tester:** testpakken passerer. Seks runder med middels bot gir median 178 s (v7.55:
+   168 s), altså ingen endring i balansen.

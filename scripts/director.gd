@@ -14,7 +14,7 @@ enum Wave { SPAWNING, CLEARING, BREAK }
 
 const EVENT_EVERY := 38.0
 const BREATHER := 4.0
-const WAVE_BREAK := 2.0
+const WAVE_BREAK := 2.9          # s (game time) from a cleared wave to the next title
 const HURRY_AT := 2            # this many left of a spent wave: they hurry
 # Habits: which side the player favours (-1 left .. 1 right, an average of
 # where the shots go). Spawns lean the other way, and past HABIT_TELL the

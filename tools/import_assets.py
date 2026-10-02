@@ -87,9 +87,8 @@ TARGET_RMS_DB = -20.0     # loudness of the active part of every sound
 PEAK_DB = -1.0
 
 # music name: (source mp3, loop length in samples or None, crossfade seconds)
+# Only the menu has music; the game itself plays without.
 MUSIC = {
-    # 124 BPM, 48 bars: the published loop version is cut on the bar.
-    "play": ("music_Mesmerizing_Galaxy_Loop.mp3", int(round(48 * 4 * 60.0 / 124.0 * 44100)), 0.0),
     # Not a loop: baked crossfade from the end back into the start.
     "menu": ("music_Dreamy_Flashback.mp3", None, 3.0),
 }
@@ -181,8 +180,8 @@ def build_whoosh():
         sf.write(os.path.join(OUT, "sfx", "whoosh_%d.ogg" % v), m, sr, format="OGG", subtype="VORBIS")
 
 
-# The play track sits in C minor, so the combo notes climb C D Eb G, the
-# notes of its chord plus the ninth: any of them sounds right over any bar.
+# The combo notes climb C D Eb G (C minor, its chord plus the ninth), so any
+# run of them sounds right together; the wave cadence ends in the same key.
 NOTES = [60, 62, 63, 67, 72, 74, 75, 79, 84]
 
 
@@ -270,6 +269,65 @@ def _pluck(f0, sr, dur, bright, decay, seed):
     fo = int(0.12 * sr)
     y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
     return y
+
+
+def _hall_tail(y, sr, rt60=1.8, seed=5):
+    """The wet tail of `y` in a synthetic hall: decaying noise that darkens
+    as it fades (a falling one-pole low-pass), FFT-convolved."""
+    n = int(rt60 * 1.2 * sr)
+    t = np.arange(n) / sr
+    rng = np.random.default_rng(seed)
+    ir = rng.standard_normal(n) * np.exp(-6.91 * t / rt60)
+    cut = 6000.0 * np.exp(-t / (rt60 * 0.5)) + 900.0
+    a = 1.0 - np.exp(-2 * np.pi * cut / sr)
+    z = 0.0
+    for i in range(n):
+        z += (ir[i] - z) * a[i]
+        ir[i] = z
+    ir = np.concatenate([np.zeros(int(0.012 * sr)), ir])
+    size = 1 << int(np.ceil(np.log2(len(y) + len(ir))))
+    wet = np.fft.irfft(np.fft.rfft(y, size) * np.fft.rfft(ir, size), size)[:len(y) + len(ir) - 1]
+    return wet / np.abs(wet).max()
+
+
+def build_cues():
+    """The two musical cues between waves, in the tines of the combo ladder
+    (played on the Strings bus, in its hall, without the effects'
+    compressor):
+      cadence  a wave cleared: a rising C minor arpeggio that lands, rolled
+               like a harp, on a warm C major chord (the minor third lifted:
+               the wave is won), and rings out;
+      wave_in  the next wave: the hall of its note played backwards, swelling
+               for 0.65 s into the note itself, struck as the title lands."""
+    sr = 44100
+
+    def hz(m):
+        return 440.0 * 2 ** ((m - 69) / 12.0)
+
+    dur = 2.6
+    y = np.zeros(int(dur * sr))
+    arp = [(0.0, 67, 0.5), (0.085, 72, 0.58), (0.17, 75, 0.66), (0.255, 79, 0.74)]
+    chord = [(0.36, 60, 0.45), (0.372, 72, 0.8), (0.384, 76, 0.72), (0.396, 79, 0.66), (0.408, 84, 0.5)]
+    for t0, m, amp in arp + chord:
+        k = int(t0 * sr)
+        note = _tine(hz(m), sr, dur - t0) * amp
+        y[k:k + len(note)] += note
+    fo = int(0.3 * sr)
+    y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
+    sf.write(os.path.join(OUT, "sfx", "cadence_0.ogg"), _level(y, sr), sr, format="OGG", subtype="VORBIS")
+    swell = 0.65
+    hit = _tine(hz(60), sr, 1.8) * 0.7 + _tine(hz(72), sr, 1.8) * 0.8
+    # (Skip the hall's pre-delay and its build-up, so the swell runs at its
+    # fullest straight into the note.)
+    tail = _hall_tail(hit, sr)[int(0.045 * sr):]
+    rise = tail[:int(swell * sr)][::-1] * np.linspace(0.0, 1.0, int(swell * sr)) ** 1.5
+    y = np.zeros(int((swell + 1.8) * sr))
+    y[:len(rise)] += rise * 0.35 * np.abs(hit).max()
+    k = int(swell * sr)
+    y[k:k + len(hit)] += hit
+    fo = int(0.3 * sr)
+    y[-fo:] *= np.linspace(1.0, 0.0, fo) ** 2
+    sf.write(os.path.join(OUT, "sfx", "wave_in_0.ogg"), _level(y, sr), sr, format="OGG", subtype="VORBIS")
 
 
 def build_harp():
@@ -415,5 +473,6 @@ if __name__ == "__main__":
     build_harp()
     build_surge()
     build_voices()
+    build_cues()
     build_music()
     build_particles()

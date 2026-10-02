@@ -65,6 +65,12 @@ const SHOVE_WAVE := 2          # from here, moody ones shove their neighbours
 const SHOVE_AIM := 0.3         # s the aim must hold before one reacts
 const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
 const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
+# Between waves (see _clear_wave and _wave_tick): the cadence's chord lands
+# this far into its cue, the swell runs this long into the next title, and
+# the title shows this long before the first of the new wave come.
+const CADENCE_LAND := 0.36
+const SWELL_LEAD := 0.65
+const INTRO_HOLD := 1.1
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 3
@@ -179,6 +185,7 @@ var _rng := RandomNumberGenerator.new()
 var _acc := 0.0
 var _state_t := 0.0
 var _spawn_t := 0.0
+var _intro_hold := 0.0          # a new wave's title is showing: nothing comes yet
 var _rush_left := 0
 var _rush_t := 0.0
 var _chain := 0
@@ -360,7 +367,6 @@ func _clear_field() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
-	Music.danger = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
@@ -467,6 +473,7 @@ func _start_run() -> void:
 	_gold_drop_t = 20.0
 	_rush_left = 0
 	_spawn_t = 2.5
+	_intro_hold = 0.0
 	_last_tap = -10.0
 	director.reset()
 	habits.restore({} if daily else Prefs.habits)
@@ -766,7 +773,6 @@ func _process(delta: float) -> void:
 		_spawn_minions()
 		_medic_work()
 		_boss_stages()
-		Music.intensity = clampf(director.intensity() / 5.0 + (0.3 if director.pulse == Director.Pulse.PEAK else 0.0), 0.0, 1.0)
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
@@ -879,14 +885,15 @@ func _pace(delta: float) -> void:
 		director.finale_done = true
 		_spawn_finale()
 	_spawn_t -= delta
-	if director.wave_state == Director.Wave.SPAWNING:
+	_intro_hold = maxf(0.0, _intro_hold - delta)
+	if director.wave_state == Director.Wave.SPAWNING and _intro_hold <= 0.0:
 		if _alive_count() < director.alive_floor():
 			_spawn_t = minf(_spawn_t, 0.35)
 		if _spawn_t <= 0.0:
 			_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
 			if _alive_count() < director.alive_cap():
 				_spawn_one(_pick_kind())
-	match director.poll_event():
+	match (director.poll_event() if _intro_hold <= 0.0 else Director.Event.NONE):
 		Director.Event.FORMATION:
 			var k := director.formation_kind(_rng)
 			_spawn_formation(k, 5 + mini(3, int(director.intensity())))
@@ -920,7 +927,6 @@ func _pace(delta: float) -> void:
 	backdrop.streak_lit = mini(streak, 9)
 	var in_finale := director.wave_progress() >= Director.FINALE_AT and director.wave_state != Director.Wave.BREAK
 	backdrop.finale = in_finale
-	Music.finale = in_finale
 	# Now and then a gold drop gathers on a fibre.
 	if director.wave >= GOLD_DROP_WAVE and state == State.PLAYING:
 		_gold_drop_t -= delta
@@ -939,7 +945,6 @@ func _pace(delta: float) -> void:
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
-	Music.danger = _tension
 	# The team's nerve: shooting well makes them sweat; a breach (or a run
 	# of misses) makes them cocky for a while.
 	_cocky_t = maxf(0.0, _cocky_t - delta)
@@ -1002,21 +1007,25 @@ func _wave_tick(delta: float) -> void:
 			if alive == 0 and _rush_left == 0:
 				_clear_wave()
 		Director.Wave.BREAK:
+			var was := director.wave_break
 			director.wave_break -= delta
+			# The swell into the next wave, timed so its note lands as the
+			# title is set.
+			if was > SWELL_LEAD and director.wave_break <= SWELL_LEAD:
+				Sfx.cue("wave_in")
 			if director.wave_break <= 0.0:
 				director.next_wave()
 				_wave_clean = true
 				if director.wave >= 5:
 					_feat("wave5")
 				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
-				_spawn_t = 0.3
+				# The title is set first; the first of the wave come as it fades.
+				_intro_hold = INTRO_HOLD
 				# A new wave, a new colour theme, eased in.
 				Pal.next_theme()
 				var wm := director.roll_mood()
 				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
 				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
-				Sfx.play("streak", 0.85)
-				Sfx.play("whoosh", 0.6, -4.0)
 				_schedule_hazard()
 				if director.wave == ACRO_WAVE and not _acro_told:
 					_acro_told = true
@@ -1035,7 +1044,6 @@ func _clear_wave() -> void:
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.46)
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
-	Sfx.strum([0, 2, 4, 5, 7], 0.05, -2.0)
 	fx.shock(mid, 8.0, 380.0, 0.6)
 	# The wave's signature: light from the last kill, and a line of it
 	# sweeping the field from the rail down to the danger line.
@@ -1053,11 +1061,14 @@ func _clear_wave() -> void:
 			rail.flex(x, 2.5))
 	fx.focus(_last_kill, 0.05 if calm else 0.1, 1.4)
 	fx.aberrate(2.0 if calm else 4.0)
-	fx.slowmo(0.4 if calm else 0.2, 0.5 if calm else 0.8)
-	Music.duck(4.0, 0.9)
-	Sfx.play("burst", 0.55, -2.0)
-	Sfx.play("clear")
-	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
+	var slow := 0.5 if calm else 0.8
+	fx.slowmo(0.4 if calm else 0.2, slow)
+	# One sound for the wave won, after the last one's own: the cadence,
+	# its chord landing as time comes back (real time: the slow motion
+	# does not stretch it).
+	Motion.after(maxf(0.0, slow - CADENCE_LAND), func() -> void:
+		if state == State.PLAYING:
+			Sfx.cue("cadence"))
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
@@ -1692,7 +1703,6 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.aberrate(5.0)
 		fx.flash(at, 80.0, Pal.GOLD_LIGHT)
 		backdrop.rescue()
-		Music.duck(3.5, 0.6)
 		Sfx.phrase([4, 5, 6, 7], 0.07, 0.0)
 		Sfx.haptic_pattern("record")
 	elif s == Skill.CLUTCH:
@@ -1703,7 +1713,6 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.slowmo(0.4, 0.3)
 		fx.focus(at, 0.045, 0.8)
 		fx.aberrate(4.0)
-		Music.duck(2.0, 0.3)
 	_charge(SKILL_CHARGE[s])
 
 
@@ -1746,10 +1755,8 @@ func _begin_overload() -> void:
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
-	Music.duck(4.0, 0.8)
 	hud.bar.hot = true
 	_show_mult()
-	Music.overload = true
 	Sfx.play("rise")
 	Sfx.haptic_pattern("record")
 
@@ -1777,7 +1784,6 @@ func _end_overload(quiet: bool) -> void:
 	Ball.hot = false
 	backdrop.heat = 0.0
 	hud.bar.hot = false
-	Music.overload = false
 	fx.set_base_time(1.0)
 	for t in targets:
 		t.scared = false
@@ -1829,7 +1835,6 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 		fx.focus(t.pos, 0.09, 1.3)
 		fx.aberrate(6.0)
 		fx.slowmo(0.3, 0.6)
-		Music.duck(4.0, 0.7)
 		Sfx.haptic(80, 0.9)
 	if kind == Target.Kind.CAPTAIN:
 		smarts.captain_down(t)
@@ -2272,7 +2277,6 @@ func _set_dark(v: float) -> void:
 	_dark = v
 	Target.dark = v
 	backdrop.dark = v
-	Music.dark = v
 	rail.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), v)
 
 
@@ -2439,8 +2443,8 @@ func _grant_perk() -> void:
 		hud.bar.knot_shake = 1.0
 	_apply_perks()
 	hud.perk_toast(id, perks[id])
-	Sfx.play("clear", 1.25, -4.0)
-	Sfx.phrase([2, 4, 7], 0.06, -5.0)
+	# A single soft chime, a note of the cadence's chord still ringing.
+	Sfx.note(7, -6.0)
 	Sfx.haptic_pattern("light")
 
 
@@ -3007,7 +3011,6 @@ func _begin_flow() -> void:
 	flows += 1
 	hud.flow_hot = true
 	backdrop.flow = true
-	Music.flow = true
 	var mid := Vector2(layout.center_x, layout.danger_y - 60.0)
 	hud.card(Loc.t("flow.title"), Loc.t("flow.sub"))
 	fx.shock(mid, 6.0, 420.0, 0.5)
@@ -3037,7 +3040,6 @@ func _end_flow(quiet: bool) -> void:
 	flow_t = 0.0
 	hud.flow_hot = false
 	backdrop.flow = false
-	Music.flow = false
 	if was:
 		flow = 0.0
 		_show_mult()

@@ -221,7 +221,8 @@ func _step_fibres(rd: float) -> void:
 	_drops = _drops.filter(func(d: Dictionary) -> bool: return d.t < d.dur + 0.1)
 	if Prefs.reduced_motion or l == null:
 		return
-	# Drops fall on the beat while the play track runs; in the menu, at an
+	# Drops fall on the beat while a track keeps time (none does now: the
+	# game plays without music); otherwise, and in the menu, at an
 	# unhurried random pace.
 	var b := Music.beat()
 	if b >= 0.0:

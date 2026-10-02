@@ -81,6 +81,9 @@ const MIX := {
 	# overload: a chord swelling in, and falling away (made by the import tool)
 	"rise": [-10.0, 0.0, 1],
 	"fall": [-13.0, 0.0, 1],
+	# between waves (made by the import tool, played on the Strings bus by cue)
+	"cadence": [-9.0, 0.0, 1],
+	"wave_in": [-11.0, 0.0, 1],
 	# creature voices (made by the import tool), pitched onto the key
 	"voice_up": [-17.0, 0.0, 1],
 	"voice_taunt": [-18.0, 0.0, 1],
@@ -91,7 +94,7 @@ const MIX := {
 const VOICE_STEPS := [1.0, 1.1225, 1.1892, 1.4983, 2.0]
 
 # Tuned tines, one per step of the ladder the kills climb (C D Eb G over
-# the octaves, the play track's key). Played at their own pitch, no drift.
+# the octaves). Played at their own pitch, no drift.
 const NOTE_COUNT := 9
 const NOTE_DB := -17.0
 
@@ -100,6 +103,8 @@ const NOTE_DB := -17.0
 # on their own bus with a longer room so they sit behind the action.
 # Off: over the music the plucked strings were one layer too many; the
 # fibres and the tension string stay silent (their light and motion stay).
+# The bus now carries the cues between waves (see cue): its hall, and no
+# compressor, let them keep their shape and ring out.
 const STRINGS_ON := false
 const HARP_COUNT := 11          # C minor pentatonic, C4..C6
 const HARP_POOL := 6
@@ -288,7 +293,7 @@ func phrase(steps: Array, gap := 0.07, volume_db := 0.0) -> void:
 			Motion.after(gap * k, func() -> void: note(i, volume_db - 1.5 * k))
 
 
-## How long until the next sixteenth of the play track (s), or 0 when it
+## How long until the next sixteenth of a track keeping time (s), or 0 when it
 ## is not playing: string notes land on the music's grid.
 func to_grid() -> float:
 	var b := Music.beat()
@@ -341,6 +346,13 @@ func strum(steps: Array, gap := 0.045, volume_db := 0.0) -> void:
 			harp(i, db, false)
 		else:
 			get_tree().create_timer(d, true, false, true).timeout.connect(func() -> void: harp(i, db, false))
+
+
+## A musical cue between waves (`cadence` when one is cleared, `wave_in`
+## into the next): on the Strings bus, in its hall, at its own pitch.
+func cue(name: String, volume_db := 0.0) -> void:
+	if _takes.has(name):
+		_string(_takes[name][0], 1.0, float(MIX[name][0]) + minf(volume_db, 0.0))
 
 
 ## The tension string, plucked: tuned up the scale as it tightens (`tight`
