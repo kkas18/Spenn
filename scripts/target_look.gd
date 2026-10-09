@@ -53,8 +53,9 @@ func body_xform() -> Transform2D:
 		var e := exp(-(t - 0.06) * 12.0) * cos((t - 0.06) * 36.0)
 		sx = 1.0 + 0.25 * e
 		sy = 1.0 - 0.2 * e
-	# Jelly deforms through its spokes; a rigid shell does not squash.
-	var amt := 0.35 if soft else 0.0
+	# Jelly's own shape modes carry the blow (see dent); this is only a
+	# touch of cartoon on top. A rigid shell does not squash.
+	var amt := 0.12 if soft else 0.0
 	sx = 1.0 + (sx - 1.0) * amt
 	sy = 1.0 + (sy - 1.0) * amt
 	# Idle breathing: jelly swells and settles, shells barely move.
@@ -151,7 +152,7 @@ func _draw_chain(ci: RID) -> void:
 	_one_col[0] = Color(0.0, 0.0, 0.0, 0.5 * a)
 	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_sh)
 	RenderingServer.canvas_item_add_set_transform(ci, _xf.affine_inverse())
-	_one_col[0] = Color(Pal.METAL_LIGHT.lightened(0.35).lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5), a)
+	_one_col[0] = Color(Pal.METAL_LIGHT.lightened(0.35).lerp(_base_color(), 0.1).lerp(Pal.INK_DIM, danger * 0.5).darkened(0.45 * maxf(0.0, -seen_depth())), a)
 	RenderingServer.canvas_item_add_triangle_array(ci, _c_idx, _c_pts, _one_col, _c_uv)
 
 
@@ -205,6 +206,9 @@ func _tremble() -> Vector2:
 		j += Vector2(sin(_clock * 31.0), cos(_clock * 27.0)) * 0.35
 	if trait_kind == Trait.JITTERY and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 23.0 + _hue_shift * 50.0), cos(_clock * 19.0)) * 0.3
+	if wait_t > 0.0 and phase == Phase.HANGING:
+		# Coiled, waiting for the release: a fine, fast tremble.
+		j += Vector2(sin(_clock * 61.0), cos(_clock * 53.0) * 0.4) * 0.8
 	if (panicked() or hurry) and phase == Phase.HANGING:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	var ew := evolve_warning()
@@ -259,9 +263,14 @@ func _update_eye(delta: float) -> void:
 		goal = Vector2(-0.75, -0.65)
 	var quick := 0.15
 	if not is_nan(_queued_x):
-		# Mid-feint: the eye darts to where it is really going (the tell).
+		# About to move, or mid-feint: the eye darts to where it is really
+		# going (the tell).
 		goal = Vector2(signf(_queued_x - anchor.x), -0.15).rotated(-body_rot)
 		quick = 0.45
+	elif rush_t > 0.0:
+		# Sinking for the team: eyes down, on the line.
+		goal = Vector2(0.0, 0.85).rotated(-body_rot)
+		quick = 0.3
 	_pupil = _pupil.lerp(goal, Pal.damp(quick, delta))
 
 
@@ -399,6 +408,11 @@ func _draw_rope(ci: RID) -> void:
 	var style := rope_style()
 	var hw := (1.6 if soft else 1.1) + danger * 0.3
 	var band := B_CORD if soft else B_WIRE
+	# Further back, a string is finer and sinks into the room's darkness
+	# like its body (see color), so strings crossing in two planes read as
+	# one behind the other.
+	var sd := seen_depth()
+	var ds := depth_scale()
 	match style:
 		Rope.BUNGEE:
 			# Elastic: thick, thinner the more it is stretched.
@@ -413,6 +427,7 @@ func _draw_rope(ci: RID) -> void:
 			# Only a dark core here; the links are drawn on the face layer.
 			hw = 0.7
 			band = B_WIRE
+	hw *= ds
 	_r_pts.resize(m * 2)
 	_r_uv.resize(m * 2)
 	var run := 0.0
@@ -452,6 +467,8 @@ func _draw_rope(ci: RID) -> void:
 		Rope.BUNGEE:
 			# Latex: the slingshot's amber, darkened.
 			sc = Pal.BAND.darkened(0.15).lerp(tint, 0.15)
+	var back := maxf(0.0, -sd)
+	sc = Color(sc.darkened(0.45 * back).lerp(Color("2A3140"), 0.15 * back).lightened(0.06 * maxf(0.0, sd)), sc.a)
 	if style != Rope.CHAIN and style != Rope.MONO:
 		# A soft shadow on the wall behind, so the string stands off it.
 		_r_sh.resize(_r_uv.size())
@@ -467,24 +484,85 @@ func _draw_rope(ci: RID) -> void:
 		_draw_chain(ci)
 
 
-## Rebuilds the mesh when the kind or health changed; jelly then moves its
-## surface vertices by the spring field every frame.
+## Rebuilds the mesh when the kind, health or size changed; jelly then
+## moves its surface by its shape modes every frame (see _jelly_apply).
 func _mesh_update() -> void:
-	var key := int(kind) * 16 + hp
+	var key := (int(kind) * 16 + hp) * 4096 + int(radius * 8.0)
 	if key != _m_key:
 		_m_key = key
 		_mesh_build()
+		_m_amp = -1.0
 	if soft:
-		for k in _m_dv.size():
-			var i := _m_dv[k]
-			_m_pts[i] = _m_base[i] + _m_dd[k] * _soft_lin(_m_ds[k])
+		_jelly_apply()
 
 
-func _soft_lin(s: float) -> float:
-	var i := int(s)
-	var w := s - float(i)
-	i = i % SOFT_N
-	return lerpf(_sd[i], _sd[(i + 1) % SOFT_N], w * w * (3.0 - 2.0 * w))
+var _jd := PackedFloat32Array()     # per angle this frame: the surface's departure (px)
+var _jc := PackedFloat32Array()     # ... and the turn of its normal (cos, sin)
+var _js := PackedFloat32Array()
+
+
+## Moves the jelly's surface: each vertex along its direction by the sum of
+## the shape modes at its angle, softly capped (L·tanh(d/L), L a fraction
+## of the radius) so a hard blow never folds the outline. Normals turn with
+## the surface's slope, so a dent shades as a dent. Skipped while the shape
+## holds still (to a twentieth of a pixel).
+func _jelly_apply() -> void:
+	var n := _ja.size()
+	if _m_sig.size() != n:
+		_m_sig.resize(n)
+		_m_amp = -1.0
+	if _m_amp >= 0.0:
+		var moved := 0.0
+		for i in n:
+			moved = maxf(moved, absf(_ja[i] - _m_sig[i]))
+		if moved < 0.05:
+			return
+	for i in n:
+		_m_sig[i] = _ja[i]
+	_m_amp = 1.0
+	var lim := JELLY_LIMIT * radius
+	var inv_lim := 1.0 / lim
+	var a2 := _ja[0]
+	var b2 := _ja[1]
+	var a3 := _ja[2]
+	var b3 := _ja[3]
+	var a4 := _ja[4]
+	var b4 := _ja[5]
+	var a5 := _ja[6]
+	var b5 := _ja[7]
+	var na := _m_cs.size() / 8
+	_jd.resize(na)
+	_jc.resize(na)
+	_js.resize(na)
+	for a in na:
+		var o := a * 8
+		var c2 := _m_cs[o]
+		var s2 := _m_cs[o + 1]
+		var c3 := _m_cs[o + 2]
+		var s3 := _m_cs[o + 3]
+		var c4 := _m_cs[o + 4]
+		var s4 := _m_cs[o + 5]
+		var c5 := _m_cs[o + 6]
+		var s5 := _m_cs[o + 7]
+		var d := a2 * c2 + b2 * s2 + a3 * c3 + b3 * s3 + a4 * c4 + b4 * s4 + a5 * c5 + b5 * s5
+		var dp := 2.0 * (b2 * c2 - a2 * s2) + 3.0 * (b3 * c3 - a3 * s3) + 4.0 * (b4 * c4 - a4 * s4) + 5.0 * (b5 * c5 - a5 * s5)
+		var t := tanh(d * inv_lim)
+		_jd[a] = lim * t
+		# The outline r(θ) = R + d(θ) has its normal along (r, -r'):
+		# the rest normal turned by δ, cos δ = r/|..|, sin δ = -r'/|..|.
+		var q := dp * (1.0 - t * t) / (radius + lim * t)
+		var k := 1.0 / sqrt(1.0 + q * q)
+		_jc[a] = k
+		_js[a] = -q * k
+	for v in _m_dv.size():
+		var i := _m_dv[v]
+		var a := _m_da[v]
+		_m_pts[i] = _m_base[i] + _m_dd[v] * _jd[a]
+		var nn := _m_dn[v]
+		if nn != Vector2.ZERO:
+			var c := _jc[a]
+			var s := _js[a]
+			_m_uv[i] = Vector2(_m_uv0[i].x - nn.x + nn.x * c - nn.y * s, nn.x * s + nn.y * c)
 
 
 func _mesh_colors(col: Color) -> void:
@@ -510,7 +588,10 @@ func _mesh_build() -> void:
 	_m_idx.clear()
 	_m_dv.clear()
 	_m_dd.clear()
-	_m_ds.clear()
+	_m_dn.clear()
+	_m_da.clear()
+	_m_cs.clear()
+	_m_ang.clear()
 	_m_mem = 0
 	_m_dim = Vector2i(-1, -1)
 	var b := B_JELLY if soft else B_SHELL
@@ -546,13 +627,25 @@ func _mesh_build() -> void:
 			_bar(Vector2(0, -r + 8.0), Vector2(0, -r * 0.55), 1.0, b)
 			_bar(Vector2(0, r - 8.0), Vector2(0, r * 0.55), 1.0, b)
 		Kind.ROD:
-			_capsule(ROD_HALF, r, b)
+			_capsule(rod_half, r, b)
 		Kind.DROP:
 			_fan(_drop_outline(r), Vector2(0.0, -r * 0.1), b)
 		Kind.PIPP:
 			_fan(_round(r, 20), Vector2.ZERO, b)
 		Kind.PAKKIS:
 			_fan(_round(r, 24), Vector2.ZERO, b)
+		Kind.CAPTAIN:
+			# A shell badge: an octagon rimmed in a raised band.
+			_fan(_round(r - 2.0, 8), Vector2.ZERO, b)
+			_poly_tube(_round(r - 2.5, 8), 2.5, b)
+		Kind.SEER:
+			_fan(_round(r, 22), Vector2(-r * 0.15, -r * 0.2), b)
+		Kind.SNEAK:
+			# A pear hanging point-down: the Dråpe's outline turned over.
+			var pear := _drop_outline(r)
+			for i in pear.size():
+				pear[i] = Vector2(pear[i].x, minf(-pear[i].y, r * 1.35))
+			_fan(pear, Vector2(0.0, r * 0.1), b)
 		Kind.SHADE:
 			_fan(_crescent(r), Vector2(-r * 0.55, 0.0), b)
 		Kind.BOSS:
@@ -565,6 +658,8 @@ func _mesh_build() -> void:
 			_fan(_hex(r, 2), Vector2.ZERO, B_METAL)
 			_poly_tube(_hex(r - 2.0, 2), 2.0, b)
 	_m_pts = _m_base.duplicate()
+	_m_uv0 = _m_uv.duplicate()
+	_m_ang.clear()
 
 
 ## Adds a vertex: position, surface normal (length 1 on a silhouette, 0
@@ -579,8 +674,25 @@ func _v(p: Vector2, n: Vector2, band: float, sil: bool, dd := Vector2.ZERO) -> i
 	if soft and dd != Vector2.ZERO:
 		_m_dv.append(i)
 		_m_dd.append(dd)
-		_m_ds.append(fposmod(p.angle(), TAU) / TAU * SOFT_N)
+		_m_dn.append(n)
+		_m_da.append(_jelly_angle(p.angle()))
 	return i
+
+
+## The index of angle `th` in this mesh's table of mode values (cos mθ and
+## sin mθ for each jelly mode), adding it if new: vertices at the same angle
+## (a tube's inner and outer edge) share one entry.
+func _jelly_angle(th: float) -> int:
+	th = fposmod(th, TAU)
+	var key := int(roundf(th * 2000.0)) % int(roundf(TAU * 2000.0))
+	if _m_ang.has(key):
+		return _m_ang[key]
+	var idx := _m_cs.size() / 8
+	_m_ang[key] = idx
+	for m: int in JELLY_M:
+		_m_cs.append(cos(m * th))
+		_m_cs.append(sin(m * th))
+	return idx
 
 
 ## How the jelly surface moves a point of a polygonal body: outward, less

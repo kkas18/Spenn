@@ -16,6 +16,7 @@ var cut_any := false
 var hit_rail := false
 var pos := Vector2.ZERO
 var prev_pos := Vector2.ZERO   # a physics step ago (render interpolation)
+var serial := 0                # counts every ball ever fired (a pooled ball's new flight is a new serial)
 var vel := Vector2.ZERO
 var age := 0.0
 var hits := 0                  # targets hit during this shot
@@ -55,7 +56,12 @@ func _ready() -> void:
 	_halo.draw.connect(_draw_halo)
 
 
+static var _fired := 0
+
+
 func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
+	_fired += 1
+	serial = _fired
 	active = true
 	special = is_special
 	shot_id = shot

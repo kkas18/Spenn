@@ -54,6 +54,7 @@ var _m_settings: Token
 var _m_lang: Lever
 var _m_stats: Token
 var _m_skins: Token
+var _m_coll: Token
 var _m_daily: IconBtn
 var _inner: StyleBoxFlat
 var run_secs := 0              # the run's time so far, for the pause summary
@@ -66,6 +67,12 @@ var _stats: Control
 var _stats_box: VBoxContainer
 var _skins: Control
 var _skins_box: VBoxContainer
+var _coll: Control                 # the collection: enemies, achievements, best runs
+var _coll_box: VBoxContainer
+var _coll_tab := 0
+var _coll_pick := -1               # the enemy shown in the collection's detail card
+var _coll_name: Label
+var _coll_desc: Label
 
 
 func _init() -> void:
@@ -100,6 +107,9 @@ func _ready() -> void:
 	var kp := _panel()
 	_skins = kp[0]
 	_skins_box = kp[1]
+	var cp := _panel()
+	_coll = cp[0]
+	_coll_box = cp[1]
 	_over = GameOver.new()
 	_over.hud = self
 	_over.theme = _theme
@@ -114,7 +124,7 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins]:
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins, _coll]:
 		c.position = Vector2.ZERO
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
@@ -122,7 +132,7 @@ func setup(layout: Layout) -> void:
 	_b_resume.custom_minimum_size = Vector2(minf(500.0, l.size.x - 180.0), touch + 8.0)
 	for b: IconBtn in [_b_restart, _b_settings, _b_menu]:
 		b.custom_minimum_size = Vector2(touch, touch)
-	for b: Token in [_m_settings, _m_stats, _m_skins]:
+	for b: Token in [_m_settings, _m_coll, _m_stats, _m_skins]:
 		b.custom_minimum_size = Vector2(touch, touch)
 	_s_back.custom_minimum_size = Vector2(touch * 0.85, touch * 0.85)
 	var row_w := minf(640.0, l.size.x - 2.0 * Tok.SPACE_LG - 2.0 * Tok.SPACE_MD)
@@ -189,7 +199,7 @@ func show_menu() -> void:
 		Motion.to(c, "modulate:a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.15)
 	# The tokens drop in on their cords, one after another.
 	var i := 0
-	for t: Token in [_m_settings, _m_stats, _m_skins]:
+	for t: Token in [_m_settings, _m_coll, _m_stats, _m_skins]:
 		t.enter(0.1 + 0.09 * i)
 		i += 1
 	_m_lang.enter(0.4)
@@ -369,7 +379,7 @@ func intro(name: String, desc: String) -> void:
 
 ## A panel is up: cards and enemy intros hold back so nothing overlaps it.
 func modal_open() -> bool:
-	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible
+	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible or _coll.visible
 
 
 func intro_busy() -> bool:
@@ -809,6 +819,8 @@ func _build_menu_bar() -> void:
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_menu_bar.add_child(gap)
+	_m_coll = _token("trophy", func() -> void: _open_meta(_coll, _coll_box, _fill_collection))
+	_menu_bar.add_child(_m_coll)
 	_m_stats = _token("chart", func() -> void: _open_meta(_stats, _stats_box, _fill_stats))
 	_menu_bar.add_child(_m_stats)
 	_m_skins = _token("ball", func() -> void: _open_meta(_skins, _skins_box, _fill_skins))
@@ -853,6 +865,13 @@ func _close_meta(p: Control) -> void:
 	_close_panel(p)
 	scrim_to(0.0, 0.25)
 	show_menu()
+	if p == _coll:
+		# The live enemies in the collection go once it has faded, so none
+		# keeps drawing behind the game.
+		Motion.after(Motion.FAST + 0.1, func() -> void:
+			if not _coll.visible:
+				for c in _coll_box.get_children():
+					c.queue_free())
 
 
 ## "ENEMIES BROKEN" -> "Enemies broken": the panels' quieter voice.
@@ -949,6 +968,285 @@ func _fill_skins(box: VBoxContainer) -> void:
 		gauge.frac = clampf(float(Prefs.skin_points - prev) / maxf(1.0, need - prev), 0.0, 1.0)
 		gauge.custom_minimum_size = Vector2(0, 18)
 		box.add_child(gauge)
+
+
+## The collection: the enemies you have met (alive, as they hang in a
+## run), the achievements and your best runs, one tab at a time. The page
+## keeps one height across tabs so the panel does not jump.
+const COLL_PAGE := Vector2(560, 760)
+
+
+func _fill_collection(box: VBoxContainer) -> void:
+	box.add_child(_panel_title("coll.title"))
+	var tabs := HBoxContainer.new()
+	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	tabs.add_theme_constant_override("separation", Tok.SPACE_SM)
+	for i in 3:
+		var b := TabPill.new()
+		b.hud = self
+		b.key = ["coll.enemies", "coll.feats", "coll.best"][i]
+		b.on = i == _coll_tab
+		b.custom_minimum_size = Vector2(182, 58)
+		b.pressed.connect(func() -> void: _act(func() -> void: _coll_switch(i)))
+		tabs.add_child(b)
+	box.add_child(tabs)
+	var page := VBoxContainer.new()
+	page.custom_minimum_size = COLL_PAGE
+	page.add_theme_constant_override("separation", Tok.SPACE_SM)
+	box.add_child(page)
+	match _coll_tab:
+		0:
+			_fill_codex(page)
+		1:
+			_fill_feats(page)
+		_:
+			_fill_runs(page)
+
+
+## Another tab: the page is rebuilt in place (same height, so the panel
+## stays put) and the back button goes back under it.
+func _coll_switch(i: int) -> void:
+	if i == _coll_tab:
+		return
+	_coll_tab = i
+	for c in _coll_box.get_children():
+		_coll_box.remove_child(c)
+		c.queue_free()
+	_fill_collection(_coll_box)
+	var back := button(func() -> void: _close_meta(_coll))
+	back.text = Loc.t("settings.back")
+	back.custom_minimum_size = Vector2(maxf(320.0, 48.0 * l.dp), maxf(60.0, Tok.TOUCH_MIN_DP * l.dp))
+	_coll_box.add_child(_spacer(Tok.SPACE_SM))
+	_coll_box.add_child(back)
+	Sfx.play("tick", 1.1, -6.0)
+
+
+## Every kind, four to a row: the ones met hang there alive; tap one to
+## read what it does and how to beat it.
+func _fill_codex(page: VBoxContainer) -> void:
+	var met := 0
+	var kinds := Target.Kind.size()
+	for k in kinds:
+		if Hud.kind_met(k):
+			met += 1
+	var sub := label(20, Tok.TEXT_SECONDARY, _font_body)
+	sub.text = sentence(Loc.t("coll.met") % [met, kinds])
+	page.add_child(sub)
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	if _coll_pick < 0 or not Hud.kind_met(_coll_pick):
+		_coll_pick = -1
+		for k in kinds:
+			if Hud.kind_met(k):
+				_coll_pick = k
+				break
+	for k in kinds:
+		var t := CodexTile.new()
+		t.hud = self
+		t.kind = k
+		t.met = Hud.kind_met(k)
+		t.custom_minimum_size = Vector2(132, 132)
+		t.theme_type_variation = &"RowButton"
+		t.pressed.connect(func() -> void:
+			_coll_pick = k
+			for o in grid.get_children():
+				o.queue_redraw()
+			_codex_detail())
+		grid.add_child(t)
+	page.add_child(grid)
+	_coll_name = label(28, Tok.TEXT_PRIMARY, _font_display)
+	_coll_desc = label(21, Tok.TEXT_SECONDARY, _font_body)
+	_coll_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_coll_desc.custom_minimum_size = Vector2(COLL_PAGE.x, 0)
+	page.add_child(_spacer(Tok.SPACE_XS))
+	page.add_child(_coll_name)
+	page.add_child(_coll_desc)
+	_codex_detail()
+
+
+func _codex_detail() -> void:
+	if _coll_name == null or not is_instance_valid(_coll_name):
+		return
+	if _coll_pick < 0:
+		_coll_name.text = sentence(Loc.t("coll.unknown"))
+		_coll_desc.text = Loc.t("coll.unknown.sub")
+		return
+	var parts := Loc.t("enemy.%d" % _coll_pick).split("|")
+	_coll_name.text = sentence(parts[0])
+	_coll_desc.text = parts[1] if parts.size() > 1 else ""
+
+
+## Met in some run: its plain kind, or any variant of it, has been introduced.
+static func kind_met(k: int) -> bool:
+	if Prefs.seen.has(k):
+		return true
+	for key in Prefs.seen:
+		var v := int(key)
+		if v >= 100 and (v - 100) / 10 == k:
+			return true
+	return false
+
+
+func _fill_feats(page: VBoxContainer) -> void:
+	var sub := label(20, Tok.TEXT_SECONDARY, _font_body)
+	sub.text = sentence(Loc.t("coll.won") % [Feats.count(), Feats.LIST.size()])
+	page.add_child(sub)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 8)
+	for f: Array in Feats.LIST:
+		var r := FeatRow.new()
+		r.hud = self
+		r.id = f[0]
+		r.glyph_id = f[1]
+		r.custom_minimum_size = Vector2(275, 90)
+		grid.add_child(r)
+	page.add_child(grid)
+
+
+func _fill_runs(page: VBoxContainer) -> void:
+	if Prefs.best_runs.is_empty():
+		var none := label(22, Tok.TEXT_SECONDARY, _font_body)
+		none.text = sentence(Loc.t("coll.none"))
+		page.add_child(_spacer(Tok.SPACE_XL))
+		page.add_child(none)
+		return
+	for i in Prefs.best_runs.size():
+		var r := RunRow.new()
+		r.hud = self
+		r.rank = i + 1
+		r.run = Prefs.best_runs[i]
+		r.custom_minimum_size = Vector2(COLL_PAGE.x, 68)
+		page.add_child(r)
+
+
+## The collection's tab: a pill, gold when it is the one showing.
+class TabPill extends UIButton:
+	var hud: Hud
+	var key := ""
+	var on := false
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var r := Rect2(Vector2(3, 3), size - Vector2(6, 6))
+		if on:
+			Hud.pill(self, r, Tok.PRIMARY)
+		else:
+			Hud.pill(self, r, Tok.SURFACE_HI)
+		var f := hud.body_font()
+		var fs := 20
+		var t := Hud.sentence(Loc.t(key))
+		while fs > 15 and f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > size.x - 20.0:
+			fs -= 1
+		var base := size.y * 0.5 + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
+		draw_string(f, Vector2(0, base), t, HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, Tok.ON_PRIMARY if on else Tok.TEXT_SECONDARY)
+
+
+## One enemy in the collection. Met: the real enemy hangs in the tile,
+## blinking and breathing, drawn as in a run (see Target.pose). Not met
+## yet: a dark shape with a question mark.
+class CodexTile extends UIButton:
+	var hud: Hud
+	var kind := 0
+	var met := false
+	var _t: Target
+	var _box: StyleBoxFlat
+
+	func _ready() -> void:
+		super()
+		_box = StyleBoxFlat.new()
+		_box.set_corner_radius_all(18)
+		_box.anti_aliasing = true
+		if met:
+			_t = Target.new()
+			add_child(_t)
+			resized.connect(_place)
+			_place()
+
+	func _place() -> void:
+		if _t == null:
+			return
+		_t.pose(kind as Target.Kind, size * 0.5 + Vector2(0.0, 4.0))
+		# The biggest (the Spinneren with its plates) are shown smaller.
+		var reach := _t.radius + (26.0 if kind == Target.Kind.BOSS else 8.0)
+		if kind == Target.Kind.ROD:
+			reach = _t.rod_half + _t.radius
+		var k := minf(1.0, (size.x * 0.5 - 8.0) / reach)
+		_t.scale = Vector2(k, k)
+		_t.position = (size * 0.5 + Vector2(0.0, 4.0)) * (1.0 - k)
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var picked := hud._coll_pick == kind
+		_box.bg_color = Color("12151B")
+		_box.border_color = Tok.PRIMARY_HI if picked else Tok.BORDER
+		_box.set_border_width_all(3 if picked else 1)
+		draw_style_box(_box, Rect2(Vector2(2, 2), size - Vector2(4, 4)))
+		if not met:
+			var c := size * 0.5
+			draw_circle(c, 30.0, Color(Tok.SURFACE_HI, 1.0), true, -1.0, true)
+			draw_arc(c, 30.0, 0.0, TAU, 32, Tok.BORDER_HI, 2.0, true)
+			var f := hud.display_font()
+			var base := c.y + (f.get_ascent(34) - f.get_descent(34)) * 0.5
+			draw_string(f, Vector2(0, base), "?", HORIZONTAL_ALIGNMENT_CENTER, size.x, 34, Tok.TEXT_FAINT)
+
+
+## An achievement: an engraved brass disc with its glyph (dim, with no
+## shine, until it is won), its name and how to win it.
+class FeatRow extends Control:
+	var hud: Hud
+	var id := ""
+	var glyph_id := ""
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var won := Feats.has(id)
+		var c := Vector2(40, size.y * 0.5)
+		Hud.brass_disc(self, c, 28.0, Color("0E1015"), 1.0 if won else 0.35)
+		var gc := Tok.PRIMARY_HI if won else Color(Tok.TEXT_FAINT, 0.8)
+		Hud.glyph(self, glyph_id, c + Vector2(0.6, 0.9), 1.05, Color(0, 0, 0, 0.35))
+		Hud.glyph(self, glyph_id, c, 1.05, gc)
+		var parts := Loc.t("feat." + id).split("|")
+		var fb := hud.body_font()
+		var x := 80.0
+		draw_string(fb, Vector2(x, size.y * 0.5 - 6.0), Hud.sentence(parts[0]), HORIZONTAL_ALIGNMENT_LEFT, size.x - x, 19, Tok.TEXT_PRIMARY if won else Tok.TEXT_SECONDARY)
+		if parts.size() > 1:
+			draw_multiline_string(fb, Vector2(x, size.y * 0.5 + 16.0), parts[1], HORIZONTAL_ALIGNMENT_LEFT, size.x - x - 4.0, 15, 2, Tok.TEXT_SECONDARY if won else Tok.TEXT_FAINT)
+
+
+## One of the best runs: its place on a brass disc, the score, and the
+## wave, time and hit rate, with the day (and a tag for a daily run).
+class RunRow extends Control:
+	var hud: Hud
+	var rank := 1
+	var run: Dictionary = {}
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var c := Vector2(32, size.y * 0.5)
+		Hud.brass_disc(self, c, 24.0)
+		var fn := hud.num_font()
+		var fb := hud.body_font()
+		var rs := str(rank)
+		draw_string(fn, Vector2(c.x - 24.0, c.y + 8.0), rs, HORIZONTAL_ALIGNMENT_CENTER, 48.0, 22, Tok.PRIMARY_HI)
+		var x := 72.0
+		draw_string(fn, Vector2(x, size.y * 0.5 - 2.0), Hud._group(int(run.get("score", 0))), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Tok.TEXT_PRIMARY)
+		var secs := int(run.get("secs", 0))
+		var line := Loc.t("coll.run") % [int(run.get("wave", 1)), "%d:%02d" % [secs / 60, secs % 60], int(run.get("acc", 0))]
+		draw_string(fb, Vector2(x, size.y * 0.5 + 22.0), Hud.sentence(line), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Tok.TEXT_SECONDARY)
+		var day := int(run.get("day", 0))
+		var when := "%02d.%02d.%d" % [day % 100, (day / 100) % 100, day / 10000] if day > 0 else ""
+		if bool(run.get("daily", false)):
+			when = Hud.sentence(Loc.t("coll.daily")) + " · " + when
+		draw_string(fb, Vector2(0, size.y * 0.5 + 6.0), when, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 8.0, 16, Tok.TEXT_FAINT)
+		draw_line(Vector2(x, size.y - 1.0), Vector2(size.x, size.y - 1.0), Tok.HAIRLINE, 1.0)
 
 
 ## The thin brass gauge under the ball gallery (progress to the next ball).
@@ -1161,6 +1459,33 @@ static func glyph(ci: CanvasItem, id: String, c: Vector2, s: float, col: Color) 
 			ci.draw_arc(c, 8.5 * s, 0.0, TAU, 32, col, lw, true)
 			line.call([Vector2(12, 12), Vector2(12, 6.5)])
 			line.call([Vector2(12, 12), Vector2(16, 14)])
+		"trophy":
+			line.call([Vector2(7, 4), Vector2(17, 4), Vector2(16.2, 10), Vector2(12, 13.5), Vector2(7.8, 10), Vector2(7, 4)])
+			ci.draw_arc(o + Vector2(7, 7.5) * s, 3.4 * s, PI * 0.5, PI * 1.5, 10, col, lw, true)
+			ci.draw_arc(o + Vector2(17, 7.5) * s, 3.4 * s, -PI * 0.5, PI * 0.5, 10, col, lw, true)
+			line.call([Vector2(12, 13.5), Vector2(12, 18)])
+			line.call([Vector2(8, 20.5), Vector2(16, 20.5)])
+		"shield":
+			line.call([Vector2(12, 3.5), Vector2(19.5, 6.5), Vector2(18.5, 14), Vector2(12, 20.5), Vector2(5.5, 14), Vector2(4.5, 6.5), Vector2(12, 3.5)])
+		"crown":
+			line.call([Vector2(4, 17.5), Vector2(4, 7), Vector2(8.5, 11.5), Vector2(12, 5), Vector2(15.5, 11.5), Vector2(20, 7), Vector2(20, 17.5), Vector2(4, 17.5)])
+		"helmet":
+			ci.draw_arc(o + Vector2(12, 15.5) * s, 7.5 * s, PI, TAU, 16, col, lw, true)
+			line.call([Vector2(3, 15.5), Vector2(21, 15.5)])
+			line.call([Vector2(12, 8), Vector2(12, 3.5)])
+		"eye":
+			# An almond (two arcs meeting at the corners) and its pupil.
+			ci.draw_arc(o + Vector2(12, 17.6) * s, 10.6 * s, -PI * 0.823, -PI * 0.177, 14, col, lw, true)
+			ci.draw_arc(o + Vector2(12, 6.4) * s, 10.6 * s, PI * 0.177, PI * 0.823, 14, col, lw, true)
+			ci.draw_circle(c, 3.2 * s, col, true, -1.0, true)
+		"hood":
+			ci.draw_arc(o + Vector2(12, 14) * s, 8.0 * s, PI, TAU, 16, col, lw, true)
+			line.call([Vector2(4, 14), Vector2(4, 20)])
+			line.call([Vector2(20, 14), Vector2(20, 20)])
+			ci.draw_circle(o + Vector2(12, 13.5) * s, 2.4 * s, col, true, -1.0, true)
+		"arrows":
+			line.call([Vector2(6, 5), Vector2(12, 10.5), Vector2(18, 5)])
+			line.call([Vector2(6, 12.5), Vector2(12, 18), Vector2(18, 12.5)])
 		"calendar":
 			line.call([Vector2(4, 6), Vector2(20, 6), Vector2(20, 19.5), Vector2(4, 19.5), Vector2(4, 6)])
 			line.call([Vector2(4, 10), Vector2(20, 10)])

@@ -8,6 +8,7 @@ extends "res://scripts/target_look.gd"
 var _ink := Ink.new()              # the face's drawing, sent as one triangle array
 var _face_tick := 0
 var _face_phase := 0
+var _eo := Vector2.ZERO            # the eye being drawn: its centre in body space
 static var _made := 0
 
 
@@ -16,8 +17,7 @@ func _ready() -> void:
 	_made += 1
 	_pts.resize(N)
 	_prev.resize(N)
-	_sd.resize(SOFT_N)
-	_sv.resize(SOFT_N)
+	_jelly_reset()
 	_setup_canvas()
 	visible = false
 
@@ -62,7 +62,9 @@ func _draw_arm(f: Ink) -> void:
 	if up.y > 0.0:
 		up = -up
 	var near := radius + 16.0
-	var far := maxf(near, dist - (arm_victim.radius if is_instance_valid(arm_victim) else 18.0) + 4.0)
+	# Reach for the neighbour's side, but never further than an arm's
+	# length (a jelly arm stretches, it does not cross the room).
+	var far := clampf(dist - (arm_victim.radius if arm_victim != null else 18.0) + 4.0, near, radius + ARM_REACH)
 	# The hand's angle from the neighbour's direction toward straight up and
 	# over (raised), and its distance from the centre.
 	var th := 0.0
@@ -163,8 +165,9 @@ func _process(delta: float) -> void:
 	_update_eye(delta)
 	_jit = _tremble()
 	_xf = body_xform()
+	_fxf = _xf * jelly_stretch()
 	_body.transform = _xf
-	_face.transform = _xf
+	_face.transform = _fxf
 	_body.queue_redraw()
 	# The face follows the body every frame through its transform; its
 	# drawing (blinks, glances, moods) is refreshed at half rate, alternate
@@ -204,7 +207,7 @@ func _face_ink() -> void:
 	if phase == Phase.OFF or delay > 0.0:
 		return
 	var f := _ink
-	var inv := _xf.affine_inverse()
+	var inv := _fxf.affine_inverse()
 	f.draw_set_transform_matrix(inv)
 	if fray_t > 0.0 and _attached and rope_alpha > 0.0:
 		# Frayed: a few loose fibres at the nearest point, blinking faster
@@ -252,8 +255,8 @@ func _face_ink() -> void:
 			var d := Vector2.from_angle(-orbit * 0.35 + i * TAU / 24.0)
 			var long := i % 6 == 0
 			f.draw_line(pos + d * rr, pos + d * (rr + (5.0 if long else 2.5)), Color(Tok.PRIMARY, 0.5 if long else 0.28), 1.2, true)
-		# Health: brass studs, dark once spent.
-		var hp_max: int = HP[kind]
+		# Health: brass studs, dark once spent (not on show in the collection).
+		var hp_max: int = 0 if posed else HP[kind]
 		for i in hp_max:
 			var x := (i - (hp_max - 1) * 0.5) * 11.0
 			var p := pos + Vector2(x, radius + 40.0)
@@ -332,6 +335,15 @@ func _scar(a: float) -> void:
 ## once it cracks), bolts on the sentry, a hub on the reel.
 func _details(col: Color) -> void:
 	var f := _ink
+	if rush_t > 0.0 and phase == Phase.HANGING:
+		# Sinking fast for the team: two arrows under it, running down.
+		var k := minf(1.0, rush_t / 0.3) * col.a
+		for i in 2:
+			var y := radius + 9.0 + i * 8.5 + fposmod(_clock * 16.0, 8.5)
+			var c := Color(Pal.CORAL.lerp(Pal.EYE, 0.25), 0.95 * k * (1.0 - i * 0.35))
+			var chev := PackedVector2Array([Vector2(-7.0, y - 4.5), Vector2(0.0, y + 2.0), Vector2(7.0, y - 4.5)])
+			f.draw_polyline(chev, Color(Pal.PUPIL, 0.45 * c.a), 4.4, true)
+			f.draw_polyline(chev, c, 2.6, true)
 	if mood == Mood.GRUMPY and anger > 0.35 and phase == Phase.HANGING:
 		# Steam from the top: two wisps rising and fading, faster when angrier.
 		for sx: float in [-1.0, 1.0]:
@@ -390,6 +402,19 @@ func _details(col: Color) -> void:
 		var sh := (view_dir.rotated(-body_rot) * radius * 0.35)
 		f.draw_line(Vector2(-radius * 0.7, radius * 0.1) + sh, Vector2(-radius * 0.1, -radius * 0.7) + sh, g, 3.0, true)
 		f.draw_line(Vector2(-radius * 0.35, radius * 0.45) + sh * 1.4, Vector2(radius * 0.2, -radius * 0.1) + sh * 1.4, Color(g, g.a * 0.6), 1.6, true)
+	if kind == Kind.SNEAK:
+		# Its hood: a dark cowl over the crown, and when caught out, a
+		# little tune whistled to nobody in particular.
+		var hood := Color(col.darkened(0.55), col.a)
+		f.draw_arc(Vector2(0, radius * 0.08), radius * 0.86, PI * 1.02, PI * 1.98, 24, hood, radius * 0.42, true)
+		f.draw_arc(Vector2(0, radius * 0.08), radius * 0.66, PI * 1.08, PI * 1.92, 20, Color(col.darkened(0.7), 0.6 * col.a), 1.4, true)
+		if innocent > 0.5:
+			var k := fposmod(_clock * 0.9, 1.0)
+			var np := Vector2(radius * 0.7 + k * 10.0, -radius * 0.2 - k * 18.0)
+			var na := (innocent - 0.5) * 2.0 * sin(PI * k) * col.a
+			f.disc(np, 2.6, Color(Pal.EYE, 0.85 * na))
+			f.draw_line(np + Vector2(2.4, 0), np + Vector2(2.4, -9), Color(Pal.EYE, 0.85 * na), 1.3, true)
+			f.draw_line(np + Vector2(2.4, -9), np + Vector2(6.0, -7), Color(Pal.EYE, 0.85 * na), 1.3, true)
 	if kind == Kind.SPLIT:
 		# Where it will come apart: a stitched seam across the top and the
 		# bottom of the rim.
@@ -414,6 +439,22 @@ func _details(col: Color) -> void:
 	var rv := Color(col.lightened(0.45), col.a)
 	var sh := Color(0, 0, 0, 0.4 * col.a)
 	match kind:
+		Kind.CAPTAIN:
+			# A brass helmet: a dome over the crown with a lit rim and a
+			# short crest, and brass pips at the shoulders. It flashes as an
+			# order goes out.
+			var brass := Color(Tok.PRIMARY.lerp(Tok.PRIMARY_HI, order_flash / 0.7), col.a)
+			var hc := Vector2(0, -radius * 0.12)
+			f.draw_arc(hc + Vector2(1.0, 1.5), radius * 0.86, PI * 1.08, PI * 1.92, 22, sh, radius * 0.3, true)
+			f.draw_arc(hc, radius * 0.86, PI * 1.08, PI * 1.92, 22, brass, radius * 0.3, true)
+			f.draw_arc(hc, radius * 0.72, PI * 1.1, PI * 1.9, 20, Color(Tok.PRIMARY_LO, col.a), 1.6, true)
+			f.draw_arc(hc, radius * 0.98, PI * 1.25, PI * 1.55, 10, Color(Tok.PRIMARY_HI, 0.8 * col.a), 1.4, true)
+			var top := hc + Vector2(0, -radius * 1.0)
+			f.draw_colored_polygon(PackedVector2Array([top + Vector2(-3, 2), top + Vector2(0, -9), top + Vector2(3, 2)]), brass)
+			for sx: float in [-1.0, 1.0]:
+				var ep := Vector2(sx * radius * 0.82, radius * 0.18)
+				f.disc(ep + Vector2(0.7, 0.9), 3.4, sh)
+				f.disc(ep, 3.2, brass)
 		Kind.HEAVY:
 			if hp > 1:
 				# Its armour: a riveted steel band round the ring (gone once
@@ -580,6 +621,7 @@ func _eye_parts() -> void:
 ## One eye at `eo` (body space) of radius `er`; `side` is -1/1 for one of a
 ## pair (the Spinneren's), 0 for a single eye.
 func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
+	_eo = eo
 	var bx := Transform2D(0.0, eo)
 	f.draw_set_transform_matrix(bx)
 	var wide := maxf(1.0, _open)
@@ -613,6 +655,9 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 				upper = maxf(upper, 0.26)
 			Kind.BOSS:
 				upper = maxf(upper, 0.18)
+	if kind == Kind.SEER and tired_t > 0.0:
+		# Spent after a read: drowsy, lids heavy, no dodging.
+		upper = maxf(upper, 0.8)
 	var lower := 0.0
 	if squint or tele_t > 0.0:
 		lower = 0.22
@@ -631,6 +676,9 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	if trait_kind == Trait.SHY and not aimed and not incoming:
 		# Shy: never quite meets your eye.
 		look = Vector2(-look.x * 0.6, look.y * 0.4 + 0.35)
+	if kind == Kind.SNEAK and innocent > 0.05:
+		# Caught: it looks anywhere but at you (up and away, whistling).
+		look = look.lerp(Vector2(0.62, -0.62), innocent)
 	var pupil := look * (er - pr - 1.2)
 	f.disc(pupil, pr, Pal.PUPIL)
 	f.disc(pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
@@ -641,13 +689,28 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 		_lid(f, er, lower, false, skin, lash)
 	if mood == Mood.CUTE:
 		var cheek := minf(er * 1.3, radius * 0.6)
+		var cr := minf(er * 0.3, radius * 0.18)
 		for sx: float in [-1.0, 1.0]:
-			f.disc(Vector2(sx * cheek, er * 0.95), minf(er * 0.3, radius * 0.18), Color(Pal.SHADE, 0.35))
+			f.disc(_in_hole(Vector2(sx * cheek, er * 0.95), cr + 1.0), cr, Color(Pal.SHADE, 0.35))
 		f.disc(pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
 	if trait_kind == Trait.SHY and aimed and soft:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
-			f.disc(Vector2(sx * er * 1.25, er * 0.95), er * 0.32, Color(Pal.SHADE, 0.28))
+			f.disc(_in_hole(Vector2(sx * er * 1.25, er * 0.95), er * 0.32 + 1.0), er * 0.32, Color(Pal.SHADE, 0.28))
+	if kind == Kind.SEER:
+		# The monocle: a brass rim round the eye on a fine chain; it flashes
+		# the instant the Seer reads your shot.
+		var rim := Color(Tok.PRIMARY, 0.95)
+		f.draw_arc(Vector2(0.8, 1.0), er + 3.0, 0.0, TAU, 28, Color(0, 0, 0, 0.35), 2.6, true)
+		f.draw_arc(Vector2.ZERO, er + 3.0, 0.0, TAU, 28, rim, 2.2, true)
+		f.draw_arc(Vector2.ZERO, er + 3.0, PI * 1.1, PI * 1.5, 8, Color(Tok.PRIMARY_HI, 0.9), 1.2, true)
+		var c0 := Vector2.from_angle(PI * 0.3) * (er + 3.0)
+		f.draw_polyline(PackedVector2Array([c0, c0 + Vector2(4, 6), c0 + Vector2(6, 14), c0 + Vector2(5, 20)]), Color(Tok.PRIMARY, 0.7), 1.2, true)
+		if read_flash > 0.0:
+			var k := read_flash / 0.45
+			var gp := Vector2(-er * 0.5, -er * 0.5)
+			f.draw_line(gp - Vector2(6, 0) * k, gp + Vector2(6, 0) * k, Color(1, 1, 1, 0.9 * k), 1.6, true)
+			f.draw_line(gp - Vector2(0, 6) * k, gp + Vector2(0, 6) * k, Color(1, 1, 1, 0.9 * k), 1.6, true)
 	if kind == Kind.DROP and upper < 0.5:
 		# The Dråpe's lashes: three quick flicks over the eye.
 		for k in 3:
@@ -727,7 +790,10 @@ func _lid_curve(f: Ink, er: float, y: float, bow: float, col: Color, w: float) -
 
 
 ## One brow, as a fine arc above the eye; `inner_y` and `outer_y` are in
-## eye radii (negative is up), `sx` the side.
+## eye radii (negative is up), `sx` the side. On a ring body the brow runs
+## from the dark hole onto the ring; there it is drawn in line-art style, a
+## pale stroke edged in dark, so it reads as a brow on either (a bare pale
+## stroke on the ring reads as a scratch).
 func _brow(f: Ink, er: float, sx: float, inner_y: float, outer_y: float, col: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 6:
@@ -735,4 +801,21 @@ func _brow(f: Ink, er: float, sx: float, inner_y: float, outer_y: float, col: Co
 		var x := lerpf(0.28, 1.12, t) * er * sx
 		var y := lerpf(inner_y, outer_y, t) * er - sin(PI * t) * er * 0.12
 		pts.append(Vector2(x, y))
+	if _hole() > 0.0:
+		f.draw_polyline(pts, Color(Pal.PUPIL, col.a * 0.7), 3.6, true)
+		f.draw_polyline(pts, Color(col, minf(1.0, col.a * 1.25)), 1.5, true)
+		return
 	f.draw_polyline(pts, col, 1.7, true)
+
+
+## A point of the face (eye space, see _eo) kept `pad` px inside a ring
+## body's hole, so what is drawn on the dark recess never spills onto the
+## ring itself.
+func _in_hole(p: Vector2, pad: float) -> Vector2:
+	var h := _hole()
+	if h <= 0.0:
+		return p
+	var q := _eo + p
+	var lim := maxf(1.0, h - pad)
+	var l := q.length()
+	return p if l <= lim or l < 0.001 else q * (lim / l) - _eo

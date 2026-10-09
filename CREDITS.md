@@ -7,10 +7,6 @@ re-encoding, seamless loops, texture downsizing). Nothing else is changed.
 
 ## Music — CC BY 4.0
 
-- «Mesmerizing Galaxy» (loop version), Kevin MacLeod (incompetech.com)
-  Licensed under Creative Commons: By Attribution 4.0 License
-  http://creativecommons.org/licenses/by/4.0/
-  → `assets/music/play.ogg`
 - «Dreamy Flashback», Kevin MacLeod (incompetech.com)
   Licensed under Creative Commons: By Attribution 4.0 License
   http://creativecommons.org/licenses/by/4.0/

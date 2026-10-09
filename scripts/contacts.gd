@@ -22,6 +22,7 @@ func _init(game: Game) -> void:
 ## so a struck target can nudge its neighbours.
 func target_contacts() -> void:
 	var sc := g.layout.scale
+	Target.rope_clock += 1
 	# Broad phase: the hanging bodies once, each with how far its shape can
 	# reach from its centre, so far-apart pairs are dropped on two
 	# subtractions before any closest-point work.
@@ -32,7 +33,7 @@ func target_contacts() -> void:
 			t.update_rope_box()
 		if t.is_hittable():
 			_hang.append(t)
-			_reach.append(t.shape_radius() + (Target.ROD_HALF if t.kind == Target.Kind.ROD else 0.0))
+			_reach.append(t.shape_radius() + (t.rod_half if t.kind == Target.Kind.ROD else 0.0))
 	var n := _hang.size()
 	for i in n:
 		var a := _hang[i]
@@ -62,6 +63,12 @@ func target_contacts() -> void:
 			a.pos -= corr * ia
 			c.pos += corr * ic
 			var contact := pa + nrm * a.shape_radius()
+			# Jelly resting against a neighbour flattens where they touch, a
+			# quiet patch that lasts as long as the contact (see Target.press);
+			# only a real knock (below) sets it wobbling.
+			var flat := (rr - dist) * 0.5 + 1.2
+			a.press(contact, flat)
+			c.press(contact, flat)
 			var rel := a.vel - c.vel
 			var closing := rel.dot(nrm)
 			if closing <= 0.0:
@@ -77,8 +84,9 @@ func target_contacts() -> void:
 				f_imp = -tan.normalized() * minf(tan.length() / (ia + ic), j_imp * 0.35)
 			a.push(-nrm * j_imp + f_imp, contact)
 			c.push(nrm * j_imp - f_imp, contact)
-			a.dent(contact, closing * 0.8)
-			c.dent(contact, closing * 0.8)
+			if closing > 70.0:
+				a.dent(contact, closing * 0.8)
+				c.dent(contact, closing * 0.8)
 			a.bump(-nrm, closing)
 			c.bump(nrm, closing)
 			# Billiards: a target sent flying by a hit takes a neighbour with it.
@@ -113,7 +121,7 @@ func target_contacts() -> void:
 		for o in _pushers:
 			if o == t:
 				continue
-			var r := o.shape_radius() + (Target.ROD_HALF if o.kind == Target.Kind.ROD else 0.0) + 2.0
+			var r := o.shape_radius() + (o.rod_half if o.kind == Target.Kind.ROD else 0.0) + 2.0
 			if o.pos.x + r < box.position.x or o.pos.x - r > box.end.x or o.pos.y + r < box.position.y or o.pos.y - r > box.end.y:
 				continue
 			# Hanging bodies and falling ones alike push strings aside.

@@ -51,6 +51,9 @@ func _drag(p: Vector2) -> void:
 
 func _process(_d: float) -> bool:
 	frame += 1
+	if frame == 1:
+		# A fresh player to the enemies every run, so runs compare.
+		root.get_node("Prefs").habits = {}
 	game = current_scene
 	if game == null or not ("layout" in game):
 		return false
@@ -71,7 +74,7 @@ func _process(_d: float) -> bool:
 		return false
 	if game.state == game.get_script().get_script_constant_map()["State"]["GAME_OVER"]:
 		var d = game.director
-		print("RESULT seed=%d time=%.0fs score=%d acc=%d%% over=%d wave=%d" % [rng.seed, d.elapsed, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave])
+		print("RESULT seed=%d time=%.0fs score=%d acc=%d%% over=%d wave=%d %s" % [rng.seed, d.elapsed, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave, game.mind.report()])
 		quit()
 		return false
 	if frame > 60 * 60 * 12:

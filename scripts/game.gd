@@ -65,6 +65,12 @@ const SHOVE_WAVE := 2          # from here, moody ones shove their neighbours
 const SHOVE_AIM := 0.3         # s the aim must hold before one reacts
 const WAVE_MOOD_KEY := ["", "wmood.calm", "wmood.chaos", "wmood.grumpy", "wmood.cute"]
 const WAVE_MOOD_COL := [Color.WHITE, Color("9CC8FF"), Color("F29CC8"), Color("F0A36A"), Color("FFB8D8")]
+# Between waves (see _clear_wave and _wave_tick): the cadence's chord lands
+# this far into its cue, the swell runs this long into the next title, and
+# the title shows this long before the first of the new wave come.
+const CADENCE_LAND := 0.36
+const SWELL_LEAD := 0.65
+const INTRO_HOLD := 1.1
 # Acrobatics: from ACRO_WAVE a low, exposed target now and then swings over
 # to a neighbour's rope, and a friend may catch one whose rope was cut.
 const ACRO_WAVE := 3
@@ -167,6 +173,9 @@ var slingshot: Slingshot
 var hud: Hud
 var fx: Fx
 var contacts: Contacts   # the contact physics (scripts/contacts.gd)
+var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
+var mind: Mind           # how every enemy answers your aim (scripts/mind.gd)
+var habits := Habits.new()  # what they know of you, kept between runs (scripts/habits.gd)
 var backdrop: Backdrop
 var stage: MenuStage
 var targets: Array[Target] = []
@@ -176,6 +185,7 @@ var _rng := RandomNumberGenerator.new()
 var _acc := 0.0
 var _state_t := 0.0
 var _spawn_t := 0.0
+var _intro_hold := 0.0          # a new wave's title is showing: nothing comes yet
 var _rush_left := 0
 var _rush_t := 0.0
 var _chain := 0
@@ -196,6 +206,8 @@ var _deny_cd := 0.0
 var _intro_queue: Array[Target] = []
 var _heat := 0.0                # overload's warm vignette, eased
 var _habit_told := false
+var _punish_told := false
+var _wave_clean := true         # no knot lost this wave (see the "clean" achievement)
 var _last_kill := Vector2.ZERO
 var _cocky_t := 0.0             # after a breach the survivors get cocky
 var daily := false              # this run is the daily challenge
@@ -228,6 +240,8 @@ var _jolt_cd := 0.0
 
 func _ready() -> void:
 	contacts = Contacts.new(self)
+	smarts = Smarts.new(self)
+	mind = Mind.new(self)
 	_rng.randomize()
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
@@ -353,7 +367,6 @@ func _clear_field() -> void:
 	charge = 0.0
 	rail.charge = 0.0
 	_heat = 0.0
-	Music.danger = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
 	_vignette.set_shader_parameter("strength", 0.55)
@@ -429,6 +442,8 @@ func _start_run() -> void:
 	skill_counts = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 	waves_cleared = 0
 	_habit_told = false
+	_punish_told = false
+	_wave_clean = true
 	_tactic_told = 0
 	flows = 0
 	_evolve_told = false
@@ -458,8 +473,12 @@ func _start_run() -> void:
 	_gold_drop_t = 20.0
 	_rush_left = 0
 	_spawn_t = 2.5
+	_intro_hold = 0.0
 	_last_tap = -10.0
 	director.reset()
+	habits.restore({} if daily else Prefs.habits)
+	habits.begin_run()
+	mind.reset()
 	hud.bar.score = 0
 	hud.bar.shown_score = 0.0
 	hud.bar.lives = lives
@@ -494,6 +513,7 @@ func _on_record_broken() -> void:
 	fx.sparks(at, Pal.GOLD_LIGHT, 18)
 	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
 	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
+	fx.moment(at, Pal.GOLD_LIGHT, 0.7)
 	Sfx.play("record")
 	Sfx.strum([5, 6, 7, 8, 9, 10], 0.04, -2.0)
 	Sfx.haptic_pattern("record")
@@ -679,6 +699,14 @@ func _run_intros() -> void:
 	Sfx.play("intro")
 
 
+## The director's pick, with one house rule: a single Kommandør at a time.
+func _pick_kind() -> Target.Kind:
+	var k := director.pick_kind(_rng)
+	if k == Target.Kind.CAPTAIN and _any_kind(Target.Kind.CAPTAIN):
+		return Target.Kind.RING
+	return k
+
+
 func _best_slot(used: Array[float], slots: int) -> float:
 	var best_x := layout.center_x
 	var best_d := -1.0
@@ -745,7 +773,6 @@ func _process(delta: float) -> void:
 		_spawn_minions()
 		_medic_work()
 		_boss_stages()
-		Music.intensity = clampf(director.intensity() / 5.0 + (0.3 if director.pulse == Director.Pulse.PEAK else 0.0), 0.0, 1.0)
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
@@ -858,14 +885,15 @@ func _pace(delta: float) -> void:
 		director.finale_done = true
 		_spawn_finale()
 	_spawn_t -= delta
-	if director.wave_state == Director.Wave.SPAWNING:
+	_intro_hold = maxf(0.0, _intro_hold - delta)
+	if director.wave_state == Director.Wave.SPAWNING and _intro_hold <= 0.0:
 		if _alive_count() < director.alive_floor():
 			_spawn_t = minf(_spawn_t, 0.35)
 		if _spawn_t <= 0.0:
 			_spawn_t = director.spawn_interval(_boss_alive()) * _rng.randf_range(0.8, 1.2)
 			if _alive_count() < director.alive_cap():
-				_spawn_one(director.pick_kind(_rng))
-	match director.poll_event():
+				_spawn_one(_pick_kind())
+	match (director.poll_event() if _intro_hold <= 0.0 else Director.Event.NONE):
 		Director.Event.FORMATION:
 			var k := director.formation_kind(_rng)
 			_spawn_formation(k, 5 + mini(3, int(director.intensity())))
@@ -899,7 +927,6 @@ func _pace(delta: float) -> void:
 	backdrop.streak_lit = mini(streak, 9)
 	var in_finale := director.wave_progress() >= Director.FINALE_AT and director.wave_state != Director.Wave.BREAK
 	backdrop.finale = in_finale
-	Music.finale = in_finale
 	# Now and then a gold drop gathers on a fibre.
 	if director.wave >= GOLD_DROP_WAVE and state == State.PLAYING:
 		_gold_drop_t -= delta
@@ -918,7 +945,6 @@ func _pace(delta: float) -> void:
 	# Tension: the vignette closes in a little while a target is near the line.
 	var want := clampf(backdrop.danger, 0.0, 1.0)
 	_tension = lerpf(_tension, want, Pal.damp(0.05, delta))
-	Music.danger = _tension
 	# The team's nerve: shooting well makes them sweat; a breach (or a run
 	# of misses) makes them cocky for a while.
 	_cocky_t = maxf(0.0, _cocky_t - delta)
@@ -981,17 +1007,25 @@ func _wave_tick(delta: float) -> void:
 			if alive == 0 and _rush_left == 0:
 				_clear_wave()
 		Director.Wave.BREAK:
+			var was := director.wave_break
 			director.wave_break -= delta
+			# The swell into the next wave, timed so its note lands as the
+			# title is set.
+			if was > SWELL_LEAD and director.wave_break <= SWELL_LEAD:
+				Sfx.cue("wave_in")
 			if director.wave_break <= 0.0:
 				director.next_wave()
-				_spawn_t = 0.3
+				_wave_clean = true
+				if director.wave >= 5:
+					_feat("wave5")
+				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
+				# The title is set first; the first of the wave come as it fades.
+				_intro_hold = INTRO_HOLD
 				# A new wave, a new colour theme, eased in.
 				Pal.next_theme()
 				var wm := director.roll_mood()
 				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
 				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
-				Sfx.play("streak", 0.85)
-				Sfx.play("whoosh", 0.6, -4.0)
 				_schedule_hazard()
 				if director.wave == ACRO_WAVE and not _acro_told:
 					_acro_told = true
@@ -1004,12 +1038,17 @@ func _wave_tick(delta: float) -> void:
 
 func _clear_wave() -> void:
 	waves_cleared += 1
+	if _wave_clean:
+		_feat("clean")
 	var bonus := (100 + 50 * director.wave) * _mult() * _surge()
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.46)
 	_add_score(bonus, mid)
 	hud.card(Loc.t("wave.clear") % director.wave, "+" + Hud._group(bonus))
-	Sfx.strum([0, 2, 4, 5, 7], 0.05, -2.0)
 	fx.shock(mid, 8.0, 380.0, 0.6)
+	# The wave's signature: light from the last kill, and a line of it
+	# sweeping the field from the rail down to the danger line.
+	fx.moment(_last_kill)
+	fx.sweep(layout.rail_y, layout.danger_y)
 	# Final-kill camera: the camera leans in on the last one and time all
 	# but stops; a gold ring runs out through the light fibres from the kill
 	# and a spark races along the rail.
@@ -1022,11 +1061,14 @@ func _clear_wave() -> void:
 			rail.flex(x, 2.5))
 	fx.focus(_last_kill, 0.05 if calm else 0.1, 1.4)
 	fx.aberrate(2.0 if calm else 4.0)
-	fx.slowmo(0.4 if calm else 0.2, 0.5 if calm else 0.8)
-	Music.duck(4.0, 0.9)
-	Sfx.play("burst", 0.55, -2.0)
-	Sfx.play("clear")
-	Sfx.phrase([0, 2, 3, 4, 7], 0.09, -2.0)
+	var slow := 0.5 if calm else 0.8
+	fx.slowmo(0.4 if calm else 0.2, slow)
+	# One sound for the wave won, after the last one's own: the cadence,
+	# its chord landing as time comes back (real time: the slow motion
+	# does not stretch it).
+	Motion.after(maxf(0.0, slow - CADENCE_LAND), func() -> void:
+		if state == State.PLAYING:
+			Sfx.cue("cadence"))
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
@@ -1062,6 +1104,7 @@ func _update_ball_light() -> void:
 ## slide along the rail before it would run into a neighbour.
 func _update_eyes() -> void:
 	var aiming := slingshot.is_aiming() and slingshot.power >= Slingshot.MIN_POWER
+	fx.aiming = aiming
 	var o := layout.pouch_rest()
 	var path := slingshot.predict() if aiming and slingshot.power > 0.3 else PackedVector2Array()
 	var flights: Array[PackedVector2Array] = []
@@ -1104,7 +1147,7 @@ func _update_eyes() -> void:
 		t.covered = false
 		if t.guard_of != null and (not is_instance_valid(t.guard_of) or not t.guard_of.is_hittable() or not t.guard_of.aimed):
 			t.guard_of = null
-		if t.aimed and (t.kind == Target.Kind.RING or t.mood == Target.Mood.CUTE):
+		if t.aimed and t.kind != Target.Kind.BOSS:
 			_find_cover(t, o)
 		_slide_room(t)
 		var nearest := INF
@@ -1120,6 +1163,10 @@ func _update_eyes() -> void:
 			t.look_at = slingshot.pouch
 			t.has_look = true
 	_guard_allies(path)
+	smarts.tick(path)
+	var dt := get_process_delta_time()
+	habits.tick(dt, _time, backdrop.danger)
+	mind.tick(dt)
 	# Everything in the line of fire narrows its eye: it is watching you.
 	for t in targets:
 		t.squint = t.aimed or (t.threat_lvl > 0.2 and t.is_hittable())
@@ -1204,8 +1251,10 @@ func _flight(b: Ball) -> PackedVector2Array:
 	var p := b.pos
 	var v := b.vel
 	var dt := 1.0 / 30.0
+	var w := gust * GUST_BALL
 	for i in 18:
 		v.y += Ball.GRAVITY * dt
+		v.x += w * dt
 		p += v * dt
 		out.append(p)
 	return out
@@ -1409,7 +1458,7 @@ func _medic_work() -> void:
 			continue
 		if best.hp < Target.HP[best.kind]:
 			best.hp += 1
-			fx.popup("+1", best.pos + Vector2(0, -best.radius - 14.0), Pal.MEDIC_BADGE, 18)
+			fx.popup("+1", best.pos + Vector2(0, -best.radius - 14.0), Pal.MEDIC_BADGE, 18, false, 0)
 		else:
 			best.patched = true
 		fx.link(m.pos, best.pos, Pal.MEDIC_BADGE)
@@ -1429,7 +1478,7 @@ func _boss_stages() -> void:
 		fx.shards(t.pos, Pal.METAL_LIGHT, 5, Vector2.ZERO)
 		fx.punch(0.03)
 		fx.shake(2.5)
-		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20)
+		fx.popup(Loc.t("boss.stage") % (t.boss_stage + 1), t.pos + Vector2(0, -t.radius - 40.0), Pal.CORAL, 20, false, 2)
 		Sfx.play("metal", 0.8)
 		Sfx.play("whoosh", 0.7, -4.0)
 		Sfx.haptic(40, 0.7)
@@ -1566,6 +1615,11 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if perk("heavy") > 0 and t.hp >= 2 and not b.special:
 		# Heavy balls: armour takes two blows' worth.
 		t.hp -= 1
+	habits.note_hit(t, _time)
+	if t.kind == Target.Kind.SEER and t.tired_t > 0.0:
+		_feat("seer")
+	elif t.kind == Target.Kind.SNEAK and t.pace > 1.5:
+		_feat("sneak")
 	var killed := t.hit(impulse, contact)
 	t.chain_depth = 0
 	var gained := t.points() * b.hits * _mult() * _surge()
@@ -1620,6 +1674,8 @@ func _read_skills(b: Ball, at: Vector2, was_close: bool) -> void:
 ## (a triple kill is a double paid twice).
 func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	skill_counts[s] += 1
+	if s == Skill.BANK and skill_counts[s] >= 3:
+		_feat("bank")
 	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
 	_add_score(pts, at)
 	var text := Loc.t(SKILL_KEY[s])
@@ -1647,7 +1703,6 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.aberrate(5.0)
 		fx.flash(at, 80.0, Pal.GOLD_LIGHT)
 		backdrop.rescue()
-		Music.duck(3.5, 0.6)
 		Sfx.phrase([4, 5, 6, 7], 0.07, 0.0)
 		Sfx.haptic_pattern("record")
 	elif s == Skill.CLUTCH:
@@ -1658,7 +1713,6 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 		fx.slowmo(0.4, 0.3)
 		fx.focus(at, 0.045, 0.8)
 		fx.aberrate(4.0)
-		Music.duck(2.0, 0.3)
 	_charge(SKILL_CHARGE[s])
 
 
@@ -1679,7 +1733,7 @@ func _charge(v: float) -> void:
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
 		# New players: say once what the gold in the rail is building to.
-		fx.popup(Loc.t("overload.hint"), Vector2(layout.center_x, layout.rail_y + 44.0), Pal.GOLD_LIGHT, 15)
+		fx.popup(Loc.t("overload.hint"), Vector2(layout.center_x, layout.rail_y + 44.0), Pal.GOLD_LIGHT, 15, false, 2)
 	if charge >= 1.0:
 		_begin_overload()
 
@@ -1687,6 +1741,8 @@ func _charge(v: float) -> void:
 func _begin_overload() -> void:
 	overload_t = OVERLOAD_TIME
 	overloads += 1
+	if overloads >= 3:
+		_feat("overload")
 	rail.hot = true
 	Ball.hot = true
 	backdrop.heat = 1.0
@@ -1699,10 +1755,8 @@ func _begin_overload() -> void:
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
-	Music.duck(4.0, 0.8)
 	hud.bar.hot = true
 	_show_mult()
-	Music.overload = true
 	Sfx.play("rise")
 	Sfx.haptic_pattern("record")
 
@@ -1730,7 +1784,6 @@ func _end_overload(quiet: bool) -> void:
 	Ball.hot = false
 	backdrop.heat = 0.0
 	hud.bar.hot = false
-	Music.overload = false
 	fx.set_base_time(1.0)
 	for t in targets:
 		t.scared = false
@@ -1777,12 +1830,15 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
+		fx.moment(t.pos, Tok.PRIMARY_HI, 1.25)
 		fx.shake(3.0)
 		fx.focus(t.pos, 0.09, 1.3)
 		fx.aberrate(6.0)
 		fx.slowmo(0.3, 0.6)
-		Music.duck(4.0, 0.7)
 		Sfx.haptic(80, 0.9)
+	if kind == Target.Kind.CAPTAIN:
+		smarts.captain_down(t)
+		fx.moment(t.pos, Tok.PRIMARY_HI, 0.8)
 	if kind == Target.Kind.SPLIT:
 		_split(t)
 	elif kind == Target.Kind.DROP and t.variant == Target.Var.TWIN:
@@ -1812,6 +1868,8 @@ func _on_cut(b: Ball, t: Target) -> void:
 	b.vel *= 0.45
 	_mark_hit(b)
 	cuts += 1
+	if cuts >= 3:
+		_feat("cuts")
 	var col := t.color()
 	var was_close := t.danger > CLOSE_CALL
 	_close_danger = t.danger
@@ -1869,6 +1927,16 @@ func _kill_bonus(t: Target, gained: int) -> int:
 	director.count_kill()
 	backdrop.send_energy(t.pos, t.color())
 	run_kills += 1
+	_feat("first")
+	if _chain >= 5:
+		_feat("chain")
+	if t.rush_t > 0.0:
+		_feat("team")
+	match t.kind:
+		Target.Kind.BOSS:
+			_feat("boss")
+		Target.Kind.CAPTAIN:
+			_feat("captain")
 	# The neighbours follow the fall with their eyes; the closest flinch.
 	for n in targets:
 		if n != t and n.is_hittable():
@@ -1933,6 +2001,8 @@ func _kill_bonus(t: Target, gained: int) -> int:
 ## the field is yanked up a little as relief.
 func _breach(t: Target) -> void:
 	lives -= 1
+	_wave_clean = false
+	habits.note_life_lost()
 	hud.bar.lose_life(lives)
 	var at := Vector2(t.pos.x, layout.danger_y)
 	if t.is_leader:
@@ -1953,7 +2023,7 @@ func _breach(t: Target) -> void:
 	fx.puff(at, Pal.CORAL, 3, 46.0, 0.3)
 	fx.shock(at, 12.0, 240.0, 0.5)
 	fx.aberrate(5.0)
-	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20)
+	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20, false, 2)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
 	# The ones hanging nearby enjoy it.
@@ -2015,7 +2085,12 @@ func _show_results() -> void:
 	if state != State.DEATH:
 		return
 	_check_missions()
+	if not daily:
+		habits.end_run(director.elapsed, run_kills)
+		Prefs.habits = habits.store()
 	Prefs.record_run(_run_stats())
+	Prefs.add_run({"score": score, "wave": director.wave, "secs": int(director.elapsed),
+		"acc": int(round(100.0 * director.hits / maxf(1.0, director.shots))), "day": Meta.today(), "daily": daily})
 	var prev := Prefs.daily_record() if daily else Prefs.record
 	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
@@ -2034,12 +2109,19 @@ func _show_results() -> void:
 ## Tells the team what it knows: its tactic tier, the player's rhythm and
 ## the column shot at least. Says it once when the rhythm is learned.
 func _learn_tick() -> void:
+	if director.elapsed >= 300.0:
+		_feat("five")
 	var tac := director.tactic()
 	Target.tactic = tac
 	Target.rhythm = director.rhythm_known()
 	Target.hold_avg = director.hold_avg
 	Target.aim_hold = (_time - _aim_start) if _aim_start >= 0.0 and slingshot.is_aiming() else -1.0
 	Target.cold_x = director.cold_u() * layout.size.x if tac >= Director.Tactic.RHYTHM else NAN
+	if not _punish_told and director.wave >= 2 and habits.punish > 0.45 and director.shots >= 10:
+		# They answer by cutting across, bluffing and climbing more now.
+		_punish_told = true
+		fx.popup(Loc.t("habit.punish"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
+		Sfx.play("tease", 0.9, -4.0)
 	if tac >= Director.Tactic.RHYTHM and Target.rhythm and not _rhythm_told:
 		_rhythm_told = true
 		fx.popup(Loc.t("habit.rhythm"), Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.3), Pal.CORAL, 16)
@@ -2115,7 +2197,7 @@ func _hazard_tick(delta: float) -> void:
 			_announce_evolve(t)
 		if t.fled:
 			t.fled = false
-			fx.popup(Loc.t("gold.fled"), Vector2(t.anchor.x, layout.rail_y + 60.0), Pal.GOLD_LIGHT, 16)
+			fx.popup(Loc.t("gold.fled"), Vector2(t.anchor.x, layout.rail_y + 60.0), Pal.GOLD_LIGHT, 16, false, 0)
 	Target.evolve_on = director.wave >= HAZARD_FROM
 	if _hazard == Hazard.NONE:
 		return
@@ -2144,6 +2226,7 @@ func _hazard_tick(delta: float) -> void:
 				_gust_whoosh = _rng.randf_range(1.6, 2.6)
 				Sfx.play("whoosh", _rng.randf_range(0.6, 0.8), 2.0)
 			backdrop.gust = gust
+			slingshot.wind = gust * GUST_BALL
 			if _hazard_t >= GUST_TIME:
 				_end_hazard()
 		Hazard.BLACKOUT:
@@ -2185,6 +2268,7 @@ func _end_hazard() -> void:
 	_hazard_in = -1.0
 	gust = 0.0
 	backdrop.gust = 0.0
+	slingshot.wind = 0.0
 	backdrop.warn = 0.0
 	_set_dark(0.0)
 
@@ -2193,7 +2277,6 @@ func _set_dark(v: float) -> void:
 	_dark = v
 	Target.dark = v
 	backdrop.dark = v
-	Music.dark = v
 	rail.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), v)
 
 
@@ -2237,7 +2320,7 @@ func _acro_tick(delta: float) -> void:
 			if t.rescued:
 				t.rescued = false
 				director.wave_killed = maxi(0, director.wave_killed - 1)
-				fx.popup(Loc.t("acro.caught"), t.pos + Vector2(0, -t.radius - 28.0), Pal.CORAL, 18)
+				fx.popup(Loc.t("acro.caught"), t.pos + Vector2(0, -t.radius - 28.0), Pal.CORAL, 18, false, 0)
 				Sfx.voice("taunt", 1.0, 3, -4.0)
 			fx.puff(t.pos + Vector2(0, -t.radius), Pal.INK, 2, 12.0, 0.1)
 		if t.slipped:
@@ -2360,8 +2443,8 @@ func _grant_perk() -> void:
 		hud.bar.knot_shake = 1.0
 	_apply_perks()
 	hud.perk_toast(id, perks[id])
-	Sfx.play("clear", 1.25, -4.0)
-	Sfx.phrase([2, 4, 7], 0.06, -5.0)
+	# A single soft chime, a note of the cadence's chord still ringing.
+	Sfx.note(7, -6.0)
 	Sfx.haptic_pattern("light")
 
 
@@ -2490,6 +2573,19 @@ func _free_mover(t: Target) -> bool:
 		and t.rope_host == null and t.guard_of == null and t.acro == Target.Acro.NONE and t.playdead <= 0.0 and not t.golden
 
 
+## An achievement won for the first time: a brass card names it and says
+## how it was done (see Feats).
+func _feat(id: String) -> void:
+	if state != State.PLAYING and state != State.STARTING:
+		return
+	if not Feats.unlock(id):
+		return
+	var parts := Loc.t("feat." + id).split("|")
+	hud.card(Loc.t("feat.title") + " · " + parts[0], parts[1] if parts.size() > 1 else "", 2.0)
+	Sfx.play("clear", 1.2, -4.0)
+	Sfx.haptic(20, 0.4)
+
+
 ## Names a trick the first time it is pulled this run.
 func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if _told.has(key):
@@ -2499,7 +2595,7 @@ func _name_trick(key: String, at: Vector2, col := Pal.CORAL) -> void:
 	if Prefs.hints.has(key):
 		# Explained before (in an earlier run): just its name, smaller, and
 		# the badge on the body says the rest.
-		fx.popup(text.get_slice(" – ", 0), at + Vector2(0, -60.0), col, 16)
+		fx.popup(text.get_slice(" – ", 0), at + Vector2(0, -60.0), col, 16, false, 0)
 		Sfx.play("tease", 1.05, -9.0)
 		return
 	Prefs.hints[key] = true
@@ -2534,7 +2630,7 @@ func _break_charm(t: Target) -> void:
 	t.take_charm()
 	var pts := CHARM_BREAK * _mult()
 	_add_score(pts, at)
-	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16)
+	fx.popup(Loc.t("charm.broken") % pts, at + Vector2(0, -20.0), col, 16, false, 0)
 	fx.sparks(at, col, 8)
 	fx.ring(at, col, 26.0)
 	Sfx.play("burst", 1.7, -6.0)
@@ -2862,6 +2958,7 @@ func _twin(t: Target) -> void:
 		var len := anchor.distance_to(p)
 		d.aggression = t.aggression
 		d.spawn(Target.Kind.DROP, anchor, len, len, 0.0)
+		d.size_k = 13.0 / Target.RADIUS[Target.Kind.DROP]
 		d.radius = 13.0
 		d.pos = p
 		d.vel = Vector2(side * 140.0, -80.0)
@@ -2889,7 +2986,7 @@ func _spawn_finale() -> void:
 		t.set_charm(1 + _rng.randi() % 5)
 	# It never comes alone: two grumpy escorts drop in beside it.
 	for i in 2:
-		var e := _spawn_one(director.pick_kind(_rng), 0.1)
+		var e := _spawn_one(_pick_kind(), 0.1)
 		if e:
 			e.set_mood(Target.Mood.GRUMPY)
 			e.aggression = minf(1.0, e.aggression + 0.15)
@@ -2914,7 +3011,6 @@ func _begin_flow() -> void:
 	flows += 1
 	hud.flow_hot = true
 	backdrop.flow = true
-	Music.flow = true
 	var mid := Vector2(layout.center_x, layout.danger_y - 60.0)
 	hud.card(Loc.t("flow.title"), Loc.t("flow.sub"))
 	fx.shock(mid, 6.0, 420.0, 0.5)
@@ -2944,7 +3040,6 @@ func _end_flow(quiet: bool) -> void:
 	flow_t = 0.0
 	hud.flow_hot = false
 	backdrop.flow = false
-	Music.flow = false
 	if was:
 		flow = 0.0
 		_show_mult()
@@ -2980,7 +3075,7 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 			lives += 1
 			hud.bar.lives = lives
 			hud.bar.knot_shake = 1.0
-			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18)
+			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18, false, 2)
 			Sfx.play("clear", 1.1)
 			Sfx.haptic(25, 0.5)
 
@@ -2998,12 +3093,17 @@ func _finish_ball(b: Ball) -> void:
 		return
 	var s: Dictionary = _shots[b.shot_id]
 	s.balls -= 1
+	if b.banks > 0:
+		s.banked = true
 	if s.balls > 0:
 		return
 	_shots.erase(b.shot_id)
 	if state != State.PLAYING and state != State.STARTING:
 		return
 	director.record_shot(s.hit)
+	habits.note_result(s.hit, s.get("banked", false))
+	if director.shots >= 40 and director.hits >= director.shots * 0.9:
+		_feat("sharp")
 	if s.hit:
 		_flow_add(FLOW_HIT)
 		streak += 1
@@ -3051,8 +3151,11 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 	_shot_seq += 1
 	if state == State.PLAYING or state == State.STARTING:
 		director.record_aim(vel.normalized().x)
+		habits.note_shot(_time)
+		habits.note_side(vel.normalized().x)
 		if _release_hold >= 0.0:
 			director.record_hold(_release_hold)
+			habits.note_hold(_release_hold)
 		director.record_column(_cross_u(pos, vel))
 	_aim_start = -1.0
 	_release_hold = -1.0
