@@ -48,6 +48,8 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 | 12 | **Testene målte et spill ingen spiller:** kvadratisk felt på 1280 × 1280 og alle botskudd på full kraft. Tidligere balansetall gjaldt derfor ikke telefon | Måling av skjermoppsettet i testmodus | 0 ✔ |
 | 13 | Testene skrev til spillerens egen lagringsfil | Kodegjennomgang | 0 ✔ |
 | 14 | Lyd trakk fra spillets terninger, så en lyd kunne endre hvordan runden rullet | Sammenligning av to like kjøringer bilde for bilde | 1 ✔ |
+| 15 | **Oppdragene trakk fra rundens terninger.** Når et oppdrag ble fullført midt i en runde, ble det neste trukket der. Hvilke oppdrag du hadde, endret dermed resten av runden, også i dagens utfordring | Telling av hvert terningkast per sted i koden, i fire like kjøringer | 1 ✔ (v8.0.1) |
+| 16 | **Runden avhang av hva appen hadde gjort før.** En kontroll av kryssede snorer ble fordelt i tid etter motorens interne objektnummer | Ny test (`repeat`): to spill på samme frø i samme økt | 1 ✔ (v8.0.1) |
 
 ### Valgfritt (forbedringer)
 
@@ -71,7 +73,8 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 - Originalen merket og APK-en lagt på en fast utgivelse.
 - Testene spiller på en skjerm formet som en telefon (720 × 1560, som en Galaxy S23), med
   egen lagringsfil og fast frø.
-- Nye tester for hel økt, lagring, tid og fysikk, og et eget balanseverktøy med
+- Nye tester for hel økt, lagring, tid, fysikk og gjentakelse (samme frø gir samme
+  runde), og et eget balanseverktøy med
   botspillere på tre nivåer som spiller slik en person kan (griper lomma, drar så langt
   skjermen tillater, trenger tid mellom skuddene).
 
@@ -141,7 +144,7 @@ Alle tall er fra samme maskin. «Før» er originalen (v7.57) med bare testkroke
 | Kraft ved rett drag fra lomma (Galaxy S23) | 51 % | 100 % |
 | Siktelinjens avvik etter veggtreff (0,5 s) | 115–123 px | under 0,05 px |
 | Snorkutt som ikke ble sett (72° skrå, full kraft) | 28 % | 0 % |
-| Risting i tett felt (per kropp per sekund) | 1,4–4,2 (opptil 6,5 px) | 0,01–0,25, median 0,04 over 20 kjøringer (opptil ca. 2 px) |
+| Risting i tett felt (per kropp per sekund) | 1,4–4,2 (opptil 6,5 px) | 0,01–0,25, median 0,04 over 20 ulike felt (opptil ca. 2 px) |
 | Skrivinger til lagring ved rundeslutt | 4–6 | 1 |
 | Skadet lagringsfil | Fremgang tapt uten varsel | Forrige fil brukes |
 | Tegning av ett ansikt | 165 µs | 92 µs |
@@ -167,8 +170,11 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Poengsummene øker mer enn overlevelsen** (median for middels spiller 191 000 mot
   50 000), fordi sene bølger har flere fiender og gir flere overloads. Rekorder fra
   originalen blir derfor lettere å slå.
-- **Spredningen er stor.** To runder med samme spiller kan vare 2 og 9 minutter. Med 8
-  runder per nivå er medianen for middels og god spiller usikker med omtrent ±40 s.
+- **Spredningen er stor.** To runder med samme spiller, på ulike frø, kan vare 2 og 9
+  minutter. Med 8 runder per nivå er medianen for middels og god spiller usikker med
+  omtrent ±40 s.
+- Tallene ble målt før v8.0.1. Fra v8.0.1 gir samme frø samme runde, så senere
+  endringer kan sammenlignes frø for frø i stedet for bare på medianen.
 
 ## Beslutninger
 
@@ -195,9 +201,6 @@ Tallene er median, med laveste og høyeste runde i parentes.
   banen er fortsatt bare antydet med fem–seks prikker. Vurderes i trinn 2.
 - **Poengtekster kan overlappe hverandre** når to kommer på samme sted (for eksempel
   «Dobbelttreff» og poengsummen). Rettes i trinn 4.
-- **Like frø gir ikke helt like runder.** To kjøringer med samme frø er like de første
-  15–45 sekundene og skiller så lag. Årsaken er ikke funnet (lyd og veggklokke er
-  utelukket). Det påvirker ikke spillet, men gjør at balanse må måles over flere frø.
 - **Meldinger om «leaked instance» i loggen når spillet avsluttes på PC** mens
   menymusikken spiller. Ufarlig, og gjelder ikke telefon.
 

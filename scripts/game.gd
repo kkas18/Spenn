@@ -276,6 +276,7 @@ func _ready() -> void:
 	world.add_child(title)
 	for i in MAX_TARGETS:
 		var t := Target.new()
+		t.slot = i
 		world.add_child(t)
 		targets.append(t)
 	slingshot = Slingshot.new()
@@ -447,6 +448,7 @@ func _start_run() -> void:
 	_rng.seed = run_seed
 	director.reseed(run_seed)
 	seed(run_seed)
+	Target.new_run()
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
 	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)

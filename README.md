@@ -37,7 +37,7 @@ På PC virker musa som finger (klikk og dra). Vinduet åpnes i telefonformat.
 ## Tester
 
 ```bash
-tools/tests/run.sh [sti/til/godot]        # hele pakken, ca. 6 minutter
+tools/tests/run.sh [sti/til/godot]        # hele pakken, ca. 7 minutter
 ONLY="flow save" tools/tests/run.sh       # bare noen av testene
 tools/tests/balance.sh [sti/til/godot]    # balanse: botspillere på tre nivåer (tar lengre tid)
 ```
@@ -49,6 +49,7 @@ tools/tests/balance.sh [sti/til/godot]    # balanse: botspillere på tre nivåer
 | `save` | Lagret fremgang tåler avbrutt skriving, skadet fil og feil verdier |
 | `timing` | Sanntid og spilltid: treff-stopp, sakte film, overload og flyt varer det de skal |
 | `physics` | Lik bane ved 30–144 Hz, ingen tunnelering, snorkutt, ingenting som setter seg fast eller rister |
+| `repeat` | Samme frø og samme skudd gir samme runde, uansett hvilke oppdrag du har og hva appen har gjort før |
 | `soak` | Travelt sluttspill under ild: ingen lekkasjer |
 | `bot` | Hele runder spilt av en bot, én per frø |
 

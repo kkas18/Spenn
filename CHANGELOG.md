@@ -4,6 +4,22 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.0.1 – Samme frø, samme runde
+
+- **To runder på samme frø er nå helt like.** Før skilte de lag etter 15–45 sekunder.
+  Det hadde to årsaker:
+  - Når et oppdrag ble fullført midt i en runde, ble det neste oppdraget trukket med
+    rundens egne terninger. Hvilke oppdrag du hadde, endret dermed resten av runden,
+    også i dagens utfordring, som skal være lik for alle. Oppdragene har nå egne
+    terninger.
+  - Kontrollen av om to snorer har krysset hverandre, ble fordelt i tid etter motorens
+    interne objektnummer. Runden avhang dermed av hva appen hadde gjort før den startet.
+    Kontrollen følger nå fiendens plass i spillet, og klokken starter på nytt for hver
+    runde.
+- **Ny test (`repeat`):** to spill på samme frø og med samme skudd, men ulike oppdrag,
+  skal være like steg for steg.
+- Målinger blir sikrere: samme frø kan nå sammenlignes direkte før og etter en endring.
+
 ## v8.0 – Stabilitet, kontroll og jevn flyt
 
 Første trinn retter feil som påvirket hele spillfølelsen, og legger et testgrunnlag under

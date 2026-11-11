@@ -86,17 +86,7 @@ func _pick() -> Node:
 ## The launch direction that meets `at` at this pull's speed, allowing for
 ## the ball's drop on the way.
 func _dir_to(at: Vector2) -> Vector2:
-	var l = game.layout
-	var from: Vector2 = l.pouch_rest()
-	var speed: float = lerpf(620.0, 2250.0, pow(_reach(), 1.15)) * l.scale
-	var aim := at
-	for i in 3:
-		var t: float = (aim - from).length() / speed
-		aim = at - Vector2(0.0, 0.5 * 320.0 * t * t)
-	var d := (aim - from).normalized()
-	if d.y > -0.2:
-		d = Vector2(signf(d.x) * 0.98, -0.2).normalized()
-	return d
+	return aim_at(at, _reach())
 
 
 ## The pull this bot gets on this screen: what it wants, as far as a

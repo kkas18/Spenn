@@ -13,6 +13,7 @@
 #   save           the stored progress survives damage and interrupted writes
 #   timing         real time and game time (hit-stop, slow motion, overload)
 #   physics        frame-rate independence, no tunnelling, nothing stuck
+#   repeat         one seed is one run, whatever missions are held
 #   soak           a crowded late game under fire: no leaks
 #   bot            whole runs by a bot player, one per seed
 set -uo pipefail
@@ -66,6 +67,7 @@ run_test flow 300
 run_test save 120 'ConfigFile parse error|config_file.cpp'
 run_test timing 300
 run_test physics 600
+run_test repeat 300
 run_test soak 600
 if wanted bot; then
 	for s in ${SEEDS:-1 2}; do

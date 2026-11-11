@@ -1360,8 +1360,19 @@ const ROPE_GAP := 3.5
 const BODY_YIELD := 0.3
 const ROPE_DEPTH := 0.5         # depth apart at which strings are in different planes
 const ROPE_FORGET := 30         # steps after which a pair that no longer meets is forgotten
-static var rope_clock := 0      # contact steps so far (see Contacts.target_contacts)
+static var rope_clock := 0      # contact steps so far in this run (see Contacts.target_contacts)
 var _rope_side := {}            # other's instance id -> [side, last step met, passing]
+## Which of the game's bodies this is (0, 1, 2 ...): what staggers the
+## checks that are not made every step. It used to be the engine's object
+## id, which made a run depend on what the app had done before it.
+var slot := 0
+
+
+## A run begins: the clocks that pace checks and voices start over, so a
+## run plays the same whenever in a session it is started.
+static func new_run() -> void:
+	rope_clock = 0
+	_last_tease_step = -1000
 
 
 func rope_rope(o: Target) -> void:
@@ -1371,7 +1382,7 @@ func rope_rope(o: Target) -> void:
 	var hook := o._pts[0].x - _pts[0].x
 	var hook_side := signf(hook) if absf(hook) > 2.0 else 0.0
 	var e: Array = _rope_side.get(id, [])
-	if e.is_empty() or int(e[1]) < rope_clock - ROPE_FORGET:
+	if e.is_empty() or int(e[1]) < rope_clock - ROPE_FORGET or int(e[1]) > rope_clock:
 		# Newly met: the side is their hooks' order (their bodies', when
 		# the hooks are level). Met already crossed (they came together at
 		# different depths), they are left to part.
@@ -1383,7 +1394,7 @@ func rope_rope(o: Target) -> void:
 		# The hooks have passed each other along the rail.
 		e[0] = hook_side
 		e[2] = true
-	elif not e[2] and (rope_clock + id) % 8 == 0 and _ropes_cross(o):
+	elif not e[2] and (rope_clock + o.slot) % 8 == 0 and _ropes_cross(o):
 		# Now and then a check that the strings did not slip through.
 		e[2] = true
 	if e[2]:

@@ -2700,3 +2700,6 @@ endringslogg i [CHANGELOG.md](CHANGELOG.md). Originalen (v7.57) er tatt vare på
 5. **Ytelse:** små prikker, buer og streker tegnes samlet (`Ink`). Et ansikt tegnes på
    92 µs mot 165 µs før, med samme bilde.
 6. **Siktelinjen** har større prikker med mørk kant.
+7. **v8.0.1 – samme frø, samme runde:** to runder på samme frø skilte lag etter 15–45 s.
+   Oppdragene trakk fra rundens terninger (nå har de egne), og en kontroll av kryssede
+   snorer fulgte motorens objektnummer (nå fiendens plass i spillet). Ny test: `repeat`.

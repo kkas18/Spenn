@@ -19,6 +19,7 @@ const MISSIONS := {
 	"break": ["mission.break", "break", 1, 1],
 }
 const ACTIVE := 3
+static var _rng: RandomNumberGenerator
 const REWARD_BASE := 1000       # lifetime points for a completed mission
 const REWARD_STEP := 500        # ... more per mission level
 
@@ -53,14 +54,24 @@ static func progress(id: String, run: Dictionary) -> int:
 	return int(run.get(MISSIONS[id][1], 0))
 
 
-## A mission not already active, picked at random.
+## A mission not already active, picked at random. The missions roll dice
+## of their own, never a run's: a mission can be completed in the middle of
+## a run, and drawing its successor from the run's dice made the rest of
+## that run roll differently for every player (the daily challenge too).
 static func roll(active: Array) -> String:
 	var ids := MISSIONS.keys().filter(func(k: String) -> bool:
 		for m: Dictionary in active:
 			if m.id == k:
 				return false
 		return true)
-	return ids[randi() % ids.size()]
+	return ids[_dice().randi() % ids.size()]
+
+
+static func _dice() -> RandomNumberGenerator:
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+		_rng.randomize()
+	return _rng
 
 
 static func reward(level: int) -> int:

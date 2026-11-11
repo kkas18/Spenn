@@ -159,6 +159,22 @@ func pull(dir: Vector2, power := 0.9) -> Vector2:
 	return -dir.normalized() * game.layout.drag_range * power
 
 
+## The launch direction that meets `at` with a pull of `power`, allowing
+## for the ball's drop on the way.
+func aim_at(at: Vector2, power := 0.9) -> Vector2:
+	var l = game.layout
+	var from: Vector2 = l.pouch_rest()
+	var speed: float = lerpf(620.0, 2250.0, pow(power, 1.15)) * l.scale
+	var aim := at
+	for i in 3:
+		var t: float = (aim - from).length() / speed
+		aim = at - Vector2(0.0, 0.5 * 320.0 * t * t)
+	var d := (aim - from).normalized()
+	if d.y > -0.2:
+		d = Vector2(signf(d.x) * 0.98, -0.2).normalized()
+	return d
+
+
 ## True when a new pull would be taken (a ball is loaded, and the last
 ## one has left the pouch).
 func can_aim() -> bool:
@@ -217,6 +233,27 @@ func active_balls() -> Array:
 		if b.active:
 			out.append(b)
 	return out
+
+
+## A new game on an empty save, as if the app had just been opened: for a
+## test that plays more than one session.
+func fresh_game() -> bool:
+	var old_id := current_scene.get_instance_id() if current_scene != null else 0
+	Engine.time_scale = 1.0
+	paused = false
+	prefs.flush()
+	wipe_save()
+	prefs.load_from_disk()
+	prefs.intro_seen = true
+	prefs.set_lang("en")
+	_configure()
+	change_scene_to_file("res://scenes/main.tscn")
+	var ok := await wait_until(func() -> bool:
+		return current_scene != null and current_scene.get_instance_id() != old_id and "layout" in current_scene, 600)
+	check(ok, "the game loads again")
+	if ok:
+		game = current_scene
+	return ok
 
 
 ## Empties the field (enemies and balls) without ending the run.
