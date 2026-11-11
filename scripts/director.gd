@@ -37,6 +37,9 @@ const MOOD_FROM := 2
 const FINALE_AT := 0.8
 const BOSS_EVERY := 3
 const WARMUP := 90.0            # s over which the early descent eases up to full
+const LATE_FROM := 5.0          # intensity from which the descent climbs faster (see descent)
+const LATE_SLOPE := 5.0         # ... by this much more per unit of intensity (px/s)
+const DESCENT_MAX := 110.0      # px/s before layout scale
 # Pacing inside a wave: a build-up, a short peak (a flurry), then a breath.
 enum Pulse { BUILD, PEAK, RELAX }
 
@@ -70,6 +73,13 @@ var skill_shift := 0
 var pulse_t := 12.0
 var pulse_len := 12.0
 var _rng := RandomNumberGenerator.new()
+
+
+## Seeds the director's own rolls (pulse lengths, wave moods and styles)
+## from the run's seed, so the daily challenge really is the same run for
+## everyone, and a test can replay a run.
+func reseed(run_seed: int) -> void:
+	_rng.seed = run_seed ^ 0x5EED
 
 
 func reset() -> void:
@@ -314,7 +324,14 @@ func descent(scale: float) -> float:
 	# average player is not overrun in wave 1 or 2 while still finding the
 	# aim; it has no effect after that.
 	var warm := lerpf(0.8, 1.0, clampf(elapsed / WARMUP, 0.0, 1.0))
-	return minf(7.5 + 9.8 * pow(i, 0.85), 72.0) * lerpf(0.9, 1.15, aggression()) * warm * scale
+	# Past LATE_FROM (about wave 5 for a run that goes well) the pressure
+	# climbs faster, up to a higher ceiling. Until v8.0 the curve levelled
+	# off at 72, which no run reached: a new pull was refused for 0.8 s
+	# after every shot and a full pull was out of reach. With a responsive
+	# slingshot good players get there, and the game must go on getting
+	# harder where they are.
+	var late := LATE_SLOPE * maxf(0.0, i - LATE_FROM)
+	return minf(7.5 + 9.8 * pow(i, 0.85) + late, DESCENT_MAX) * lerpf(0.9, 1.15, aggression()) * warm * scale
 
 
 ## Targets allowed on the field at once.
@@ -346,8 +363,14 @@ func spawn_interval(boss_alive: bool) -> float:
 	return t
 
 
+## Seconds for the rack to win a ball back. This is what sets the pace of
+## fire over time: about a ball a second, a little quicker late in a run.
+## (Up to v7.57 it read 0.88 falling to 0.6 s, but a new pull was refused
+## for 0.8 s after every shot, so the rack stayed full and that wait was
+## the real limit: about a shot a second. With the pouch free at once, the
+## reload carries that limit openly, and a full rack is a burst to spend.)
 func reload_time() -> float:
-	return maxf(0.6, 0.88 - 0.05 * intensity())
+	return maxf(0.9, 1.0 - 0.02 * intensity())
 
 
 ## Returns an event when one is due; formation and rush alternate and every

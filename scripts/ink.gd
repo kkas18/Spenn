@@ -23,6 +23,25 @@ var idx := PackedInt32Array()
 var xf := Transform2D.IDENTITY
 var _ident := true
 
+# What makes this fast: a shape is not built vertex by vertex in script.
+# Its points are a small table (a ring of unit directions, a quad) placed
+# by one transform in one engine call, and the parts that do not depend on
+# where it is drawn (texture coordinates, the triangle list for a given
+# start index) are kept and reused. A face's small dots and arcs, which
+# were four fifths of its drawing time, cost a fifth of what they did.
+const QUAD_UV: PackedVector2Array = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+const LINE_UV: PackedVector2Array = [UV_A, UV_B, UV_A, UV_B]
+const CACHE_MAX := 4096
+static var _ring := PackedVector2Array()   # twelve unit directions (the small disc's rim)
+static var _solid_uv := {}                 # n -> n x SOLID
+static var _strip_uv := {}                 # n -> n x UV_A, then n x UV_B
+static var _fan_idx := {}                  # first vertex -> a small disc's triangles
+static var _strip_idx := {}                # (first vertex, n) -> a strip's triangles
+static var _arc_dirs := {}                 # (from, to, n) -> unit directions along an arc
+var _dot_col := Color(0, 0, 0, 0)          # the colour the two arrays below were made for
+var _dot_in := PackedColorArray()          # centre and inner rim: the colour
+var _dot_out := PackedColorArray()         # outer rim: the colour, clear
+
 
 func clear() -> void:
 	pts.clear()
@@ -54,19 +73,22 @@ func draw_set_transform_matrix(m: Transform2D) -> void:
 	_ident = m == Transform2D.IDENTITY
 
 
-func _vert(p: Vector2, uv: Vector2, c: Color) -> void:
-	pts.append(p if _ident else xf * p)
-	uvs.append(uv)
-	cols.append(c)
-
-
-func _quad(a: Vector2, b: Vector2, c: Vector2, d: Vector2, ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2, col: Color) -> void:
+## Four corners (in order round the shape) as two triangles.
+func _quad(q: PackedVector2Array, uv: PackedVector2Array, col: Color) -> void:
 	var i := pts.size()
-	_vert(a, ua, col)
-	_vert(b, ub, col)
-	_vert(c, uc, col)
-	_vert(d, ud, col)
-	idx.append_array([i, i + 1, i + 2, i, i + 2, i + 3])
+	pts.append_array(q if _ident else xf * q)
+	uvs.append_array(uv)
+	cols.append_array(PackedColorArray([col, col, col, col]))
+	idx.append_array(PackedInt32Array([i, i + 1, i + 2, i, i + 2, i + 3]))
+
+
+static func _solid(n: int) -> PackedVector2Array:
+	if not _solid_uv.has(n):
+		var a := PackedVector2Array()
+		a.resize(n)
+		a.fill(SOLID)
+		_solid_uv[n] = a
+	return _solid_uv[n]
 
 
 ## A filled disc with a soft one-pixel edge (as Pal.disc).
@@ -78,29 +100,60 @@ func disc(c: Vector2, r: float, col: Color) -> void:
 		_small_disc(c, r, col, px)
 		return
 	var e := r + 0.45
-	_quad(c + Vector2(-e, -e), c + Vector2(e, -e), c + Vector2(e, e), c + Vector2(-e, e),
-		Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1), col)
+	_quad(PackedVector2Array([c + Vector2(-e, -e), c + Vector2(e, -e), c + Vector2(e, e), c + Vector2(-e, e)]), QUAD_UV, col)
 
 
 ## A tiny disc sampled from the texture would come from a coarse mip and
 ## look square; it is built instead as a fan with a one-pixel feather ring
-## that fades out, which is round and soft at any size.
+## that fades out, which is round and soft at any size. Its vertices are
+## the centre, an inner rim of twelve and an outer rim of twelve: each rim
+## is the unit ring placed by one transform.
 func _small_disc(c: Vector2, r: float, col: Color, px: float) -> void:
 	const SEG := 12
+	if _ring.is_empty():
+		for i in SEG:
+			_ring.append(Vector2.from_angle(TAU * i / SEG))
 	var feather := r / maxf(px, 0.5)   # one pixel, in local units
 	var inner := maxf(r - feather * 0.5, r * 0.3)
 	var outer := r + feather * 0.5
-	var clear := Color(col, 0.0)
+	var t_in := Transform2D(Vector2(inner, 0.0), Vector2(0.0, inner), c)
+	var t_out := Transform2D(Vector2(outer, 0.0), Vector2(0.0, outer), c)
+	if not _ident:
+		t_in = xf * t_in
+		t_out = xf * t_out
 	var base := pts.size()
-	_vert(c, SOLID, col)
-	for i in SEG:
-		var d := Vector2.from_angle(TAU * i / SEG)
-		_vert(c + d * inner, SOLID, col)
-		_vert(c + d * outer, SOLID, clear)
-	for i in SEG:
-		var a := base + 1 + i * 2
-		var b := base + 1 + ((i + 1) % SEG) * 2
-		idx.append_array([base, a, b, a, a + 1, b + 1, a, b + 1, b])
+	pts.append(t_in.origin)
+	pts.append_array(t_in * _ring)
+	pts.append_array(t_out * _ring)
+	uvs.append_array(_solid(SEG * 2 + 1))
+	if col != _dot_col or _dot_in.is_empty():
+		_dot_col = col
+		_dot_in.resize(SEG + 1)
+		_dot_in.fill(col)
+		_dot_out.resize(SEG)
+		_dot_out.fill(Color(col, 0.0))
+	cols.append_array(_dot_in)
+	cols.append_array(_dot_out)
+	if not _fan_idx.has(base):
+		if _fan_idx.size() >= CACHE_MAX:
+			_fan_idx.clear()
+		var tri := PackedInt32Array()
+		tri.resize(SEG * 9)
+		for i in SEG:
+			var a := base + 1 + i
+			var b := base + 1 + (i + 1) % SEG
+			var q := i * 9
+			tri[q] = base
+			tri[q + 1] = a
+			tri[q + 2] = b
+			tri[q + 3] = a
+			tri[q + 4] = a + SEG
+			tri[q + 5] = b + SEG
+			tri[q + 6] = a
+			tri[q + 7] = b + SEG
+			tri[q + 8] = b
+		_fan_idx[base] = tri
+	idx.append_array(_fan_idx[base])
 
 
 func draw_circle(c: Vector2, r: float, col: Color, filled := true, width := -1.0, _aa := false) -> void:
@@ -112,16 +165,31 @@ func draw_circle(c: Vector2, r: float, col: Color, filled := true, width := -1.0
 
 func draw_rect(rect: Rect2, col: Color, filled := true, width := -1.0) -> void:
 	if filled:
-		_quad(rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y),
-			SOLID, SOLID, SOLID, SOLID, col)
+		_quad(PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]), _solid(4), col)
 	else:
 		var p := rect.position
 		var e := rect.end
 		draw_polyline(PackedVector2Array([p, Vector2(e.x, p.y), e, Vector2(p.x, e.y), p]), col, width)
 
 
+## Half a stroke's width as drawn: half the stroke plus half a pixel of
+## falloff; the thinnest strokes a touch more, as the coarse mip they
+## sample is softer.
+static func _half(width: float) -> float:
+	var w := maxf(width, 1.0)
+	return w * 0.5 + (0.5 if w >= 2.5 else 0.8)
+
+
 func draw_line(a: Vector2, b: Vector2, col: Color, width := -1.0, _aa := false) -> void:
-	draw_polyline(PackedVector2Array([a, b]), col, width)
+	if col.a <= 0.0:
+		return
+	var off := (b - a).normalized().orthogonal() * _half(width)
+	var q := PackedVector2Array([a - off, a + off, b - off, b + off])
+	var i := pts.size()
+	pts.append_array(q if _ident else xf * q)
+	uvs.append_array(LINE_UV)
+	cols.append_array(PackedColorArray([col, col, col, col]))
+	idx.append_array(PackedInt32Array([i, i + 1, i + 3, i, i + 3, i + 2]))
 
 
 ## A stroke of `width` px along `line`: one strip with mitred joins (no
@@ -141,21 +209,21 @@ func _stroke(line: PackedVector2Array, colors: PackedColorArray, col: Color, wid
 	var n := line.size()
 	if n < 2:
 		return
-	var per := colors.size() == n
-	# Half the stroke plus half a pixel of falloff; the thinnest strokes a
-	# touch more, as the coarse mip they sample is softer.
-	var w := maxf(width, 1.0)
-	var hw := w * 0.5 + (0.5 if w >= 2.5 else 0.8)
-	var base := pts.size()
-	pts.resize(base + n * 2)
-	uvs.resize(base + n * 2)
-	cols.resize(base + n * 2)
+	var hw := _half(width)
+	# The two edges of the strip, each as one run of points (the first
+	# edge, then the second), so texture coordinates and triangles are the
+	# ready-made ones of a strip of n points (see draw_arc).
+	var ea := PackedVector2Array()
+	var eb := PackedVector2Array()
+	ea.resize(n)
+	eb.resize(n)
 	# Each point is pushed out along the mitre of the segments meeting there
 	# (one normal per segment, carried over to the next point).
 	var prev := (line[1] - line[0]).normalized().orthogonal()
+	var last := n - 1
 	for i in n:
 		var off := prev * hw
-		if i > 0 and i < n - 1:
+		if i > 0 and i < last:
 			var cur := (line[i + 1] - line[i]).normalized().orthogonal()
 			var m := prev + cur
 			var ml := m.length_squared()
@@ -166,52 +234,115 @@ func _stroke(line: PackedVector2Array, colors: PackedColorArray, col: Color, wid
 				off = cur * hw
 			prev = cur
 		var p := line[i]
-		var k := base + i * 2
-		if _ident:
-			pts[k] = p - off
-			pts[k + 1] = p + off
-		else:
-			pts[k] = xf * (p - off)
-			pts[k + 1] = xf * (p + off)
-		uvs[k] = UV_A
-		uvs[k + 1] = UV_B
-		var c := colors[i] if per else col
-		cols[k] = c
-		cols[k + 1] = c
-	var ib := idx.size()
-	idx.resize(ib + (n - 1) * 6)
-	for i in n - 1:
-		var a := base + i * 2
-		var q := ib + i * 6
-		idx[q] = a
-		idx[q + 1] = a + 1
-		idx[q + 2] = a + 3
-		idx[q + 3] = a
-		idx[q + 4] = a + 3
-		idx[q + 5] = a + 2
+		ea[i] = p - off
+		eb[i] = p + off
+	var base := pts.size()
+	if _ident:
+		pts.append_array(ea)
+		pts.append_array(eb)
+	else:
+		pts.append_array(xf * ea)
+		pts.append_array(xf * eb)
+	uvs.append_array(_strip_uvs(n))
+	if colors.size() == n:
+		cols.append_array(colors)
+		cols.append_array(colors)
+	else:
+		var cc := PackedColorArray()
+		cc.resize(n * 2)
+		cc.fill(col)
+		cols.append_array(cc)
+	idx.append_array(_strip_tris(base, n))
 
 
+## Texture coordinates of a strip of n points: one edge, then the other.
+static func _strip_uvs(n: int) -> PackedVector2Array:
+	if not _strip_uv.has(n):
+		var uv := PackedVector2Array()
+		uv.resize(n * 2)
+		uv.fill(UV_A)
+		for i in n:
+			uv[n + i] = UV_B
+		_strip_uv[n] = uv
+	return _strip_uv[n]
+
+
+## Triangles of a strip of n points whose first edge starts at `base` and
+## whose second edge follows it.
+static func _strip_tris(base: int, n: int) -> PackedInt32Array:
+	var ik := Vector2i(base, n)
+	if not _strip_idx.has(ik):
+		if _strip_idx.size() >= CACHE_MAX:
+			_strip_idx.clear()
+		var tri := PackedInt32Array()
+		tri.resize((n - 1) * 6)
+		for i in n - 1:
+			var a := base + i
+			var q := i * 6
+			tri[q] = a
+			tri[q + 1] = a + n
+			tri[q + 2] = a + n + 1
+			tri[q + 3] = a
+			tri[q + 4] = a + n + 1
+			tri[q + 5] = a + 1
+		_strip_idx[ik] = tri
+	return _strip_idx[ik]
+
+
+## A stroke along an arc. Its two edges are the arc's unit directions
+## (kept per angle range, so a ring that is drawn every frame works them
+## out once) placed at the inner and the outer radius by one transform
+## each, instead of a polyline with a mitre worked out at every point.
 func draw_arc(c: Vector2, r: float, a0: float, a1: float, segs: int, col: Color, width := -1.0, _aa := false) -> void:
 	if col.a <= 0.0:
 		return
-	var line := PackedVector2Array()
 	# About one segment per 5 px of arc, and never fewer than a dozen for a
 	# whole turn, keeps even small rings round.
-	var turn := absf(a1 - a0) / TAU
-	segs = clampi(segs, 2, maxi(int(12.0 * turn) + 2, int(r * absf(a1 - a0) / 5.0)))
-	for i in segs + 1:
-		line.append(c + Vector2.from_angle(lerpf(a0, a1, float(i) / segs)) * r)
-	draw_polyline(line, col, width)
+	var sweep := absf(a1 - a0)
+	segs = clampi(segs, 2, maxi(int(12.0 * sweep / TAU) + 2, int(r * sweep / 5.0)))
+	var n := segs + 1
+	var key := Vector3(a0, a1, n)
+	if not _arc_dirs.has(key):
+		if _arc_dirs.size() >= CACHE_MAX:
+			_arc_dirs.clear()
+		var d := PackedVector2Array()
+		d.resize(n)
+		for i in n:
+			d[i] = Vector2.from_angle(lerpf(a0, a1, float(i) / segs))
+		_arc_dirs[key] = d
+	var dirs: PackedVector2Array = _arc_dirs[key]
+	# The edges are pushed out along the mitre of the chords meeting at
+	# each point: 1 / cos(half a step) further than half the width.
+	var m := _half(width) * clampf(1.0 / maxf(cos(sweep / segs * 0.5), 0.3), 1.0, 2.0)
+	var t_a := Transform2D(Vector2(r - m, 0.0), Vector2(0.0, r - m), c)
+	var t_b := Transform2D(Vector2(r + m, 0.0), Vector2(0.0, r + m), c)
+	if not _ident:
+		t_a = xf * t_a
+		t_b = xf * t_b
+	var base := pts.size()
+	pts.append_array(t_a * dirs)
+	pts.append_array(t_b * dirs)
+	uvs.append_array(_strip_uvs(n))
+	var cc := PackedColorArray()
+	cc.resize(n * 2)
+	cc.fill(col)
+	cols.append_array(cc)
+	idx.append_array(_strip_tris(base, n))
 
 
 func draw_colored_polygon(poly: PackedVector2Array, col: Color) -> void:
-	if poly.size() < 3 or col.a <= 0.0:
+	var n := poly.size()
+	if n < 3 or col.a <= 0.0:
 		return
 	var tri := Geometry2D.triangulate_polygon(poly)
 	if tri.is_empty():
 		return
 	var base := pts.size()
-	for p in poly:
-		_vert(p, SOLID, col)
+	pts.append_array(poly if _ident else xf * poly)
+	uvs.append_array(_solid(n))
+	var cc := PackedColorArray()
+	cc.resize(n)
+	cc.fill(col)
+	cols.append_array(cc)
 	for k in tri:
 		idx.append(base + k)

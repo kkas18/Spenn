@@ -52,6 +52,7 @@ var _release_dir := Vector2.UP
 var _release_speed := 0.0
 var _release_kind := 0
 var _ball_in_pouch := true
+var _armed := false             # this release fires as the pouch passes its rest point
 var _load_anim := 1.0
 var _was_empty := false
 
@@ -158,11 +159,24 @@ func is_aiming() -> bool:
 	return mode == Mode.AIM
 
 
+## True from letting go until the ball has left the pouch (about 50 ms).
+func is_launching() -> bool:
+	return mode == Mode.RELEASE and _armed
+
+
+## Takes the pouch for a new pull. It can be taken as soon as the last
+## ball has left it, also while it is still swinging back: the hand stops
+## it and the next ball drops in. (Before v8.0 a new pull was refused until
+## the pouch had come to rest, about 0.8 s after every shot.)
 func begin_aim() -> bool:
-	if not has_ball() or mode == Mode.RELEASE:
+	if not has_ball() or is_launching():
 		return false
 	mode = Mode.AIM
 	_at_max = false
+	power = 0.0
+	if not _ball_in_pouch:
+		_ball_in_pouch = true
+		_load_anim = 0.0
 	return true
 
 
@@ -196,16 +210,31 @@ func drag(offset: Vector2) -> void:
 func release() -> void:
 	if mode != Mode.AIM:
 		return
+	_let_go(power >= MIN_POWER and has_ball())
+	if _armed:
+		Sfx.play("release", lerpf(1.15, 0.9, power), -2.0)
+		Sfx.haptic(10, 0.25)
+
+
+## The touch was taken away (a system gesture, a call): the band is let
+## down without firing, and the ball rides the pouch home.
+func abort() -> void:
+	if mode == Mode.AIM:
+		_let_go(false)
+
+
+## The pouch springs home. With `fire` the ball leaves as it passes the
+## rest point; without (a pull under MIN_POWER, or an aborted one) the
+## ball stays in the pouch.
+func _let_go(fire: bool) -> void:
 	mode = Mode.RELEASE
 	_release_t = 0.0
 	pouch_vel = Vector2.ZERO
 	_release_dir = aim_dir
-	_ball_in_pouch = power >= MIN_POWER and has_ball()
-	if _ball_in_pouch:
+	_armed = fire
+	if fire:
 		_release_speed = launch_speed()
 		_release_kind = _ammo[0]
-		Sfx.play("release", lerpf(1.15, 0.9, power), -2.0)
-		Sfx.haptic(10, 0.25)
 
 
 func cancel() -> void:
@@ -213,6 +242,7 @@ func cancel() -> void:
 	pouch = l.pouch_rest()
 	pouch_vel = Vector2.ZERO
 	power = 0.0
+	_armed = false
 	_ball_in_pouch = true
 
 
@@ -225,7 +255,8 @@ func step(dt: float) -> void:
 	pouch_vel += (-SPRING_K * (pouch - rest) - SPRING_C * pouch_vel) * dt
 	pouch += pouch_vel * dt
 	var after := (pouch - rest).dot(_release_dir)
-	if _ball_in_pouch and before <= 0.0 and after > 0.0:
+	if _armed and before <= 0.0 and after > 0.0:
+		_armed = false
 		_ball_in_pouch = false
 		launched.emit(rest, _release_dir * _release_speed, _release_kind)
 	if _release_t > 0.35 and pouch_vel.length() < 40.0 and pouch.distance_to(rest) < 1.5:
@@ -233,8 +264,11 @@ func step(dt: float) -> void:
 		pouch = rest
 		pouch_vel = Vector2.ZERO
 		power = 0.0
-		_ball_in_pouch = true
-		_load_anim = 0.0
+		_armed = false
+		if not _ball_in_pouch:
+			# The next ball drops into the empty pouch.
+			_ball_in_pouch = true
+			_load_anim = 0.0
 
 
 func _process(delta: float) -> void:
@@ -538,59 +572,41 @@ func _draw_lashing() -> void:
 func _draw_aim_dots() -> void:
 	if _arc_alpha <= 0.0 or power < MIN_POWER or not Prefs.aim_guide:
 		return
-	var p := l.pouch_rest()
-	var v := aim_dir * launch_speed()
-	var dt := 1.0 / 120.0
-	var next_dot := 0.05
-	var t := 0.0
-	var i := 0
+	# The first stretch of the flight, as the ball will fly it (wind and
+	# walls included): a dot every 45 ms from 50 ms on.
+	const DT := 1.0 / 120.0
 	var dots := 16 if long_sight else 8
-	while i < dots and t < (0.8 if long_sight else 0.4):
-		t += dt
-		v.y += Ball.GRAVITY * dt
-		p += v * dt
-		if p.x < Ball.RADIUS:
-			p.x = Ball.RADIUS
-			v.x = absf(v.x) * Ball.WALL_BOUNCE
-		elif p.x > l.size.x - Ball.RADIUS:
-			p.x = l.size.x - Ball.RADIUS
-			v.x = -absf(v.x) * Ball.WALL_BOUNCE
+	var path := Ball.trace(l.pouch_rest(), aim_dir * launch_speed(), wind, l, 0.8 if long_sight else 0.4, DT, true, true)
+	var next_dot := 0.05
+	var i := 0
+	for k in path.size():
+		if i >= dots:
+			break
+		var p := path[k]
 		if p.y < l.rail_y + Ball.RADIUS:
 			break
-		if t >= next_dot:
+		if (k + 1) * DT >= next_dot:
 			next_dot += 0.045
-			var k := 1.0 - float(i) / dots
+			var f := 1.0 - float(i) / dots
 			# The dots carry the power: brighter and fuller the harder you pull,
-			# warming in the last 15 %.
-			var col := Pal.GOLD.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
-			_front.draw_circle(p, lerpf(1.4, 2.8, k) * lerpf(0.8, 1.2, power), Color(col, (0.2 + 0.4 * power) * k * _arc_alpha), true, -1.0, true)
+			# warming in the last 15 %. Each sits on a dark rim, so the line
+			# reads over a bright body as well as over the dark field (bare
+			# gold at 20 to 60 % was lost against both).
+			var col := Pal.GOLD_LIGHT.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
+			var r := lerpf(1.9, 3.3, f) * lerpf(0.85, 1.15, power)
+			var a := (0.45 + 0.4 * power) * lerpf(0.4, 1.0, f) * _arc_alpha
+			_front.draw_circle(p, r + 1.5, Color(0.0, 0.0, 0.0, 0.5 * a), true, -1.0, true)
+			_front.draw_circle(p, r, Color(col, a), true, -1.0, true)
 			i += 1
 
 
-## The shot the current aim would fire: a point every 1/60 s, with the
-## ball's gravity and wall bounce, until it reaches the rail. Targets read
-## this to see whether they are in the line of fire.
+## The shot the current aim would fire, as the enemies judge it: a point
+## every 1/60 s, with the ball's gravity, the wind and a plain bounce off
+## the walls (they do not allow for the spin a wall gives a ball), until
+## it reaches the rail. Targets read this to see whether they are in the
+## line of fire.
 func predict(max_t := 1.2) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	var p := l.pouch_rest()
-	var v := aim_dir * launch_speed()
-	var dt := 1.0 / 60.0
-	var t := 0.0
-	while t < max_t:
-		t += dt
-		v.y += Ball.GRAVITY * dt
-		v.x += wind * dt
-		p += v * dt
-		if p.x < Ball.RADIUS:
-			p.x = Ball.RADIUS
-			v.x = absf(v.x) * Ball.WALL_BOUNCE
-		elif p.x > l.size.x - Ball.RADIUS:
-			p.x = l.size.x - Ball.RADIUS
-			v.x = -absf(v.x) * Ball.WALL_BOUNCE
-		out.append(p)
-		if p.y < l.rail_y + Ball.RADIUS:
-			break
-	return out
+	return Ball.trace(l.pouch_rest(), aim_dir * launch_speed(), wind, l, max_t, 1.0 / 60.0)
 
 
 ## Soft pulls lob, full pulls fly: a wide range with a slight curve so the

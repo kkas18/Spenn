@@ -17,6 +17,7 @@ var bar: TopBar
 var overlay: Overlay
 var intro_seq: Intro
 var locked := false            # input lock while a transition runs
+var _count_gen := 0            # the countdown in progress (an older one is void)
 
 var _scrim: ColorRect
 var _scrim_mat: ShaderMaterial
@@ -314,16 +315,29 @@ func _close_panel(p: Control) -> void:
 
 ## 3 → 2 → 1 over the dimmed game, then `cb`. Scrim lifts on the last beat.
 func countdown(cb: Callable) -> void:
+	_count_gen += 1
+	var gen := _count_gen
 	for i in 3:
 		Motion.after(0.42 * i, func() -> void:
+			if gen != _count_gen:
+				return
 			overlay.count_n = 3 - i
 			overlay.count_t = 0.0
 			Sfx.play("countdown", 1.0 + 0.06 * i)
 			Sfx.haptic_pattern("light"))
 	scrim_to(0.0, 0.35, 0.9)
 	Motion.after(1.26, func() -> void:
+		if gen != _count_gen:
+			return
 		overlay.count_n = 0
 		cb.call())
+
+
+## Stops a countdown that is under way (the game was paused again before
+## it ended): no more digits, no more ticks, and its end never comes.
+func cancel_countdown() -> void:
+	_count_gen += 1
+	overlay.count_n = 0
 
 
 func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0, was_daily := false, done: Array = []) -> void:
@@ -1786,7 +1800,7 @@ class Token extends UIButton:
 					# The cord catches it: a jolt and a swing.
 					if not Prefs.reduced_motion:
 						_w += randf_range(-2.2, 2.2)
-					Sfx.play("tick", randf_range(1.1, 1.3), -12.0)
+					Sfx.play("tick", Sfx.vary(1.1, 1.3), -12.0)
 		var air := 0.0 if Prefs.reduced_motion else sin(_clock * 0.9 + _phase) * 0.35
 		_w += (-K * sin(_ang) - C * _w + air) * dt
 		_ang += _w * dt
@@ -2293,7 +2307,7 @@ class TopBar extends Control:
 		return clampf((intro_t - t0) / d, 0.0, 1.0)
 
 	func _process(delta: float) -> void:
-		var rd := delta / maxf(Engine.time_scale, 0.001)
+		var rd := Motion.rd
 		intro_t += rd
 		_clock += rd
 		if not _twanged and intro_t >= 0.55:
@@ -3180,7 +3194,7 @@ class Overlay extends Control:
 		draw_polyline(PackedVector2Array([Vector2(cx - 9, cy), Vector2(cx, cy + 8), Vector2(cx + 9, cy)]), Color(Tok.PRIMARY, p), 2.5, true)
 
 	func _process(delta: float) -> void:
-		var rd := delta / maxf(Engine.time_scale, 0.001)
+		var rd := Motion.rd
 		card_t += rd
 		if not card_queue.is_empty() and not card_busy():
 			var c: Array = card_queue.pop_front()
@@ -3395,7 +3409,7 @@ class GameOver extends Control:
 	func _process(delta: float) -> void:
 		if _t < 0.0:
 			return
-		_t += delta / maxf(Engine.time_scale, 0.001)
+		_t += Motion.rd
 		var k := clampf((_t - COUNT_FROM) / Motion.dur(COUNT_D), 0.0, 1.0)
 		if k > 0.0 and k < 1.0 and _t - _ticked > 0.07:
 			_ticked = _t

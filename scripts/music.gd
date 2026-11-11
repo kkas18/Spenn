@@ -95,7 +95,7 @@ func _apply_volume() -> void:
 
 
 func _process(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	var want := SILENT_DB
 	if _started and mode == Mode.MENU:
 		want = 0.0

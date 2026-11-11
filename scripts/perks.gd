@@ -8,7 +8,7 @@ extends RefCounted
 const MAX := {
 	"heavy": 1,    # hits on armoured (2+ HP) enemies count double
 	"edge": 1,     # one strike severs a rope, and cuts come easier
-	"flow": 2,     # +2.5 s of flow, the meter fills 20% faster
+	"flow": 2,     # +1 s of flow, the meter fills 20% faster
 	"rack": 2,     # +1 ball in the rack
 	"reload": 2,   # balls reload 15% faster
 	"sight": 1,    # the aim guide reaches twice as far

@@ -131,7 +131,7 @@ var smug := 0.0                # 0..1: half-lidded eye and a raised brow
 var _taunt := -1.0             # time into a taunt (<0: none)
 var _taunt_in := 3.0           # until the next unprompted taunt
 var _taunt_delay := -1.0       # a near miss is mocked a moment later
-static var _last_tease_ms := 0
+static var _last_tease_step := -1000   # the substep of the last "na-na" (one per 1.6 s at most)
 # Teamwork: a sturdy one steps into the line of fire to shield an ally.
 var covered := false           # an ally is guarding this one: it holds still
 var _guard_wait := -1.0        # reaction time before the guard moves
@@ -443,6 +443,7 @@ var _pluck_cd := 0.0
 
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
 	life += 1
+	last_push = Vector2.ZERO
 	kind = k
 	posed = false
 	orders_cd = randf_range(1.2, 2.2)
@@ -709,7 +710,7 @@ func _land() -> void:
 			tilt = 0.0
 			flash_t = 0.12
 			Sfx.play("metal", 1.6, -14.0)
-	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
+	Sfx.play("knock", Sfx.vary(0.9, 1.15), -12.0)
 	if randf() < 0.35:
 		voice("up", -9.0)
 
@@ -727,7 +728,7 @@ func _on_entry() -> void:
 ## Sings one syllable on a note of the key, in this kind's register.
 func voice(shape: String, db := 0.0) -> void:
 	var reg: float = VOICE_REG[kind] * (0.82 if mood == Mood.GRUMPY else (1.22 if mood == Mood.CUTE else 1.0))
-	Sfx.voice(shape, reg, randi() % 4, db)
+	Sfx.voice(shape, reg, Sfx.pick(4), db)
 
 
 ## Looks at a neighbour for a moment (it fell, or just arrived).
@@ -794,9 +795,10 @@ func taunt() -> void:
 	if soft:
 		# A three-lobed wiggle.
 		_jv[2] += 110.0 * (radius / 30.0)
-	var now := Time.get_ticks_msec()
-	if now - _last_tease_ms > 1600:
-		_last_tease_ms = now
+	# Game time (substeps), not the wall clock: what happens in a run must
+	# not depend on when it is played.
+	if rope_clock - _last_tease_step > 192 or rope_clock < _last_tease_step:
+		_last_tease_step = rope_clock
 		voice("taunt", -2.0)
 
 
@@ -1041,11 +1043,11 @@ func _debris_bounce(screen_h: float) -> void:
 		if speed > 120.0 and _floor_hits <= 2:
 			var loud := linear_to_db(clampf(speed / 1400.0, 0.1, 0.55))
 			if soft:
-				Sfx.play("squish", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("squish", Sfx.vary(0.8, 0.95), loud - 6.0)
 			elif kind in [Kind.SHIELD, Kind.MIRROR, Kind.BOSS]:
-				Sfx.play("metal", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("metal", Sfx.vary(0.8, 0.95), loud - 6.0)
 			else:
-				Sfx.play("wood", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("wood", Sfx.vary(0.8, 0.95), loud - 6.0)
 
 
 ## Radius of the collision shape around `closest_point` (a rod's capsule
@@ -1081,6 +1083,14 @@ func keep_in(w: float) -> void:
 	elif pos.x > w - r:
 		pos.x = w - r
 		vel.x = -absf(vel.x) * 0.45
+	# The rail is a beam, not a line in the air: a body knocked or winched
+	# upward stops under it (tucked up against its hook, as when it drops
+	# in) and falls back, instead of sailing over the rail into the top bar.
+	var top := anchor.y + HOOK_LEN * 0.5
+	if pos.y < top:
+		pos.y = top
+		if vel.y < 0.0:
+			vel.y = -vel.y * 0.3
 
 
 ## The string's bounding box (hook to body), refreshed once per step for
@@ -1091,6 +1101,9 @@ var rope_box := Rect2()
 ## ago, and how far back from `pos` to draw it this frame.
 var prev_pos := Vector2.ZERO
 var render_off := Vector2.ZERO
+## How far the contacts moved this body in the last step (see
+## Contacts.target_contacts: opposing pushes are damped).
+var last_push := Vector2.ZERO
 
 
 func update_rope_box() -> void:
@@ -1163,13 +1176,18 @@ func panicked() -> bool:
 	return scared or stun_t > 0.0
 
 
-## Distance test against the top third of the string, just under the hook:
-## cutting is a precision shot, not something a stray ball does by luck.
-func rope_hit(p: Vector2, r: float) -> bool:
+## Does a ball's centre, moving from `p0` to `p` in this substep, pass
+## within `r` of the top third of the string, just under the hook? Cutting
+## is a precision shot, not something a stray ball does by luck; and the
+## whole of the step is tested, so a fast, slanting ball cannot step over
+## the string between two substeps.
+func rope_hit(p0: Vector2, p: Vector2, r: float) -> bool:
 	if not _attached:
 		return false
+	var reach := r + 1.5
 	for i in range(0, 3):
-		if Geometry2D.get_closest_point_to_segment(p, _pts[i], _pts[i + 1]).distance_to(p) < r + 1.5:
+		var cps := Geometry2D.get_closest_points_between_segments(p0, p, _pts[i], _pts[i + 1])
+		if (cps[0] as Vector2).distance_squared_to(cps[1]) < reach * reach:
 			return true
 	return false
 
@@ -1335,6 +1353,11 @@ func consume_pluck() -> bool:
 ## along the rail the strings must cross: the pair lets them, until they
 ## have come apart, and then keeps the new side.
 const ROPE_GAP := 3.5
+## The most a string can move a body sideways in one step (px). Strings
+## used to shove bodies up to 2 px at a time, and a body that swung back
+## was shoved again: heavy bodies shook on the spot in a crowded field.
+## At this pace (36 px/s) a body still makes room, but smoothly.
+const BODY_YIELD := 0.3
 const ROPE_DEPTH := 0.5         # depth apart at which strings are in different planes
 const ROPE_FORGET := 30         # steps after which a pair that no longer meets is forgotten
 static var rope_clock := 0      # contact steps so far (see Contacts.target_contacts)
@@ -1434,7 +1457,9 @@ func _rope_order(o: Target, s: float) -> void:
 		var mine := 0.25 if body else 0.5
 		var dx := -s * v * mine
 		if body:
-			pos.x += dx
+			# A body is heavy and gives way slowly (see BODY_YIELD): the
+			# other string, which is light, does the rest over the next steps.
+			pos.x += clampf(dx, -BODY_YIELD, BODY_YIELD)
 			if s * vel.x > 0.0:
 				vel.x *= 0.7
 		else:
@@ -1455,7 +1480,7 @@ func _give_way(k: int, dx: float) -> void:
 	if k <= 0 or dx == 0.0:
 		return
 	if k == N - 1 and _attached:
-		pos.x += dx * 0.5
+		pos.x += clampf(dx * 0.5, -BODY_YIELD, BODY_YIELD)
 		if signf(vel.x) == -signf(dx):
 			vel.x *= 0.7
 		return
@@ -1540,7 +1565,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if (kind == Kind.HEAVY or kind == Kind.BOSS) and _entry_run > 34.0:
 					# Lowered on its chain: a quiet clank per few links.
 					_entry_run = 0.0
-					Sfx.play("clank", randf_range(1.3, 1.5), -20.0)
+					Sfx.play("clank", Sfx.vary(1.3, 1.5), -20.0)
 				if kind == Kind.MIRROR:
 					tilt += 11.0 * dt
 			else:
@@ -1716,7 +1741,7 @@ func _brain(dt: float) -> void:
 				_calm_t = 0.0
 				var d := minf(lerpf(240.0, 380.0, a) * dt, maxf(0.0, length - 40.0))
 				if d > 0.0 and _reeled == 0.0:
-					Sfx.play("reel", randf_range(0.95, 1.1))
+					Sfx.play("reel", Sfx.vary(0.95, 1.1))
 				length -= d
 				_reeled += d
 			else:
@@ -1741,7 +1766,7 @@ func _brain(dt: float) -> void:
 				_shade_hidden = not _shade_hidden
 				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * randf_range(0.85, 1.2)
 				if _shade_hidden:
-					Sfx.play("fade", randf_range(0.95, 1.05))
+					Sfx.play("fade", Sfx.vary(0.95, 1.05))
 			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
 			# Spinneren: aimed at, it spins its plates faster to close the gap.
@@ -1818,7 +1843,7 @@ func mind_climb(amount: float) -> void:
 	_hop_left += amount
 	squash_t = 0.0
 	squash_dir = Vector2.UP
-	Sfx.play("creak", randf_range(0.95, 1.1))
+	Sfx.play("creak", Sfx.vary(0.95, 1.1))
 
 
 ## A bluff: it stands its ground with a defiant flinch and a smirk.
@@ -1873,7 +1898,7 @@ func _slide(x: float, speed: float, quiet := false) -> void:
 	_slide_to = x
 	_slide_speed = speed
 	if not quiet:
-		Sfx.play("slide", randf_range(0.92, 1.08))
+		Sfx.play("slide", Sfx.vary(0.92, 1.08))
 
 
 ## Idle life: now and then a target drifts along the rail on its own. Bold
@@ -2021,7 +2046,7 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	_tell_t = 0.0
 	startle_t = 0.25
-	Sfx.play("slide", randf_range(0.95, 1.1))
+	Sfx.play("slide", Sfx.vary(0.95, 1.1))
 
 
 ## Makes this one a variant of its family (right after spawning).
@@ -2309,7 +2334,7 @@ func _charm_step(dt: float) -> void:
 				_ghost_t = 1.2
 				_charm_cd = 4.0
 				charm_flash = 1.0
-				Sfx.play("fade", randf_range(1.0, 1.15))
+				Sfx.play("fade", Sfx.vary(1.0, 1.15))
 		Charm.BALLOON:
 			if aimed:
 				length = maxf(60.0 * (_screen_h / 1280.0), length - 110.0 * dt)
@@ -2393,7 +2418,7 @@ func _release() -> void:
 	spin = signf(vel.x) * randf_range(2.0, 3.5)
 	startle_t = 0.5
 	voice("up")
-	Sfx.play("whoosh", randf_range(1.0, 1.2), -4.0)
+	Sfx.play("whoosh", Sfx.vary(1.0, 1.2), -4.0)
 
 
 ## In the air: a thrown body. It grabs the host's rope if it passes close
@@ -2460,7 +2485,7 @@ func _try_grab(h: Target) -> bool:
 	_dodge_cd = 1.5
 	grabbed = true
 	voice("up")
-	Sfx.play("creak", randf_range(0.9, 1.05), -2.0)
+	Sfx.play("creak", Sfx.vary(0.9, 1.05), -2.0)
 	return true
 
 
@@ -2516,7 +2541,7 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 		tele_t -= dt
 		if tele_t <= 0.0:
 			_lunge_left += drop * (_screen_h / 1280.0)
-			Sfx.play("whoosh", randf_range(0.95, 1.15), -8.0)
+			Sfx.play("whoosh", Sfx.vary(0.95, 1.15), -8.0)
 		return
 	_brain_t -= dt
 	if _brain_t <= 0.0:

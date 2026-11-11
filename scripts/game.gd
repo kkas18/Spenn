@@ -29,10 +29,17 @@ const RESCUE := 0.85           # ... and above this, a rescue ("SAVED!")
 # Hazards: from wave 3 most waves bring one event partway through.
 enum Hazard { NONE, GUST, BLACKOUT, GOLD }
 const HAZARD_FROM := 2
-const GUST_TIME := 9.0
+# The lengths below are in real seconds, and they are the ones the game
+# has in fact been played with. Up to v7.57 they read 9 and 8 s (and
+# overload 5 s, flow 7 s), but every hit made the real-time clocks leap
+# 0.83 s ahead (see Motion.rd), so a gust or a blackout was over in about
+# 3 s, overload in about 2.5 s (1.5 to 3.6 s: shorter the more you hit)
+# and flow in about 3 s. With the clocks right, the numbers now say what
+# happens, and no longer depend on how many hits land.
+const GUST_TIME := 4.0
 const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a share)
 const GUST_BALL := 0.6
-const BLACKOUT_TIME := 8.0
+const BLACKOUT_TIME := 3.5
 const GOLD_BONUS := 400
 # Nemesis: the target that took a knot returns 18-30 s of play later,
 # scarred and tougher; destroying it pays revenge.
@@ -84,17 +91,22 @@ const Ammo := Slingshot.Ammo
 # rail); misses and breaches bleed it. Full, it discharges for
 # OVERLOAD_TIME real seconds: time slows, every ball pierces, reloads are
 # near instant, the targets panic and climb their strings, points double.
-const OVERLOAD_TIME := 5.0
+const OVERLOAD_TIME := 2.5       # real seconds (see GUST_TIME)
 const OVERLOAD_SCALE := 0.7
-const OVERLOAD_RELOAD := 0.3   # reload time factor while it lasts
+const OVERLOAD_RELOAD := 0.5   # reload time factor while it lasts
 const CHARGE_KILL := 0.03
+const CHARGE_WAVE := 0.15       # per wave past CHARGE_FROM, a kill charges this much less (see _charge)
+const CHARGE_FROM := 4          # waves 1 to 4 charge as they always have
 # Flow: quick hits fill a meter; full, the run speeds up for a while.
-const FLOW_TIME := 7.0          # real seconds
-const FLOW_HIT := 0.12
-const FLOW_KILL := 0.2
+const FLOW_TIME := 3.0          # real seconds (see GUST_TIME)
+# What a shot that hit, and a kill, add to the meter. (0.12 and 0.2 while
+# each hit also cost the meter 0.08 through the leaping decay; a kill
+# with one ball fills it as it did then.)
+const FLOW_HIT := 0.1
+const FLOW_KILL := 0.14
 const FLOW_MISS := 0.3
 const FLOW_DECAY := 0.1         # per second while not flowing
-const FLOW_RELOAD := 1.4        # reload speed factor while it lasts
+const FLOW_RELOAD := 1.3        # reload speed factor while it lasts
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
@@ -182,7 +194,11 @@ var targets: Array[Target] = []
 var balls: Array[Ball] = []
 
 var _rng := RandomNumberGenerator.new()
+## Tests set this (or the SPENN_SEED environment variable) to make every
+## run roll the same; 0 leaves it to chance.
+static var test_seed := 0
 var _acc := 0.0
+var _sling_acc := 0.0           # real time not yet stepped by the slingshot's band
 var _state_t := 0.0
 var _spawn_t := 0.0
 var _intro_hold := 0.0          # a new wave's title is showing: nothing comes yet
@@ -196,6 +212,8 @@ var _vignette: ShaderMaterial
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
+var _aim_queued := false        # a press that waits for the last ball to leave the pouch
+var _drag_off := Vector2.ZERO   # the finger's travel in the current pull
 var _time := 0.0
 var _knock_sfx_cd := 0.0
 var _shot_seq := 0
@@ -243,6 +261,8 @@ func _ready() -> void:
 	smarts = Smarts.new(self)
 	mind = Mind.new(self)
 	_rng.randomize()
+	if OS.get_environment("SPENN_SEED") != "":
+		test_seed = int(OS.get_environment("SPENN_SEED"))
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
 	add_child(backdrop)
@@ -419,12 +439,14 @@ func _start_run() -> void:
 	_set_state(State.STARTING)
 	# The daily challenge: the same spawn sequence for everyone that day.
 	daily = hud.daily
-	if daily:
-		_rng.seed = Meta.today()
-		seed(Meta.today())
-	else:
-		_rng.randomize()
-		randomize()
+	# One seed drives everything a run rolls (spawns, the director's pacing
+	# and moods, each enemy's temper): the date for the daily challenge,
+	# chance otherwise, or the one a test asked for (SPENN_SEED).
+	randomize()
+	var run_seed := Meta.today() if daily else (test_seed if test_seed != 0 else randi())
+	_rng.seed = run_seed
+	director.reseed(run_seed)
+	seed(run_seed)
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
 	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
@@ -738,6 +760,15 @@ func _free_target() -> Target:
 # ---------------------------------------------------------------- frame
 
 func _process(delta: float) -> void:
+	# The band snaps home in real time, in the same fixed steps as the
+	# rest: a shot leaves the pouch a twentieth of a second after the finger
+	# lets go, also in the middle of a hit-stop or slow motion (where it
+	# used to hang for up to a quarter of a second). The ball it fires then
+	# flies in the game's time like everything else.
+	_sling_acc += minf(Motion.rd, 0.05)
+	while _sling_acc >= SUBSTEP:
+		_sling_acc -= SUBSTEP
+		slingshot.step(SUBSTEP)
 	_acc += minf(delta, 0.05)
 	while _acc >= SUBSTEP:
 		_acc -= SUBSTEP
@@ -748,9 +779,10 @@ func _process(delta: float) -> void:
 		_step(SUBSTEP)
 	_interpolate(_acc / SUBSTEP)
 	_state_t += delta
-	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
+	Pal.theme_tick(Motion.rd)
 	_update_tilt(delta)
 	_update_ammo(delta)
+	_take_queued_aim()
 	_update_eyes()
 	_update_ball_light()
 	# Menu: new players (and anyone idle for a while) see how to shoot.
@@ -788,7 +820,7 @@ static func sensor_gravity() -> Vector3:
 ## angle over several seconds, so only a fresh lean moves the view; while
 ## aiming the view holds still. Off in settings or without a sensor.
 func _update_tilt(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	var sg := sensor_gravity()
 	var want := Vector2.ZERO
 	# Its own switch in settings (reduced motion no longer turns it off).
@@ -952,7 +984,7 @@ func _pace(delta: float) -> void:
 	if _cocky_t > 0.0:
 		nerve = minf(nerve, -0.7)
 	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
 	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
 	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
@@ -1247,17 +1279,7 @@ func _path_x_at(path: PackedVector2Array, y: float) -> float:
 
 ## A ball's next 0.6 s (gravity only), sampled at 30 Hz.
 func _flight(b: Ball) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	var p := b.pos
-	var v := b.vel
-	var dt := 1.0 / 30.0
-	var w := gust * GUST_BALL
-	for i in 18:
-		v.y += Ball.GRAVITY * dt
-		v.x += w * dt
-		p += v * dt
-		out.append(p)
-	return out
+	return Ball.trace(b.pos, b.vel, gust * GUST_BALL, layout, 0.6, 1.0 / 30.0, false)
 
 
 func _read_flight(t: Target, f: PackedVector2Array) -> void:
@@ -1328,7 +1350,6 @@ func _step(dt: float) -> void:
 	contacts.target_contacts()
 	if state == State.PLAYING or state == State.STARTING:
 		contacts.falling_contacts()
-	slingshot.step(dt)
 	contacts.ball_contacts()
 	for b in balls:
 		if not b.active:
@@ -1353,7 +1374,7 @@ func _step(dt: float) -> void:
 			stage.flinch(b.pos)
 		if title.active and title.knock(b.pos, b.vel, Ball.RADIUS) and _knock_sfx_cd <= 0.0:
 			_knock_sfx_cd = 0.1
-			Sfx.play("knock", randf_range(0.8, 1.0), -6.0)
+			Sfx.play("knock", Sfx.vary(0.8, 1.0), -6.0)
 		contacts.collide(b)
 	if state == State.PLAYING or state == State.STARTING:
 		for t in targets:
@@ -1575,7 +1596,7 @@ func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.sparks(contact, Pal.METAL_LIGHT, 6)
 	fx.ring(contact, Pal.METAL_LIGHT, 14.0)
 	fx.popup(Loc.t("popup.blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
-	Sfx.play("clank", randf_range(0.95, 1.08), -3.0)
+	Sfx.play("clank", Sfx.vary(0.95, 1.08), -3.0)
 	Sfx.haptic(10, 0.3)
 
 
@@ -1729,6 +1750,11 @@ func _charge(v: float) -> void:
 	var was := charge
 	if v > 0.0:
 		v *= 1.0 + 0.25 * perk("charge")
+		# Late waves bring far more to shoot at, so each kill fills a little
+		# less there: overload keeps coming at about the same pace instead
+		# of one chaining into the next. The first four waves, where a run
+		# usually ended before v8.0, charge exactly as they always have.
+		v /= 1.0 + CHARGE_WAVE * maxi(0, director.wave - CHARGE_FROM)
 	charge = clampf(charge + v, 0.0, 1.0)
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
@@ -1768,7 +1794,7 @@ func _overload_tick(delta: float) -> void:
 		t.scared = on and t.phase == Target.Phase.HANGING
 	if not on:
 		return
-	overload_t -= delta / maxf(Engine.time_scale, 0.001)
+	overload_t -= Motion.rd
 	charge = maxf(0.0, overload_t / OVERLOAD_TIME)
 	rail.charge = charge
 	if overload_t <= 0.0:
@@ -1804,7 +1830,7 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 	var kind := t.kind
 	if not killed:
 		if t.soft:
-			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+			Sfx.play("squish", 30.0 / t.radius * Sfx.vary(0.95, 1.05), loud)
 		else:
 			_material_knock(t, hits, loud)
 		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
@@ -1818,16 +1844,16 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 			fx.burst(kind, at, rot, r, col, Vector2.ZERO)
 			fx.puff(at, col, 2, r * 1.3, 0.32))
 		# Jelly bursts wetly; the smaller it is, the higher it sounds.
-		Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		Sfx.play("splat", 30.0 / t.radius * Sfx.vary(0.95, 1.05), loud)
 		Sfx.play("squish", 1.1, loud - 6.0)
 	else:
 		var boss := kind == Target.Kind.BOSS
 		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
 		fx.shards(t.pos, col, 6 if boss else 2, t.vel)
 		fx.puff(t.pos, col, 6 if boss else 2, t.radius * (1.8 if boss else 1.3), 0.32)
-		Sfx.play("burst", randf_range(0.92, 1.08), loud)
+		Sfx.play("burst", Sfx.vary(0.92, 1.08), loud)
 		_material_knock(t, hits, loud)
-	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
+	Sfx.play("snap", Sfx.vary(0.95, 1.1), -8.0)
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
 		fx.moment(t.pos, Tok.PRIMARY_HI, 1.25)
@@ -1894,7 +1920,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
 	fx.popup("+%d" % gained, b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
-	Sfx.play("cut", randf_range(0.95, 1.08))
+	Sfx.play("cut", Sfx.vary(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
 	_charge(CHARGE_KILL)
 	_skill(Skill.CUT, b.pos)
@@ -2213,7 +2239,7 @@ func _hazard_tick(delta: float) -> void:
 		if _hazard_in <= 0.0:
 			_begin_hazard()
 		return
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_hazard_t += rd
 	match _hazard:
 		Hazard.GUST:
@@ -2424,7 +2450,7 @@ func _reload_time() -> float:
 
 
 func _flow_time() -> float:
-	return FLOW_TIME + 2.5 * perk("flow")
+	return FLOW_TIME + 1.0 * perk("flow")
 
 
 ## A cleared wave wins the run one perk at random (never past its cap);
@@ -3024,7 +3050,7 @@ func _begin_flow() -> void:
 
 ## Real time, so slow motion doesn't stretch it.
 func _flow_tick(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	if flow_t > 0.0:
 		flow_t -= rd
 		flow = maxf(0.0, flow_t / _flow_time())
@@ -3133,6 +3159,24 @@ func _grant(kind: int) -> void:
 		ammo.insert(1, kind)
 
 
+## A press that came while the last ball was leaving takes the pouch the
+## moment it is free, at the pull the finger has by then.
+func _take_queued_aim() -> void:
+	if not _aim_queued:
+		return
+	if _touch == -1 or not (state == State.MAIN_MENU or state == State.STARTING or state == State.PLAYING):
+		_aim_queued = false
+		return
+	if slingshot.begin_aim():
+		_aim_queued = false
+		_aim_start = _time
+		slingshot.drag(_drag_off)
+	elif not slingshot.is_launching():
+		# No ball after all: the press is dropped.
+		_aim_queued = false
+		_touch = -1
+
+
 func _update_ammo(delta: float) -> void:
 	if ammo.size() < _ammo_cap() and state != State.DEATH and state != State.GAME_OVER:
 		reload_t += delta / (OVERLOAD_RELOAD if overload_t > 0.0 else 1.0) * (FLOW_RELOAD if flow_t > 0.0 else 1.0)
@@ -3218,7 +3262,10 @@ func _notification(what: int) -> void:
 			if state == State.PLAYING or state == State.STARTING:
 				_pause()
 			elif state == State.RESUMING:
-				# Backgrounded mid-countdown: fall back to the pause menu.
+				# Backgrounded mid-countdown: back to the pause menu, with the
+				# countdown called off and the menu free to answer.
+				hud.cancel_countdown()
+				hud.locked = false
 				_set_state(State.PLAYING)
 				_pause()
 		NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -3252,7 +3299,17 @@ func _unhandled_input(e: InputEvent) -> void:
 			if slingshot.begin_aim():
 				_touch = e.index
 				_origin = e.position
+				_drag_off = Vector2.ZERO
 				_aim_start = _time
+				_aim_queued = false
+			elif slingshot.is_launching() and ammo.size() > 1:
+				# The last ball is still leaving the pouch (a twentieth of a
+				# second): this press is kept, and takes the next ball.
+				_touch = e.index
+				_origin = e.position
+				_drag_off = Vector2.ZERO
+				_aim_start = _time
+				_aim_queued = true
 			elif _deny_cd <= _time:
 				# No ball loaded: a short "not yet" instead of silence.
 				_deny_cd = _time + 0.5
@@ -3260,9 +3317,19 @@ func _unhandled_input(e: InputEvent) -> void:
 				Sfx.haptic_pattern("error")
 		elif not e.pressed and e.index == _touch:
 			_touch = -1
-			_release_hold = _time - _aim_start if _aim_start >= 0.0 else -1.0
-			_aim_start = -1.0
-			slingshot.release()
+			if _aim_queued:
+				# Lifted before the pouch could be taken: nothing to let go of.
+				_aim_queued = false
+				_aim_start = -1.0
+			elif e.canceled:
+				# The system took the touch away (a gesture from the edge, the
+				# notification shade, a call): that is not a release.
+				_aim_start = -1.0
+				slingshot.abort()
+			else:
+				_release_hold = _time - _aim_start if _aim_start >= 0.0 else -1.0
+				_aim_start = -1.0
+				slingshot.release()
 		elif e.pressed and not in_aim_zone and e.position.y > layout.top_bar_h and state != State.MAIN_MENU:
 			# Double-tap on the open field pauses. Taps there never aim, so
 			# this can't collide with shooting.
@@ -3274,4 +3341,11 @@ func _unhandled_input(e: InputEvent) -> void:
 				_last_tap = now
 				_last_tap_pos = e.position
 	elif e is InputEventScreenDrag and e.index == _touch:
-		slingshot.drag(e.position - _origin)
+		# A finger that moves up past where it began takes its starting
+		# point with it: sliding up first is a way to make room for a longer
+		# pull, never a dead stretch of screen.
+		if e.position.y < _origin.y:
+			_origin.y = e.position.y
+		_drag_off = e.position - _origin
+		if not _aim_queued:
+			slingshot.drag(_drag_off)

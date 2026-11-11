@@ -2667,3 +2667,36 @@ v7.55, med to endringer.
    (under −90 dB).
 4. **Tester:** testpakken passerer. Seks runder med middels bot gir median 178 s (v7.55:
    168 s), altså ingen endring i balansen.
+
+## v8.0 – Helhetlig oppgradering, trinn 0 og 1: stabilitet, kontroll og jevn flyt
+
+Fra v8 føres planen, funnene og målingene i [OPPGRADERING.md](OPPGRADERING.md), og en kort
+endringslogg i [CHANGELOG.md](CHANGELOG.md). Originalen (v7.57) er tatt vare på som
+`spenn-v7.57-original`. Her står bare hovedlinjene.
+
+1. **Gjennomgang av hele prosjektet** ga 14 feil som måtte rettes. De viktigste:
+   - Hvert treff fikk sanntidsklokkene til å hoppe 0,83 s. Overload varte derfor ca. 2,5 s
+     (ikke 5), flyt ca. 3 s (ikke 7), og risting, kamerabevegelse og sakte film utløst av
+     treff ble kuttet. Klokken er rettet (`Motion.rd`), og varighetene er satt til det som
+     faktisk er spilt.
+   - Pausemenyen låste seg hvis appen ble lagt i bakgrunnen midt i nedtellingen.
+   - En avbrutt berøring fyrte av et skudd.
+   - Et nytt drag ble avvist i 0,8 s etter hvert skudd. Nå styrer ladetiden skuddtakten.
+   - Full kraft var utenfor rekkevidde fra lomma (51–67 %). Draglengden følger nå plassen
+     på skjermen.
+   - Siktelinjen viste feil bane etter veggtreff, og snorkutt ble ikke alltid registrert.
+   - Kropper ristet i tette felt og kunne fly over bjelken.
+   - En avkuttet lagringsfil mistet fremgang uten varsel.
+2. **Testene spilte et annet spill:** uten vindu var feltet et kvadrat på 1280 × 1280 og
+   alle botskudd på full kraft. Balansetallene i v7.50–v7.57 gjaldt derfor ikke telefon.
+   Testene spiller nå på en skjerm formet som en telefon, med egen lagringsfil og fast frø.
+3. **Nye tester:** `layout`, `flow`, `save`, `timing` og `physics`, i tillegg til `soak` og
+   `bot`. `balance.sh` måler tre ferdighetsnivåer.
+4. **Balanse:** ladetiden er ca. 1 s per kule (før 0,6–0,88 s bak en lås på 0,8 s),
+   overload lades 15 % saktere per bølge fra bølge 5, og nedstigningen fortsetter å øke
+   etter intensitet 5 (før flatet den ut på et nivå ingen runde nådde). Bot, median
+   overlevelse: svak 190 s (før 182 s), middels 289 s (før 194 s), god 326 s (før 196 s).
+   En svak spiller varer altså som før, og dyktighet lønner seg.
+5. **Ytelse:** små prikker, buer og streker tegnes samlet (`Ink`). Et ansikt tegnes på
+   92 µs mot 165 µs før, med samme bilde.
+6. **Siktelinjen** har større prikker med mørk kant.

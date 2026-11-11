@@ -149,6 +149,47 @@ func step(dt: float, l: Layout) -> bool:
 	return age < MAX_AGE and pos.y < l.size.y + RADIUS * 2.0
 
 
+## The path a ball takes from `p` at velocity `v`: a point every `dt`
+## seconds for up to `max_t`, under gravity and a side wind (px/s²), off
+## the side walls (when `walls`), until it reaches the rail. One rule for
+## the aim guide, for what the enemies read of your aim and of a ball in
+## flight. With `spin` it is the flight itself, step for step: the wall's
+## grip takes some of the ball's speed along the wall and turns it into
+## spin, which then curls the flight (see step and _wall). Without, the
+## wall is a plain mirror: that is how the enemies judge a banked aim, and
+## why a shot off the wall is hard for them to read.
+static func trace(p: Vector2, v: Vector2, wind: float, l: Layout, max_t: float, dt: float, walls := true, spin := false) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var t := 0.0
+	var w := 0.0
+	while t < max_t:
+		t += dt
+		v.y += GRAVITY * dt
+		v.x += wind * dt
+		p += v * dt
+		if spin:
+			v += Vector2(-v.y, v.x) * w * MAGNUS * dt
+			w *= exp(-0.5 * dt)
+		if walls:
+			var n := Vector2.ZERO
+			if p.x < RADIUS:
+				p.x = RADIUS
+				n = Vector2.RIGHT
+			elif p.x > l.size.x - RADIUS:
+				p.x = l.size.x - RADIUS
+				n = Vector2.LEFT
+			if n != Vector2.ZERO:
+				if spin and v.dot(n) < -60.0:
+					var imp := grip(v, w, n, Vector2.ZERO, (1.0 + WALL_BOUNCE) * absf(v.dot(n)), MU_WALL, 0.0)
+					v += imp
+					w += grip_spin(n, imp)
+				v.x = n.x * absf(v.x) * WALL_BOUNCE
+		out.append(p)
+		if p.y < l.rail_y + RADIUS:
+			break
+	return out
+
+
 ## Bounce off a side wall (normal `n`): friction along the wall grips the
 ## ball's surface, trading some speed for spin (or spin for speed), and it
 ## knocks against the wall, louder the harder it hits.
@@ -164,19 +205,33 @@ func _wall(n: Vector2) -> void:
 ## impulse `jn`. `other_inv_m` is the other body's inverse mass (0: fixed).
 ## Returns the tangential impulse given to the ball.
 func friction(n: Vector2, other_vel: Vector2, jn: float, mu: float, other_inv_m: float) -> Vector2:
+	var imp := grip(vel, w, n, other_vel, jn, mu, other_inv_m)
+	vel += imp
+	w += grip_spin(n, imp)
+	return imp
+
+
+## The tangential impulse friction gives a ball moving at `v` and spinning
+## at `spin_w` (see friction for the rest): the surfaces grip, up to mu
+## times the normal impulse, and no more than stops their sliding.
+static func grip(v: Vector2, spin_w: float, n: Vector2, other_vel: Vector2, jn: float, mu: float, other_inv_m: float) -> Vector2:
 	var r := -n * RADIUS
-	var surf := Vector2(-w * r.y, w * r.x)
-	var rel := vel + surf - other_vel
+	var surf := Vector2(-spin_w * r.y, spin_w * r.x)
+	var rel := v + surf - other_vel
 	var tang := rel - n * rel.dot(n)
 	var tl := tang.length()
 	if tl < 0.5:
 		return Vector2.ZERO
 	var k := 1.0 + 1.0 / INERTIA + other_inv_m
 	var jt := minf(mu * jn, tl / k)
-	var imp := -tang / tl * jt
-	vel += imp
-	w += (r.x * imp.y - r.y * imp.x) / (INERTIA * RADIUS * RADIUS)
-	return imp
+	return -tang / tl * jt
+
+
+## The spin (rad/s) a tangential impulse `imp` at a contact with normal `n`
+## gives the ball.
+static func grip_spin(n: Vector2, imp: Vector2) -> float:
+	var r := -n * RADIUS
+	return (r.x * imp.y - r.y * imp.x) / (INERTIA * RADIUS * RADIUS)
 
 
 func _process(delta: float) -> void:

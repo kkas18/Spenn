@@ -9,6 +9,8 @@ signal changed
 
 const PATH := "user://spenn.cfg"
 const LEVELS := 4              # 0 off, 1 low, 2 medium, 3 high
+const FORMAT := 2              # the stored layout (2: sealed, with a backup beside it)
+const SAVE_DELAY_MS := 800     # changes made close together are written once
 
 var lang := ""
 var music_volume := 2
@@ -35,40 +37,134 @@ var habits := {}               # what the enemies know of the player (see Habits
 var feats := {}                # achievements won: id -> the day (see Feats)
 var best_runs: Array = []      # the ten best runs: {"score", "wave", "secs", "acc", "day", "daily"}
 
+## Where the progress is kept. Tests point it at a file of their own
+## (the SPENN_SAVE environment variable), so they never touch a player's.
+var path := PATH
+## How the last load went when it was not the plain case: "backup" (the
+## file was damaged or missing and the previous one was used), "temp" (a
+## save was interrupted between writing and swapping), "partial" (damaged,
+## with nothing better beside it), or "" (read as written, or a first run).
+var recovered := ""
+
 var _cfg := ConfigFile.new()
+var _main_ok := false          # the file at `path` is whole (so it may become the backup)
+var _dirty := false
+var _flush_at := 0             # ticks (ms) at which the pending changes are written
+var _generation := 0           # counts the writes (stored in the seal)
 
 
 func _ready() -> void:
-	if _cfg.load(PATH) == OK:
-		lang = str(_cfg.get_value("settings", "lang", ""))
-		# v3.x stored one "volume" for everything: carry it over once.
-		var legacy := int(_cfg.get_value("settings", "volume", 2))
-		music_volume = int(_cfg.get_value("settings", "music", legacy))
-		sfx_volume = int(_cfg.get_value("settings", "sfx", legacy))
-		haptics = bool(_cfg.get_value("settings", "haptics", true))
-		reduced_motion = bool(_cfg.get_value("settings", "reduced_motion", false))
-		aim_guide = bool(_cfg.get_value("settings", "aim_guide", true))
-		tilt = bool(_cfg.get_value("settings", "tilt", true))
-		record = int(_cfg.get_value("stats", "record", 0))
-		intro_seen = bool(_cfg.get_value("stats", "intro_seen", false))
-		seen = _cfg.get_value("stats", "seen", {})
-		hints = _cfg.get_value("stats", "hints", {})
-		runs = int(_cfg.get_value("stats", "runs", 0))
-		total_points = int(_cfg.get_value("meta", "total_points", 0))
-		skin_points = int(_cfg.get_value("meta", "skin_points", total_points))
-		fresh = _cfg.get_value("meta", "fresh", {})
-		skin = int(_cfg.get_value("meta", "skin", 0))
-		missions = _cfg.get_value("meta", "missions", [])
-		mission_level = int(_cfg.get_value("meta", "mission_level", 0))
-		stats = _cfg.get_value("meta", "stats", {})
-		daily_date = int(_cfg.get_value("meta", "daily_date", 0))
-		daily_best = int(_cfg.get_value("meta", "daily_best", 0))
-		habits = _cfg.get_value("meta", "habits", {})
-		feats = _cfg.get_value("meta", "feats", {})
-		best_runs = _cfg.get_value("meta", "best_runs", [])
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(false)
+	var over := OS.get_environment("SPENN_SAVE")
+	if over != "":
+		path = over
+	load_from_disk()
+
+
+## Reads the stored progress (see `path`), falling back to the backup when
+## the file is missing, cut short or unreadable. Every value is checked on
+## the way in: a damaged entry becomes its default instead of a crash.
+func load_from_disk() -> void:
+	_cfg = _pick_file()
+	lang = str(_cfg.get_value("settings", "lang", ""))
+	if not lang in ["", "no", "en"]:
+		lang = ""
+	# v3.x stored one "volume" for everything: carry it over once.
+	var legacy := _int("settings", "volume", 2)
+	music_volume = clampi(_int("settings", "music", legacy), 0, LEVELS - 1)
+	sfx_volume = clampi(_int("settings", "sfx", legacy), 0, LEVELS - 1)
+	haptics = _bool("settings", "haptics", true)
+	reduced_motion = _bool("settings", "reduced_motion", false)
+	aim_guide = _bool("settings", "aim_guide", true)
+	tilt = _bool("settings", "tilt", true)
+	record = maxi(0, _int("stats", "record", 0))
+	intro_seen = _bool("stats", "intro_seen", false)
+	seen = _dict("stats", "seen")
+	hints = _dict("stats", "hints")
+	runs = maxi(0, _int("stats", "runs", 0))
+	total_points = maxi(0, _int("meta", "total_points", 0))
+	skin_points = maxi(0, _int("meta", "skin_points", total_points))
+	fresh = _dict("meta", "fresh")
+	skin = _int("meta", "skin", 0)
+	if skin < 0 or skin >= Meta.SKINS.size() or skin_points < int(Meta.SKINS[skin][1]):
+		skin = 0
+	mission_level = maxi(0, _int("meta", "mission_level", 0))
+	missions = []
+	for m: Variant in _array("meta", "missions"):
+		if m is Dictionary and Meta.MISSIONS.has(m.get("id", "")) and missions.size() < Meta.ACTIVE:
+			missions.append({"id": str(m.id), "level": maxi(0, int(m.get("level", 0)))})
+	stats = _dict("meta", "stats")
+	daily_date = _int("meta", "daily_date", 0)
+	daily_best = maxi(0, _int("meta", "daily_best", 0))
+	habits = _dict("meta", "habits")
+	feats = _dict("meta", "feats")
+	best_runs = []
+	for r: Variant in _array("meta", "best_runs"):
+		if r is Dictionary and best_runs.size() < 10:
+			best_runs.append(r)
+	_generation = _int("seal", "n", 0)
+	_dirty = false
 	_fill_missions()
 	if lang == "":
 		lang = "no" if OS.get_locale_language() in ["nb", "nn", "no"] else "en"
+	if recovered != "":
+		# Whatever was recovered becomes the file again (and its backup).
+		save()
+
+
+## The file to trust. A complete file ends with its seal (written last);
+## one from before the seal existed (v7.57 and earlier) is known by its
+## last key. Otherwise, in order: a finished save that was never swapped
+## in, the backup, and at worst whatever could be read.
+func _pick_file() -> ConfigFile:
+	recovered = ""
+	_main_ok = false
+	var main := _read(path)
+	if main != null and (main.has_section("seal") or main.has_section_key("meta", "best_runs") or not FileAccess.file_exists(path + ".bak")):
+		_main_ok = true
+		return main
+	var tmp := _read(path + ".tmp")
+	if main == null and tmp != null and tmp.has_section("seal"):
+		# The swap never happened: finish it now.
+		recovered = "temp"
+		_main_ok = _move(path + ".tmp", path)
+		return tmp
+	var bak := _read(path + ".bak")
+	if bak != null:
+		recovered = "backup"
+		return bak
+	if main != null:
+		recovered = "partial"
+		return main
+	return ConfigFile.new()
+
+
+static func _read(p: String) -> ConfigFile:
+	if not FileAccess.file_exists(p):
+		return null
+	var c := ConfigFile.new()
+	return c if c.load(p) == OK else null
+
+
+func _int(section: String, key: String, fallback: int) -> int:
+	var v: Variant = _cfg.get_value(section, key, fallback)
+	return int(v) if (v is int or v is float) else fallback
+
+
+func _bool(section: String, key: String, fallback: bool) -> bool:
+	var v: Variant = _cfg.get_value(section, key, fallback)
+	return v if v is bool else fallback
+
+
+func _dict(section: String, key: String) -> Dictionary:
+	var v: Variant = _cfg.get_value(section, key, {})
+	return v if v is Dictionary else {}
+
+
+func _array(section: String, key: String) -> Array:
+	var v: Variant = _cfg.get_value(section, key, [])
+	return v if v is Array else []
 
 
 func cycle_music() -> void:
@@ -237,29 +333,96 @@ func _commit() -> void:
 	changed.emit()
 
 
+## Marks the progress as changed. It is written shortly after (several
+## changes in a row, as at the end of a run, make one write), and at once
+## when the app is paused, loses focus or closes (see flush).
 func save() -> void:
-	_cfg.set_value("settings", "lang", lang)
-	_cfg.set_value("settings", "music", music_volume)
-	_cfg.set_value("settings", "sfx", sfx_volume)
-	_cfg.set_value("settings", "haptics", haptics)
-	_cfg.set_value("settings", "reduced_motion", reduced_motion)
-	_cfg.set_value("settings", "aim_guide", aim_guide)
-	_cfg.set_value("settings", "tilt", tilt)
-	_cfg.set_value("stats", "record", record)
-	_cfg.set_value("stats", "intro_seen", intro_seen)
-	_cfg.set_value("stats", "seen", seen)
-	_cfg.set_value("stats", "hints", hints)
-	_cfg.set_value("stats", "runs", runs)
-	_cfg.set_value("meta", "total_points", total_points)
-	_cfg.set_value("meta", "skin_points", skin_points)
-	_cfg.set_value("meta", "fresh", fresh)
-	_cfg.set_value("meta", "skin", skin)
-	_cfg.set_value("meta", "missions", missions)
-	_cfg.set_value("meta", "mission_level", mission_level)
-	_cfg.set_value("meta", "stats", stats)
-	_cfg.set_value("meta", "daily_date", daily_date)
-	_cfg.set_value("meta", "daily_best", daily_best)
-	_cfg.set_value("meta", "habits", habits)
-	_cfg.set_value("meta", "feats", feats)
-	_cfg.set_value("meta", "best_runs", best_runs)
-	_cfg.save(PATH)
+	if not _dirty:
+		# The wait runs from the first change: later ones ride along, and
+		# cannot put the write off.
+		_flush_at = Time.get_ticks_msec() + SAVE_DELAY_MS
+	_dirty = true
+	set_process(true)
+
+
+func _process(_delta: float) -> void:
+	if Time.get_ticks_msec() >= _flush_at:
+		flush()
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_WM_GO_BACK_REQUEST, NOTIFICATION_EXIT_TREE:
+			flush()
+
+
+## Writes pending changes now. The new file is written beside the old one
+## and swapped in whole, and the old one stays as the backup, so a kill or
+## a full disk mid-write can never leave a half-written save.
+func flush() -> bool:
+	set_process(false)
+	if not _dirty:
+		return true
+	var c := ConfigFile.new()
+	c.set_value("settings", "lang", lang)
+	c.set_value("settings", "music", music_volume)
+	c.set_value("settings", "sfx", sfx_volume)
+	c.set_value("settings", "haptics", haptics)
+	c.set_value("settings", "reduced_motion", reduced_motion)
+	c.set_value("settings", "aim_guide", aim_guide)
+	c.set_value("settings", "tilt", tilt)
+	c.set_value("stats", "record", record)
+	c.set_value("stats", "intro_seen", intro_seen)
+	c.set_value("stats", "seen", seen)
+	c.set_value("stats", "hints", hints)
+	c.set_value("stats", "runs", runs)
+	c.set_value("meta", "total_points", total_points)
+	c.set_value("meta", "skin_points", skin_points)
+	c.set_value("meta", "fresh", fresh)
+	c.set_value("meta", "skin", skin)
+	c.set_value("meta", "missions", missions)
+	c.set_value("meta", "mission_level", mission_level)
+	c.set_value("meta", "stats", stats)
+	c.set_value("meta", "daily_date", daily_date)
+	c.set_value("meta", "daily_best", daily_best)
+	c.set_value("meta", "habits", habits)
+	c.set_value("meta", "feats", feats)
+	c.set_value("meta", "best_runs", best_runs)
+	# The seal goes last: a file without it was cut short.
+	c.set_value("seal", "format", FORMAT)
+	c.set_value("seal", "n", _generation + 1)
+	var tmp := path + ".tmp"
+	if c.save(tmp) != OK:
+		push_warning("Prefs: could not write %s" % tmp)
+		_retry()
+		return false
+	# Only a whole file becomes the backup: a damaged one is simply
+	# replaced, and the backup it was recovered from stays.
+	if _main_ok and FileAccess.file_exists(path):
+		_move(path, path + ".bak")
+	if not _move(tmp, path):
+		push_warning("Prefs: could not swap in %s" % path)
+		_main_ok = false
+		_retry()
+		return false
+	_main_ok = true
+	_generation += 1
+	_cfg = c
+	_dirty = false
+	return true
+
+
+## A write failed (a full disk, say): the changes stay pending and are
+## tried again in a while, without holding the game up.
+func _retry() -> void:
+	_flush_at = Time.get_ticks_msec() + 5000
+	set_process(true)
+
+
+static func _move(from: String, to: String) -> bool:
+	if DirAccess.rename_absolute(from, to) == OK:
+		return true
+	# Where a rename will not replace a file, clear the way and try again.
+	if FileAccess.file_exists(to):
+		DirAccess.remove_absolute(to)
+	return DirAccess.rename_absolute(from, to) == OK

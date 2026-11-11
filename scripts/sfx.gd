@@ -197,10 +197,13 @@ func _ready() -> void:
 	hall.dry = 0.85
 	hall.wet = 0.32
 	AudioServer.add_bus_effect(_hbus, hall)
-	for i in HARP_COUNT:
-		_harp.append(load("%sharp_%d.ogg" % [DIR, i]))
-	for i in 2:
-		_taut.append(load("%staut_%d.ogg" % [DIR, i]))
+	if STRINGS_ON:
+		# The plucked strings are silent (see STRINGS_ON): their thirteen
+		# samples are not loaded, which shortens the start a little.
+		for i in HARP_COUNT:
+			_harp.append(load("%sharp_%d.ogg" % [DIR, i]))
+		for i in 2:
+			_taut.append(load("%staut_%d.ogg" % [DIR, i]))
 	for i in HARP_POOL:
 		var hp := AudioStreamPlayer.new()
 		hp.bus = &"Strings"
@@ -229,6 +232,19 @@ func apply_volume() -> void:
 	if _hbus > 0:
 		AudioServer.set_bus_volume_db(_hbus, LEVEL_DB[clampi(Prefs.sfx_volume, 0, 3)] + STRINGS_DB)
 		AudioServer.set_bus_mute(_hbus, Prefs.sfx_volume == 0)
+
+
+## A random pitch (or level) between `lo` and `hi`, and a random pick of
+## `n`, from the sound's own dice. Whether and how a sound plays must
+## never change how a run rolls (the daily challenge is the same for
+## everyone, and a test replays a run), so sound takes nothing from the
+## dice the game rolls with.
+func vary(lo: float, hi: float) -> float:
+	return _rng.randf_range(lo, hi)
+
+
+func pick(n: int) -> int:
+	return _rng.randi() % n
 
 
 func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:

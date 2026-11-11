@@ -679,7 +679,7 @@ func clear() -> void:
 
 func _process(delta: float) -> void:
 	# Real time, so hit-stop and slow motion freeze the game, not the camera.
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	if _slow_left > 0.0:
 		_slow_left -= rd
 		if _slow_left <= 0.0:

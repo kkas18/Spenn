@@ -173,7 +173,7 @@ func _process(delta: float) -> void:
 	var mat := _bg.material as ShaderMaterial
 	mat.set_shader_parameter("time", _clock)
 	mat.set_shader_parameter("danger", clampf(danger, 0.0, 1.0))
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_heat = move_toward(_heat, heat, rd / 0.6)
 	_flow = move_toward(_flow, 1.0 if flow else 0.0, rd / 0.4)
 	_rescue = maxf(0.0, _rescue - rd / 0.9)
