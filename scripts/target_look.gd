@@ -199,7 +199,7 @@ func rope_style() -> Rope:
 func _tremble() -> Vector2:
 	var j := Vector2.ZERO
 	if tele_t > 0.0:
-		j = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
+		j = Vector2(look_dice.randf_range(-1.8, 1.8), look_dice.randf_range(-1.0, 1.0))
 	if not soft and _ring_t < 0.16:
 		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
@@ -213,7 +213,7 @@ func _tremble() -> Vector2:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	var ew := evolve_warning()
 	if ew > 0.0 and phase == Phase.HANGING:
-		j += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * 1.8 * ew
+		j += Vector2(look_dice.randf_range(-1.0, 1.0), look_dice.randf_range(-1.0, 1.0)) * 1.8 * ew
 	return j
 
 
@@ -224,11 +224,11 @@ func _update_eye(delta: float) -> void:
 		_blink_t = 0.26 if trait_kind == Trait.SLEEPY else 0.13
 		match trait_kind:
 			Trait.JITTERY:
-				_blink_in = randf_range(1.0, 2.6)
+				_blink_in = look_dice.randf_range(1.0, 2.6)
 			Trait.SLEEPY:
-				_blink_in = randf_range(4.0, 8.0)
+				_blink_in = look_dice.randf_range(4.0, 8.0)
 			_:
-				_blink_in = randf_range(3.0, 7.0)
+				_blink_in = look_dice.randf_range(3.0, 7.0)
 	if _blink_in > 2.0 and morale > 0.5:
 		# Nervous: they blink more.
 		_blink_in -= delta
@@ -239,7 +239,7 @@ func _update_eye(delta: float) -> void:
 		_admire_t = maxf(0.0, _admire_t - delta)
 		_vain_in -= delta
 		if _vain_in <= 0.0:
-			_vain_in = randf_range(6.0, 10.0)
+			_vain_in = look_dice.randf_range(6.0, 10.0)
 			if not aimed and not incoming:
 				_admire_t = 1.3
 	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
@@ -351,6 +351,12 @@ static func _dirs(seg: int) -> PackedVector2Array:
 			a.append(Vector2.from_angle(i * TAU / seg))
 		_dir_cache[seg] = a
 	return _dir_cache[seg]
+
+
+## The world's light for the creatures' edges (shaders/lit.gdshader).
+static func set_sky(col: Color) -> void:
+	if _lit:
+		_lit.set_shader_parameter("sky", Vector3(col.r, col.g, col.b))
 
 
 static func set_view(v: Vector2) -> void:

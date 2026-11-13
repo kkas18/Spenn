@@ -3211,6 +3211,15 @@ class Overlay extends Control:
 		_step_cards(minf(rd, 1.0 / 30.0))
 		queue_redraw()
 
+	## A dark band across the field, densest at `mid` and gone `steps` x 8 px
+	## above and below it: what words stand on when they are set over the wall.
+	func _soft_band(mid: float, steps: int, alpha: float, w: float) -> void:
+		for i in steps:
+			var f := float(i) / maxf(1.0, steps - 1.0)
+			var a := alpha * (1.0 - f * f) * 0.5
+			draw_rect(Rect2(0, mid - (i + 1) * 8.0, w, 8.0), Color(Tok.BACKGROUND, a))
+			draw_rect(Rect2(0, mid + i * 8.0, w, 8.0), Color(Tok.BACKGROUND, a))
+
 	func _draw() -> void:
 		if hud == null or hud.l == null:
 			return
@@ -3231,10 +3240,13 @@ class Overlay extends Control:
 		if intro_t < Hud.INTRO_TIME and intro_name != "":
 			var k := minf(1.0, minf(intro_t / 0.25, (Hud.INTRO_TIME - intro_t) / 0.4))
 			var iy := l.danger_y - 150.0 + (1.0 - k) * 10.0
-			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Tok.PRIMARY, k))
+			# The wall is lit now: a soft dark band carries the words, as it
+			# does the wave's card, so the small line reads on any world.
+			_soft_band(iy + 34.0, 9, 0.5 * k, w)
+			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Tok.PRIMARY_HI, k))
 			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Tok.TEXT_PRIMARY, k))
-			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Tok.TEXT_SECONDARY, k))
+			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Tok.TEXT_PRIMARY.lerp(Tok.TEXT_SECONDARY, 0.45), k))
 		var total := Motion.NORMAL + card_hold + Motion.SLOW
 		if card_t < total and card_title != "":
 			var k := 1.0
@@ -3246,17 +3258,18 @@ class Overlay extends Control:
 			# A soft dark band behind the card so it reads over the field,
 			# framed by two fine hairlines that draw outward from the centre.
 			var mid := cy - 12.0
-			for i in 12:
-				var f := float(i) / 11.0
-				var a := 0.62 * k * (1.0 - f * f)
-				var hh := 8.0
-				draw_rect(Rect2(0, mid - (i + 1) * hh, w, hh), Color(Tok.BACKGROUND, a * 0.5))
-				draw_rect(Rect2(0, mid + i * hh, w, hh), Color(Tok.BACKGROUND, a * 0.5))
+			_soft_band(mid, 12, 0.62 * k, w)
 			var span := w * 0.32 * Motion.ease_value(Motion.Ease.ENTER, minf(1.0, card_t / Motion.SLOW))
 			for yy in [mid - 66.0, mid + 62.0]:
 				draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.55 * k), 1.0, true)
-			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(0, 0, 0, 0.35 * k))
-			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_DISPLAY, Color(Tok.TEXT_PRIMARY, k))
+			# A long title is set smaller rather than cut off at the edges
+			# (an achievement's name ran out of the screen on both sides).
+			var ts := Tok.TYPE_DISPLAY
+			var tw := disp.get_string_size(card_title, HORIZONTAL_ALIGNMENT_LEFT, -1, ts).x
+			if tw > w - 56.0:
+				ts = int(floor(ts * (w - 56.0) / tw))
+			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(0, 0, 0, 0.35 * k))
+			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(Tok.TEXT_PRIMARY, k))
 			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, k))
 		if count_n > 0:
 			# Countdown digit: pops in (emphasized) and fades as the next nears.

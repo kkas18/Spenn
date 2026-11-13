@@ -58,10 +58,33 @@ func _test() -> void:
 		game.lives = 99
 		await process_frame
 	_snap("06_shot_in_flight")
-	for i in 40:
+	# The moment of a kill, and what is left of it shortly after.
+	var kills: int = game.run_kills
+	var waited := 0
+	while game.run_kills == kills and waited < 90:
+		game.lives = 99
+		await process_frame
+		waited += 1
+	for step: Array in [[3, "06a_kill"], [6, "06b_kill_after"], [12, "06c_kill_settling"]]:
+		for i in int(step[0]):
+			game.lives = 99
+			await process_frame
+		_snap(step[1])
+	for i in maxi(1, 40 - waited - 21):
 		game.lives = 99
 		await process_frame
 	_snap("07_after_the_hit")
+	# A wave cleared (the celebration), a little way in and as it settles.
+	game._last_kill = Vector2(game.layout.center_x - 60.0, game.layout.rail_y + game.layout.play_h * 0.4)
+	game._clear_wave()
+	for step: Array in [[16, "07a_wave_clear"], [50, "07b_wave_clear_later"], [45, "07c_wave_clear_settling"]]:
+		for i in int(step[0]):
+			game.lives = 99
+			await process_frame
+		_snap(step[1])
+	for i in 60:
+		game.lives = 99
+		await process_frame
 	game._pause()
 	await frames(50)
 	_snap("08_pause")

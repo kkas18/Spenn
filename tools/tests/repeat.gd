@@ -2,9 +2,10 @@ extends "res://tools/tests/harness.gd"
 ## The same seed is the same run. What happens in a run follows from its
 ## seed and from what the player does, and from nothing else: not from
 ## which missions the player holds, not from what an earlier game left
-## behind. Two games are played here on one seed with the same shots; in
-## the first, missions are completed in the middle of the run (and their
-## successors drawn there), in the second none is within reach. Until v8.0
+## behind, not from how many effects the phone shows. Two games are played
+## here on one seed with the same shots; in the first, missions are
+## completed in the middle of the run (and their successors drawn there),
+## in the second none is within reach and the effects are thinned. Until v8.0
 ## a successor was drawn from the run's own dice, so from the first
 ## completed mission on, the run rolled differently for every player (the
 ## daily challenge too), and no two test runs on one seed were alike.
@@ -27,7 +28,15 @@ func _test() -> void:
 	check(done >= 1, "missions were completed in the middle of the first run (%d)" % done)
 	if not await fresh_game():
 		return
+	# The second game is also shown with fewer particles (a slower phone's
+	# effects): what is drawn must not change what happens.
+	var device := root.get_node("Device")
+	var tier: int = device.tier
+	device.tier = 0
+	device.tier_changed.emit()
 	var second := await _play([["chain", 30], ["cut", 30], ["break", 30]])
+	device.tier = tier
+	device.tier_changed.emit()
 	if second.is_empty():
 		return
 	check(game._missions_done.is_empty(), "no mission was within reach in the second run (%d completed)" % game._missions_done.size())

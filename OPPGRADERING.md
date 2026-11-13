@@ -15,13 +15,17 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | Trinn | Innhold | Status |
 |---|---|---|
 | 0 | Sikre originalen, testgrunnlag og målinger | Ferdig |
-| 1 | Stabilitet, kontroll og jevn flyt (v8.0) | Ferdig |
-| 2 | Spillfølelse: sikte, tilbakemelding, innstilling for draglengde | Gjenstår |
-| 3 | Balanse, progresjon og fiender | Gjenstår (grunnbalansen er justert i v8.0) |
-| 4 | Bilde og lyd | Gjenstår |
-| 5 | Grensesnitt og tilgjengelighet | Gjenstår |
+| 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
+| 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
+| 3 | Én runde til: resultatskjerm, rask omstart, mål i sikte, balanse og progresjon (v8.2) | Neste |
+| 4 | Lyd | Gjenstår |
+| 5 | Grensesnitt og tilgjengelighet (draglengde, styrke på effekter, tekststørrelse, hjelp) | Gjenstår |
 | 6 | Kode og motor | Gjenstår (vurdering under) |
 | 7 | Sluttkontroll og levering | Gjenstår |
+
+Rekkefølgen ble endret etter v8.0: du ba om et visuelt løft og et spill man vil spille om
+og om igjen. Det visuelle (trinn 2) og det som får deg til å ta én runde til (trinn 3) er
+derfor flyttet foran lyd, innstillinger og kode.
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -50,6 +54,8 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 | 14 | Lyd trakk fra spillets terninger, så en lyd kunne endre hvordan runden rullet | Sammenligning av to like kjøringer bilde for bilde | 1 ✔ |
 | 15 | **Oppdragene trakk fra rundens terninger.** Når et oppdrag ble fullført midt i en runde, ble det neste trukket der. Hvilke oppdrag du hadde, endret dermed resten av runden, også i dagens utfordring | Telling av hvert terningkast per sted i koden, i fire like kjøringer | 1 ✔ (v8.0.1) |
 | 16 | **Runden avhang av hva appen hadde gjort før.** En kontroll av kryssede snorer ble fordelt i tid etter motorens interne objektnummer | Ny test (`repeat`): to spill på samme frø i samme økt | 1 ✔ (v8.0.1) |
+| 17 | **Dagens utfordring var ikke lik på alle telefoner.** Fiendenes valg og partikkeleffektene trakk fra samme terninger, så antall gnister og bildefrekvens endret hva fiendene gjorde | Kodegjennomgang da flere effekter skulle legges til. `repeat` spiller nå det andre spillet med færre effekter | 2 ✔ (v8.1) |
+| 18 | **Lange titler ble kuttet i skjermkanten** (for eksempel «Prestasjon · uten riper») | Skjermbilde | 2 ✔ (v8.1) |
 
 ### Valgfritt (forbedringer)
 
@@ -96,29 +102,48 @@ Alle funn merket «1 ✔» over. I tillegg:
   trinn 2).
 - **Ytelse:** tegning av ansiktenes prikker, buer og streker er lagt om.
 
-### Trinn 2 – Spillfølelse
+### Trinn 2 – Lys og liv (v8.1, ferdig)
 
-- Tydeligere siktelinje (kontrast mot lys bakgrunn).
-- Innstilling for draglengde (kort, normal, lang).
-- Treff-stopp og kamera etter hvor stort treffet er.
-- Gjennomgang av haptikk.
+Du ba om et visuelt oppløftende uttrykk med bedre design, effekter og animasjoner. Det
+som er Spenn, er beholdt: messing-spretterten, figurene i snorer, håndverket i
+grensesnittet. Det som er endret, er lyset.
 
-### Trinn 3 – Balanse, progresjon og fiender
+- **Fra mørkt rom til lyssatt scene.** Fem verdener (Blåtime, Dyphav, Nordlys, Skumring,
+  Morgen) som skifter per bølge, med drivende fargeslør, lys over linjen og et gulv som
+  speiler veggen.
+- **Rikere figurer** med kantlys fra verdenen.
+- **Rommet svarer:** treff lyser opp veggen, knuste fiender kaster lysglimt, kula lyser.
+- **Feiring** ved ryddet bølge og ny rekord (lysflom og konfetti).
+- **Tettere siktelinje** og poengtall som spretter inn.
+- Lesbarhet er holdt: veggen er aldri lysere enn at hvit tekst, gullkula og figurene
+  står klart mot den, tekst i feltet står på et mørkt bånd, og lysglimtene i veggen har
+  et tak.
 
-- Vanskelighetskurve målt med bot på tre nivåer, 12 frø. Mål: en nybegynner varer omtrent
-  som i dag, og dyktighet skal lønne seg tydeligere.
-- Gjennomgang av fiendenes triks for rettferdighet: hvert triks skal varsles, og ingen
-  reaksjon skal være raskere enn en spiller kan lese.
+### Trinn 3 – Én runde til (v8.2, neste)
 
-### Trinn 4 – Bilde og lyd
+Du ba om et spill man spiller om og om igjen. Det handler om tre ting:
 
-- Lesbarhet først: viktig informasjon skal aldri skjules av effekter.
-- Lyd: effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og
-  kan tas tilbake enkeltvis.
+- **Kort vei tilbake i spill.** Tiden fra tap til ny runde måles og kortes ned.
+- **Resultatskjermen som belønning.** Opptelling som animeres, tydelig «så nære»,
+  og neste mål (rekord, neste kule, oppdrag) vist med hvor mye som mangler.
+- **Mål i sikte underveis.** Rekordtempo (ligger du foran eller bak din beste runde?),
+  oppdrag som viser fremgang, og en rekke for dager på rad.
+- **Balanse og progresjon:** krav til oppdrag og prestasjoner mot de nye poengnivåene,
+  og fiendenes triks gjennomgått for rettferdighet (hvert triks skal varsles).
+
+Alt dette er ærlige virkemidler: tydelige mål, rask omstart og belønning for fremgang.
+Spillet har ingen kjøp, reklame eller tidsbegrensede tilbud, og får det ikke.
+
+### Trinn 4 – Lyd
+
+- Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
+  tas tilbake enkeltvis.
 
 ### Trinn 5 – Grensesnitt og tilgjengelighet
 
-- Tekststørrelse, styrke på kamerabevegelse og blink, hjelpeside.
+- Innstilling for draglengde (kort, normal, lang) og for styrke på effekter og kamera.
+- Tekststørrelse og hjelpeside.
+- Treff-stopp etter hvor stort treffet er, og gjennomgang av haptikk.
 - Kontroll av at ingenting signaliseres bare med farge eller bare med lyd.
 - Skjermbilder på flere skjermformer (16:9, 20:9, nettbrett, brettbar).
 
@@ -178,6 +203,11 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 ## Beslutninger
 
+- **Lyssatt scene i stedet for mørkt rom (v8.1).** Det gamle uttrykket var bevisst
+  dempet: nesten svart vegg, én lampe, matte emaljefarger. Du ba om noe mer oppløftende.
+  Retningen jeg har valgt, er å beholde materialene og figurene og endre lyset. Vil du
+  ha det lysere, mørkere eller med andre farger, er hver verden åtte farger i
+  `scripts/pal.gd`.
 - **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 4
   gjelder effektene.
 - **Ingen pauseknapp.** Fjernet etter ønske tidligere. Pause er dobbelttrykk eller
@@ -197,27 +227,30 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 **Kjente feil**
 
-- **Siktelinjen har få prikker.** De er gjort større og har fått mørk kant i v8.0, men
-  banen er fortsatt bare antydet med fem–seks prikker. Vurderes i trinn 2.
 - **Poengtekster kan overlappe hverandre** når to kommer på samme sted (for eksempel
-  «Dobbelttreff» og poengsummen). Rettes i trinn 4.
+  «Dobbelttreff» og poengsummen).
+- **Det nye uttrykket er ikke sett på en telefon.** Farger, lysstyrke og effekter er
+  vurdert på skjermbilder fra PC. Skjermer er forskjellige, og bevegelse kan ikke
+  bedømmes på stillbilder.
 - **Meldinger om «leaked instance» i loggen når spillet avsluttes på PC** mens
   menymusikken spiller. Ufarlig, og gjelder ikke telefon.
 
 **Gjenstår**
 
-- **Ytelse i travle felt.** Skripttiden er fortsatt 11–12 ms per bilde med 20 fiender på
-  utviklingsmaskinen, så 60 bilder i sekundet er på grensen for en mellomklasse-telefon
-  sent i en runde. Neste poster er tegning av effekter (ca. 3 ms under ild) og toppfeltet
-  (ca. 2,5 ms), som begge tegnes på nytt hvert bilde. Tas i trinn 6.
+- **Ytelse i travle felt.** Skripttiden er 8–12 ms per bilde med 20 fiender på
+  utviklingsmaskinen (den varierer med hvor travel maskinen er), så 60 bilder i sekundet
+  er på grensen for en mellomklasse-telefon sent i en runde. Det nye bakteppet og
+  partiklene i v8.1 regnes av grafikkbrikken og motoren, ikke av spillkoden, men er ikke
+  målt på en telefon. Neste poster er tegning av effekter (ca. 3 ms under ild) og
+  toppfeltet (ca. 2,5 ms), som begge tegnes på nytt hvert bilde. Tas i trinn 6.
 - **Balansen sent i runden er ny** og bare prøvd av botspillere. Gode spillere varer nå
   halvannen gang så lenge som før. Om det er riktig nivå, bør avgjøres av en person som
   spiller, ikke av boter. Vil du ha det strammere, er det to tall å endre (hvor fort
   nedstigningen øker, og hvor mye overload bremses). Tas i trinn 3.
 - **Krav til oppdrag og prestasjoner** er ikke justert for at poengsummene er høyere
   enn før. Gjennomgås i trinn 3.
-- **Innstillinger** for draglengde, tekststørrelse og styrke på kamerabevegelse, og en
-  hjelpeside (trinn 5).
+- **Innstillinger** for draglengde, tekststørrelse og styrke på effekter og
+  kamerabevegelse, og en hjelpeside (trinn 5).
 - **Det jeg ikke kan prøve herfra:** spillet er ikke kjørt på en fysisk telefon i dette
   arbeidet. Berøring, haptikk, lydnivå i høyttaler og faktisk bildefrekvens er bare
   kontrollert gjennom kode, tester og målinger på PC.

@@ -68,16 +68,86 @@ const THEMES := [
 ]
 const THEME_TIME := 2.0
 
+# Worlds: the light the stage is washed in, one for each theme above (they
+# change together, wave by wave). The wall behind the rail is no longer a
+# dark room with one lamp but a lit backcloth: deep colour at the top
+# opening toward the footlights, slow curtains of a second and third
+# colour drifting across it, a glow gathering above the line. Every world
+# stays dark enough for white text, the gold ball and the creatures to
+# stand clear of it (the wall's luma keeps under about 0.3), and none is
+# coral: that is still danger's colour alone.
+#   top, low     the wall from the rail down to the line
+#   lamp         the light falling from the upper left
+#   aura_a/b     the two colours of the drifting curtains
+#   haze         the glow above the line (the footlights)
+#   ground       the floor around the slingshot
+#   rim          the light the creatures catch on their edges
+const WORLDS := [
+	# Blåtime: cobalt deepening to indigo, a cool white light
+	{"top": Color(0.050, 0.075, 0.200), "low": Color(0.105, 0.180, 0.400), "lamp": Color(0.55, 0.70, 1.00),
+		"aura_a": Color(0.08, 0.42, 0.62), "aura_b": Color(0.34, 0.24, 0.72), "haze": Color(0.30, 0.50, 0.95),
+		"ground": Color(0.050, 0.068, 0.150), "rim": Color(0.55, 0.75, 1.00)},
+	# Dyphav: teal water, light falling in from above
+	{"top": Color(0.022, 0.105, 0.150), "low": Color(0.040, 0.250, 0.300), "lamp": Color(0.55, 1.00, 0.95),
+		"aura_a": Color(0.05, 0.55, 0.50), "aura_b": Color(0.10, 0.30, 0.70), "haze": Color(0.15, 0.70, 0.75),
+		"ground": Color(0.025, 0.085, 0.110), "rim": Color(0.45, 0.95, 0.90)},
+	# Nordlys: night green, with violet in the curtains
+	{"top": Color(0.020, 0.085, 0.085), "low": Color(0.035, 0.250, 0.150), "lamp": Color(0.62, 1.00, 0.70),
+		"aura_a": Color(0.10, 0.80, 0.36), "aura_b": Color(0.52, 0.24, 0.86), "haze": Color(0.22, 0.80, 0.42),
+		"ground": Color(0.025, 0.080, 0.065), "rim": Color(0.60, 1.00, 0.72)},
+	# Skumring: violet running to magenta
+	{"top": Color(0.095, 0.050, 0.210), "low": Color(0.290, 0.110, 0.360), "lamp": Color(1.00, 0.72, 0.92),
+		"aura_a": Color(0.72, 0.22, 0.60), "aura_b": Color(0.26, 0.26, 0.82), "haze": Color(0.80, 0.36, 0.78),
+		"ground": Color(0.085, 0.045, 0.130), "rim": Color(1.00, 0.65, 0.95)},
+	# Morgen: a warm sun through the upper left over rose and plum; the
+	# footlights stay cool, so the coral of danger is never mistaken
+	{"top": Color(0.150, 0.070, 0.160), "low": Color(0.400, 0.170, 0.270), "lamp": Color(1.00, 0.78, 0.52),
+		"aura_a": Color(0.78, 0.40, 0.26), "aura_b": Color(0.46, 0.24, 0.70), "haze": Color(0.56, 0.40, 0.92),
+		"ground": Color(0.090, 0.055, 0.105), "rim": Color(1.00, 0.84, 0.62)},
+]
+
 static var _theme_from := 0
 static var _theme_to := 0
 static var _theme_k := 1.0
 
 
+static var _vivid: Array = []    # THEMES with every colour through vivid(), worked out once
+
+
 static func kind_color(kind: int) -> Color:
-	var a: Color = THEMES[_theme_from][kind]
+	if _vivid.is_empty():
+		for theme: Array in THEMES:
+			var row: Array[Color] = []
+			for c: Color in theme:
+				row.append(vivid(c))
+			_vivid.append(row)
 	if _theme_k >= 1.0:
-		return THEMES[_theme_to][kind]
-	return a.lerp(THEMES[_theme_to][kind], smoothstep(0.0, 1.0, _theme_k))
+		return _vivid[_theme_to][kind]
+	var a: Color = _vivid[_theme_from][kind]
+	return a.lerp(_vivid[_theme_to][kind], smoothstep(0.0, 1.0, _theme_k))
+
+
+## The enamels a touch richer and lighter than they were fired: on a lit
+## wall the muted ones looked grey. Hue is kept, so the kinds stay as far
+## apart as the themes set them.
+static func vivid(c: Color) -> Color:
+	return Color.from_hsv(c.h, minf(1.0, c.s * 1.16 + 0.03), minf(1.0, c.v * 1.07 + 0.02), c.a)
+
+
+## A number that changes whenever the world's colours do (while one world
+## eases into the next, and when another is set): whoever passes them on
+## to a shader sends them again only then.
+static func world_stamp() -> float:
+	return _theme_k + _theme_to * 2.0 + _theme_from * 64.0
+
+
+## One of the current world's colours (see WORLDS), easing with the theme.
+static func world(key: String) -> Color:
+	var b: Color = WORLDS[_theme_to % WORLDS.size()][key]
+	if _theme_k >= 1.0:
+		return b
+	var a: Color = WORLDS[_theme_from % WORLDS.size()][key]
+	return a.lerp(b, smoothstep(0.0, 1.0, _theme_k))
 
 
 ## Start easing to theme `i` (or straight there with `instant`).
@@ -148,6 +218,45 @@ static func circle_tex() -> ImageTexture:
 		img.generate_mipmaps()
 		_circle_tex = ImageTexture.create_from_image(img)
 	return _circle_tex
+
+
+static var _glint_tex: ImageTexture
+
+
+## A glint: a small four-pointed star with a soft core, for the sparkle a
+## kill throws off (drawn additively, so it reads as light).
+static func glint_tex() -> ImageTexture:
+	if _glint_tex == null:
+		var n := 48
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		var c := n * 0.5
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - c, y + 0.5 - c) / c
+				var ax := absf(d.x)
+				var ay := absf(d.y)
+				# Two thin crossing rays that taper to their tips, and a core.
+				var ray := maxf(exp(-ay * 14.0) * maxf(0.0, 1.0 - ax), exp(-ax * 14.0) * maxf(0.0, 1.0 - ay))
+				var core := exp(-d.length_squared() * 9.0)
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(ray * 0.85 + core, 0.0, 1.0) * clampf((1.0 - maxf(ax, ay)) * 6.0, 0.0, 1.0)))
+		img.generate_mipmaps()
+		_glint_tex = ImageTexture.create_from_image(img)
+	return _glint_tex
+
+
+static var _paper_tex: ImageTexture
+
+
+## A slip of paper (confetti): a small white rectangle with a soft edge.
+static func paper_tex() -> ImageTexture:
+	if _paper_tex == null:
+		var img := Image.create(14, 9, false, Image.FORMAT_RGBA8)
+		for y in 9:
+			for x in 14:
+				var edge := minf(minf(x, 13 - x), minf(y, 8 - y))
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(edge + 0.35, 0.0, 1.0)))
+		_paper_tex = ImageTexture.create_from_image(img)
+	return _paper_tex
 
 
 static var _hoop_tex: ImageTexture

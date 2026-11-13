@@ -4,6 +4,52 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.1 – Lys og liv
+
+Spillet har fått et nytt uttrykk: fra et mørkt rom med én lampe til en lyssatt scene.
+Spretterten, figurene og snorene er de samme.
+
+### Nytt
+
+- **Fem verdener.** Veggen bak bjelken er nå et lyssatt bakteppe med dyp farge øverst,
+  langsomme fargeslør som driver over den, og et lys som samler seg over linjen. Hver
+  bølge spilles i en ny verden: Blåtime, Dyphav, Nordlys, Skumring og Morgen. Gulvet
+  speiler veggens lys.
+- **Figurene står klarere.** Fargene er litt rikere, og hver figur får kantlys fra
+  verdenen den henger i.
+- **Rommet svarer på det du gjør.** Hvert treff lyser opp veggen rundt seg, og en knust
+  fiende kaster av seg et dryss av lysglimt.
+- **Kula lyser.** Den har fått en lengre hale og et svakt lys rundt seg, så et skudd
+  leses som en lysstripe over veggen.
+- **Feiring.** Når en bølge er ryddet, flommer veggen av lys og konfetti slippes fra
+  bjelken. Det samme skjer i det øyeblikket du passerer rekorden din.
+- **Poengtall spretter inn** i stedet for bare å dukke opp.
+- **Tettere siktelinje.** Mellom hver av de åtte prikkene står en mindre, så banen leses
+  som en linje. Den rekker ikke lenger enn før.
+
+### Rettet
+
+- **Dagens utfordring var ikke lik på alle telefoner.** Fiendenes valg ble trukket med
+  de samme terningene som partikkeleffektene bruker. Hvor mange gnister en telefon viste,
+  og hvor mange bilder i sekundet den tegnet, endret dermed hva fiendene gjorde. Fiendene
+  har nå egne terninger.
+- **Titler som ble kuttet i kanten.** En lang prestasjonstittel gikk ut av skjermen på
+  begge sider. Lange titler settes nå mindre.
+- Tekst midt i feltet står på et mykt, mørkt bånd, så den er like lesbar i alle verdener.
+
+### Tilgjengelighet
+
+- Med «Reduserte animasjoner» står fargeslørene stille, lysglimtene i veggen er halvert
+  og langsommere, og det slippes ikke konfetti.
+- Faresignalet ved linjen er uendret: korall varme fra linjen, mørkere hjørner, hjerteslag
+  i lyd og vibrasjon. Ingen verden bruker korall.
+
+### Ytelse
+
+- Skripttiden per bilde er målt før og etter på samme felt: 7,9 ms før og 8,7 ms etter
+  (median av tre kjøringer, med én fiende mer i feltet etter). Selve effektene tegnes av
+  motoren og grafikkbrikken, ikke av spillkoden.
+
 ## v8.0.1 – Samme frø, samme runde
 
 - **To runder på samme frø er nå helt like.** Før skilte de lag etter 15–45 sekunder.

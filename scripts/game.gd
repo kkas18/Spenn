@@ -95,6 +95,8 @@ const OVERLOAD_TIME := 2.5       # real seconds (see GUST_TIME)
 const OVERLOAD_SCALE := 0.7
 const OVERLOAD_RELOAD := 0.5   # reload time factor while it lasts
 const CHARGE_KILL := 0.03
+const VIGNETTE := 0.36          # how far the corners sink (it was 0.55: a dark room; the stage is lit)
+const VIGNETTE_TENSE := 0.66    # ... with an enemy at the line
 const CHARGE_WAVE := 0.15       # per wave past CHARGE_FROM, a kill charges this much less (see _charge)
 const CHARGE_FROM := 4          # waves 1 to 4 charge as they always have
 # Flow: quick hits fill a meter; full, the run speeds up for a while.
@@ -209,6 +211,7 @@ var _chain_t := 0.0
 var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
+var _sky_sent := -1.0           # the world whose light the creatures were last given (Pal.world_stamp)
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
@@ -390,7 +393,7 @@ func _clear_field() -> void:
 	_heat = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
-	_vignette.set_shader_parameter("strength", 0.55)
+	_vignette.set_shader_parameter("strength", VIGNETTE)
 	_vignette.set_shader_parameter("glow", 0.0)
 
 
@@ -448,7 +451,7 @@ func _start_run() -> void:
 	_rng.seed = run_seed
 	director.reseed(run_seed)
 	seed(run_seed)
-	Target.new_run()
+	Target.new_run(run_seed)
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
 	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
@@ -534,6 +537,9 @@ func _start_run() -> void:
 ## bar); here, the burst of brass, the chime and a breath of slow motion.
 func _on_record_broken() -> void:
 	var at := Vector2(layout.center_x, layout.safe_top + 47.0)
+	backdrop.pulse(Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.2), Pal.GOLD_LIGHT, 0.4, layout.size.x * 0.6, 1.4)
+	fx.confetti(Vector2(layout.center_x, layout.rail_y + 10.0), layout.size.x * 0.7, 34)
+	fx.glitter(at, Pal.GOLD_LIGHT, 20, 1.5)
 	fx.sparks(at, Pal.GOLD_LIGHT, 18)
 	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
 	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
@@ -861,6 +867,9 @@ func _update_tilt(delta: float) -> void:
 	var lean := Vector2(-_tilt.x, _tilt.y)
 	Target.set_view(lean)
 	slingshot.set_view(lean)
+	if Pal.world_stamp() != _sky_sent:
+		_sky_sent = Pal.world_stamp()
+		Target.set_sky(Pal.world("rim"))
 
 
 ## Linear acceleration = accelerometer − gravity. A drop of the phone
@@ -988,7 +997,7 @@ func _pace(delta: float) -> void:
 	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
 	var rd := Motion.rd
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
-	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
+	_vignette.set_shader_parameter("strength", lerpf(VIGNETTE, VIGNETTE_TENSE, _tension))
 	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
 		_beat_t -= delta
@@ -1083,6 +1092,12 @@ func _clear_wave() -> void:
 	# sweeping the field from the rail down to the danger line.
 	fx.moment(_last_kill)
 	fx.sweep(layout.rail_y, layout.danger_y)
+	# The room celebrates: the wall floods with light from the last kill
+	# outward, and paper comes down from the rail.
+	backdrop.pulse(_last_kill, Pal.GOLD_LIGHT, 0.36, layout.size.x * 0.55, 1.3)
+	backdrop.pulse(Vector2(layout.size.x * 0.18, mid.y), Pal.world("aura_a").lightened(0.15), 0.24, layout.size.x * 0.5, 1.5)
+	backdrop.pulse(Vector2(layout.size.x * 0.82, mid.y), Pal.world("aura_b").lightened(0.15), 0.24, layout.size.x * 0.5, 1.5)
+	fx.confetti(Vector2(layout.center_x, layout.rail_y + 10.0), layout.size.x * 0.92, 60)
 	# Final-kill camera: the camera leans in on the last one and time all
 	# but stops; a gold ring runs out through the light fibres from the kill
 	# and a spark races along the rail.
@@ -1780,6 +1795,7 @@ func _begin_overload() -> void:
 		ammo.append(Ammo.NORMAL)
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45)
 	fx.shock(mid, 14.0, 560.0, 0.7)
+	backdrop.pulse(mid, Pal.GOLD_LIGHT, 0.34, layout.size.x * 0.7, 0.9)
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
@@ -1830,6 +1846,14 @@ func _kill_note() -> void:
 ## its squash) or shatters the shell; a survivor squishes or knocks.
 func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> void:
 	var kind := t.kind
+	# The wall takes light from every hit, and a kill throws off glints:
+	# what the player does shows in the whole room, not only at the spot.
+	if killed:
+		var big := kind == Target.Kind.BOSS
+		backdrop.pulse(t.pos, col.lerp(Color.WHITE, 0.25), 0.7 if big else 0.46, t.radius * (9.0 if big else 6.5), 1.0 if big else 0.6)
+		fx.glitter(t.pos, col, 24 if big else (16 if hits >= 2 else 12), 1.6 if big else 1.0)
+	else:
+		backdrop.pulse(t.pos, col, 0.15, t.radius * 3.2, 0.35)
 	if not killed:
 		if t.soft:
 			Sfx.play("squish", 30.0 / t.radius * Sfx.vary(0.95, 1.05), loud)

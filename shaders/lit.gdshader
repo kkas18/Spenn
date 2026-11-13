@@ -20,6 +20,10 @@ uniform vec2 view = vec2(0.0);
 // on the side that faces them (xy: canvas position, z: reach, w: strength).
 uniform vec4 lights[3];
 uniform vec3 light_col = vec3(1.0, 0.78, 0.42);
+// The world's light (see Pal.WORLDS): what the wall behind is washed in
+// comes round the edges of every solid, so the creatures sit in the same
+// air as the wall and stand clear of it.
+uniform vec3 sky = vec3(0.55, 0.75, 1.0);
 varying vec2 world;
 
 // Warm light from the balls on a surface with normal `n` at `world`.
@@ -109,8 +113,12 @@ void fragment() {
 			bool jelly = band == 0.0;
 			// Wrapped diffuse: a soft terminator, never a hard black side.
 			float d = clamp(ndl * 0.7 + 0.3, 0.0, 1.0);
-			float s = pow(max(dot(n, H), 0.0), jelly ? 42.0 : 22.0) * (jelly ? 0.55 : 0.3);
-			col = c.rgb * (0.42 + 0.78 * d) + s;
+			float s = pow(max(dot(n, H), 0.0), jelly ? 42.0 : 22.0) * (jelly ? 0.6 : 0.34);
+			col = c.rgb * (0.46 + 0.80 * d) + s;
+			// Rim light from the wall's wash: strongest on the side away
+			// from the lamp, where the body would otherwise sink into it.
+			float rim = pow(1.0 - n.z, 2.6) * (0.55 + 0.45 * clamp(-ndl + 0.3, 0.0, 1.0));
+			col += mix(c.rgb, vec3(1.0), 0.35) * sky * rim * 0.42;
 			if (jelly) {
 				// Light passing through the thin rim on the shadow side.
 				col += c.rgb * pow(1.0 - n.z, 3.0) * clamp(0.2 - ndl, 0.0, 1.0) * 0.8;

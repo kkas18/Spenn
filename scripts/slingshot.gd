@@ -573,29 +573,34 @@ func _draw_aim_dots() -> void:
 	if _arc_alpha <= 0.0 or power < MIN_POWER or not Prefs.aim_guide:
 		return
 	# The first stretch of the flight, as the ball will fly it (wind and
-	# walls included): a dot every 45 ms from 50 ms on.
+	# walls included): a dot every 45 ms from 50 ms on, and a smaller one
+	# halfway between each two. At full power the main dots stand 100 px
+	# apart, too far for the eye to join into a line; the small ones carry
+	# it from dot to dot without making the guide reach any further.
 	const DT := 1.0 / 120.0
-	var dots := 16 if long_sight else 8
+	const EVERY := 0.0225
+	var dots := 32 if long_sight else 16
 	var path := Ball.trace(l.pouch_rest(), aim_dir * launch_speed(), wind, l, 0.8 if long_sight else 0.4, DT, true, true)
 	var next_dot := 0.05
 	var i := 0
+	var col := Pal.GOLD_LIGHT.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
 	for k in path.size():
 		if i >= dots:
 			break
 		var p := path[k]
 		if p.y < l.rail_y + Ball.RADIUS:
 			break
-		if (k + 1) * DT >= next_dot:
-			next_dot += 0.045
+		if (k + 1) * DT >= next_dot - 0.0001:
+			next_dot += EVERY
 			var f := 1.0 - float(i) / dots
+			var main := i % 2 == 0
 			# The dots carry the power: brighter and fuller the harder you pull,
 			# warming in the last 15 %. Each sits on a dark rim, so the line
 			# reads over a bright body as well as over the dark field (bare
 			# gold at 20 to 60 % was lost against both).
-			var col := Pal.GOLD_LIGHT.lerp(Pal.GOLD_WARM, clampf((power - 0.85) / 0.15, 0.0, 1.0))
-			var r := lerpf(1.9, 3.3, f) * lerpf(0.85, 1.15, power)
-			var a := (0.45 + 0.4 * power) * lerpf(0.4, 1.0, f) * _arc_alpha
-			_front.draw_circle(p, r + 1.5, Color(0.0, 0.0, 0.0, 0.5 * a), true, -1.0, true)
+			var r := lerpf(1.9, 3.3, f) * lerpf(0.85, 1.15, power) * (1.0 if main else 0.55)
+			var a := (0.45 + 0.4 * power) * lerpf(0.4, 1.0, f) * _arc_alpha * (1.0 if main else 0.8)
+			_front.draw_circle(p, r + (1.5 if main else 1.0), Color(0.0, 0.0, 0.0, 0.5 * a), true, -1.0, true)
 			_front.draw_circle(p, r, Color(col, a), true, -1.0, true)
 			i += 1
 

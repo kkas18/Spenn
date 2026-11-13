@@ -46,6 +46,14 @@ var flow := false              # flow: the fibres pulse on every beat
 var gust := 0.0                # a gust (px/s², signed): streaks of wind, strings lean
 var dark := 0.0                # blackout, 0..1: the wall and dust sink into the dark
 var _rescue := 0.0             # a rescue: the danger wire flashes gold
+# Light from what just happened (a kill, a cleared wave), four at most: the
+# wall glows around the place for a moment (see the shader's pulse_at).
+const PULSES := 4
+var _pulse_at: Array[Vector4] = []     # xy where, z reach (px), w strength now
+var _pulse_col: Array[Color] = []
+var _pulse_life: Array[Vector2] = []   # x: age (s), y: lifetime (s)
+var _pulse_peak: Array[float] = []
+var _pulsing := false
 var _flow := 0.0
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
@@ -180,6 +188,8 @@ func _process(delta: float) -> void:
 	_bg.modulate = Color.WHITE.lerp(Color(0.3, 0.32, 0.4), dark)
 	_dust.gravity = Vector2(gust * 0.35, -3.0)
 	mat.set_shader_parameter("heat", _heat)
+	_apply_world(mat)
+	_step_pulses(rd, mat)
 	_dust.color = Color(Pal.INK.lerp(Pal.GOLD_LIGHT, _heat), 0.07 + 0.08 * _heat)
 	if l:
 		for b in _bokeh:
@@ -189,6 +199,70 @@ func _process(delta: float) -> void:
 	_step_fibres(rd)
 	_layer.queue_redraw()
 	_glow.queue_redraw()
+
+
+## The world's colours to the wall (they ease from one world to the next
+## as the wave changes, so they are sent while that lasts, and once after).
+var _world_sent := -1.0
+func _apply_world(mat: ShaderMaterial) -> void:
+	var k := Pal.world_stamp() + (1000.0 if Prefs.reduced_motion else 0.0)
+	if k == _world_sent:
+		return
+	_world_sent = k
+	for key: String in ["lamp", "aura_a", "aura_b", "haze", "ground"]:
+		mat.set_shader_parameter(key, Pal.world(key))
+	mat.set_shader_parameter("sky_top", Pal.world("top"))
+	mat.set_shader_parameter("sky_low", Pal.world("low"))
+	mat.set_shader_parameter("aura_amt", 0.0 if Prefs.reduced_motion else 1.0)
+
+
+## Something happened at `at` (a kill, a wave cleared): the wall glows in
+## `col` around it, `reach` px wide, fading over `life` seconds. The
+## strongest four show; a new one takes the place of the faintest.
+func pulse(at: Vector2, col: Color, strength := 0.5, reach := 220.0, life := 0.55) -> void:
+	if Prefs.reduced_motion:
+		# Half the light, twice as slowly: a glow, never a flash.
+		strength *= 0.5
+		life *= 2.0
+	if _pulse_at.is_empty():
+		for i in PULSES:
+			_pulse_at.append(Vector4.ZERO)
+			_pulse_col.append(Color.BLACK)
+			_pulse_life.append(Vector2(1.0, 1.0))
+			_pulse_peak.append(0.0)
+	var slot := 0
+	for i in PULSES:
+		if _pulse_at[i].w < _pulse_at[slot].w:
+			slot = i
+	if _pulse_at[slot].w > strength:
+		return
+	_pulse_at[slot] = Vector4(at.x, at.y, reach, strength)
+	_pulse_col[slot] = col
+	_pulse_life[slot] = Vector2(0.0, life)
+	_pulse_peak[slot] = strength
+	_pulsing = true
+
+
+func _step_pulses(rd: float, mat: ShaderMaterial) -> void:
+	if not _pulsing:
+		return
+	var any := false
+	for i in PULSES:
+		var lf := _pulse_life[i]
+		if lf.x >= lf.y:
+			_pulse_at[i].w = 0.0
+			continue
+		lf.x += rd
+		_pulse_life[i] = lf
+		# A quick bloom, then a long ease out; the glow spreads as it fades.
+		var u := clampf(lf.x / lf.y, 0.0, 1.0)
+		var p := _pulse_at[i]
+		p.w = _pulse_peak[i] * pow(1.0 - u, 1.8) * minf(1.0, lf.x / 0.035)
+		_pulse_at[i] = p
+		any = any or p.w > 0.001
+	_pulsing = any
+	mat.set_shader_parameter("pulse_at", _pulse_at)
+	mat.set_shader_parameter("pulse_col", _pulse_col)
 
 
 ## A hit at `at`: a ring of the target's colour runs out through the strings.

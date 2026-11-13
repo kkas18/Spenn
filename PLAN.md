@@ -2703,3 +2703,23 @@ endringslogg i [CHANGELOG.md](CHANGELOG.md). Originalen (v7.57) er tatt vare på
 7. **v8.0.1 – samme frø, samme runde:** to runder på samme frø skilte lag etter 15–45 s.
    Oppdragene trakk fra rundens terninger (nå har de egne), og en kontroll av kryssede
    snorer fulgte motorens objektnummer (nå fiendens plass i spillet). Ny test: `repeat`.
+
+## v8.1 – Lys og liv: nytt visuelt uttrykk
+
+Ønsket var et visuelt oppløftende spill med bedre design, effekter og animasjoner.
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Fra mørkt rom til lyssatt scene.** Bakteppet (`shaders/backdrop.gdshader`) har fem
+   verdener (`Pal.WORLDS`: Blåtime, Dyphav, Nordlys, Skumring, Morgen) som skifter med
+   bølgen: dyp farge øverst, drivende fargeslør, lys over linjen, gulv som speiler veggen.
+   Veggens lysstyrke holdes under ca. 0,3, så tekst, gullkule og figurer står klart.
+2. **Figurene** har litt rikere farger (`Pal.vivid`) og kantlys fra verdenen
+   (`sky` i `shaders/lit.gdshader`).
+3. **Rommet svarer:** `Backdrop.pulse` lyser opp veggen ved treff, `Fx.glitter` kaster
+   lysglimt ved en knust fiende, kula har lys og lengre hale.
+4. **Feiring:** lysflom og konfetti (`Fx.confetti`) ved ryddet bølge og ny rekord.
+5. **Sikte og tall:** små prikker mellom siktelinjens åtte, poengtall som spretter inn.
+6. **Fiendenes egne terninger** (`Target.dice`): effekter og bildefrekvens kan ikke
+   lenger endre hva fiendene gjør. Dagens utfordring er dermed lik på alle telefoner.
+7. **Tester:** `repeat` spiller det andre spillet med færre effekter. Hele pakken passerer.
+

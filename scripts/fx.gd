@@ -6,6 +6,7 @@ extends Node2D
 ## textures from the Kenney Particle Pack (CC0), tinted and kept matte.
 
 const SPARK_POOL := 8
+const GLITTER_POOL := 6         # bursts of glints alive at once (a kill throws one)
 const POPUP_POOL := 12
 const POPUP_LIFE := 0.9
 const POPUP_RISE := 38.0
@@ -30,6 +31,11 @@ var shake_target: Node2D
 var font: Font
 
 var _sparks: Array[CPUParticles2D] = []
+var _glitter: Array[CPUParticles2D] = []
+var _next_glitter := 0
+var _confetti: CPUParticles2D
+# Paper in six colours (nothing coral: that is danger's).
+const CONFETTI := [Color("F2C55C"), Color("F4F1E8"), Color("5FD6D0"), Color("B58CFF"), Color("FF9BC0"), Color("6FB6FF")]
 var _next_spark := 0
 var _popups: Array[Dictionary] = []
 var _next_popup := 0
@@ -135,6 +141,96 @@ func _ready() -> void:
 		p.local_coords = false
 		add_child(p)
 		_sparks.append(p)
+	# Glints: small stars of light thrown off by a kill. They swell, hang
+	# and wink out; drawn additively, so they read as light on any world.
+	var glint_mat := CanvasItemMaterial.new()
+	glint_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	var wink := Curve.new()
+	wink.add_point(Vector2(0.0, 0.25))
+	wink.add_point(Vector2(0.14, 1.0))
+	wink.add_point(Vector2(0.55, 0.62))
+	wink.add_point(Vector2(1.0, 0.0))
+	var glow_out := Gradient.new()
+	glow_out.set_color(0, Color(1, 1, 1, 1))
+	glow_out.set_color(1, Color(1, 1, 1, 0))
+	glow_out.add_point(0.7, Color(1, 1, 1, 0.75))
+	for i in GLITTER_POOL:
+		var g := CPUParticles2D.new()
+		g.emitting = false
+		g.one_shot = true
+		g.amount = 12
+		g.lifetime = 0.8
+		g.lifetime_randomness = 0.45
+		g.explosiveness = 0.94
+		g.texture = Pal.glint_tex()
+		g.material = glint_mat
+		g.direction = Vector2.UP
+		g.spread = 180.0
+		g.gravity = Vector2(0, 230)
+		g.initial_velocity_min = 80.0
+		g.initial_velocity_max = 310.0
+		g.damping_min = 130.0
+		g.damping_max = 240.0
+		g.angle_min = 0.0
+		g.angle_max = 45.0
+		g.scale_amount_min = 0.45
+		g.scale_amount_max = 1.2
+		g.scale_amount_curve = wink
+		g.hue_variation_min = -0.045
+		g.hue_variation_max = 0.045
+		g.color_ramp = glow_out
+		g.local_coords = false
+		add_child(g)
+		_glitter.append(g)
+	# Confetti: slips of paper let go from the rail when a wave is cleared
+	# or the record goes. They tumble (turning, and thinning as they flip)
+	# and are gone before the next wave hangs in.
+	_confetti = CPUParticles2D.new()
+	_confetti.emitting = false
+	_confetti.one_shot = true
+	_confetti.amount = 46
+	_confetti.lifetime = 1.9
+	_confetti.lifetime_randomness = 0.25
+	_confetti.explosiveness = 0.72
+	_confetti.texture = Pal.paper_tex()
+	_confetti.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	_confetti.direction = Vector2.DOWN
+	_confetti.spread = 55.0
+	_confetti.gravity = Vector2(0, 500)
+	_confetti.initial_velocity_min = 90.0
+	_confetti.initial_velocity_max = 420.0
+	_confetti.damping_min = 40.0
+	_confetti.damping_max = 110.0
+	_confetti.angular_velocity_min = -460.0
+	_confetti.angular_velocity_max = 460.0
+	_confetti.angle_min = 0.0
+	_confetti.angle_max = 360.0
+	_confetti.scale_amount_min = 0.9
+	_confetti.scale_amount_max = 1.7
+	_confetti.split_scale = true
+	var flat := Curve.new()
+	flat.add_point(Vector2(0, 1))
+	flat.add_point(Vector2(1, 1))
+	_confetti.scale_curve_x = flat
+	var flip := Curve.new()
+	for i in 9:
+		flip.add_point(Vector2(i / 8.0, 1.0 if i % 2 == 0 else 0.22))
+	_confetti.scale_curve_y = flip
+	var paper := Gradient.new()
+	paper.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	paper.set_color(0, CONFETTI[0])
+	paper.set_color(1, CONFETTI[CONFETTI.size() - 1])
+	paper.set_offset(1, 1.0 - 1.0 / CONFETTI.size())
+	for i in range(1, CONFETTI.size() - 1):
+		paper.add_point(float(i) / CONFETTI.size(), CONFETTI[i])
+	_confetti.color_initial_ramp = paper
+	var settle := Gradient.new()
+	settle.set_color(0, Color(1, 1, 1, 1))
+	settle.set_color(1, Color(1, 1, 1, 0))
+	settle.add_point(0.78, Color(1, 1, 1, 1))
+	_confetti.color_ramp = settle
+	_confetti.local_coords = false
+	add_child(_confetti)
 	for i in RING_POOL:
 		_rings.append({"t": -1.0, "pos": Vector2.ZERO, "col": Pal.INK, "r": 30.0})
 	for i in SHARD_POOL:
@@ -176,6 +272,35 @@ func sparks(at: Vector2, col: Color, count := 8) -> void:
 	if p.amount != n:
 		p.amount = n
 	p.restart()
+
+
+## A burst of glints in `col` (lightened toward white: they are light):
+## what a kill throws off. `size` scales how far they fly and how big they
+## are (1 for an ordinary creature).
+func glitter(at: Vector2, col: Color, count := 12, size := 1.0) -> void:
+	var g := _glitter[_next_glitter]
+	_next_glitter = (_next_glitter + 1) % GLITTER_POOL
+	g.global_position = at
+	g.color = col.lerp(Color.WHITE, 0.45)
+	var n := Device.count(count)
+	if g.amount != n:
+		g.amount = n
+	g.initial_velocity_max = 310.0 * size
+	g.scale_amount_max = 1.2 * minf(size, 1.6)
+	g.restart()
+
+
+## Paper let go along a line `width` px wide centred on `at` (the rail,
+## when a wave is cleared): the room celebrates. Not with reduced motion.
+func confetti(at: Vector2, width: float, count := 46) -> void:
+	if Prefs.reduced_motion:
+		return
+	_confetti.global_position = at
+	_confetti.emission_rect_extents = Vector2(width * 0.5, 4.0)
+	var n := Device.count(count)
+	if _confetti.amount != n:
+		_confetti.amount = n
+	_confetti.restart()
 
 
 ## Thin pressure ring at the contact: 180 ms, local, no glow.
@@ -667,6 +792,9 @@ func clear() -> void:
 		d.t = -1.0
 	for s in _sparks:
 		s.emitting = false
+	for g in _glitter:
+		g.emitting = false
+	_confetti.emitting = false
 	_shake_t = 0.0
 	_punch = 0.0
 	_focus_t = -1.0
@@ -855,7 +983,7 @@ func _draw_glow() -> void:
 	for f in _flashes:
 		var k: float = f.t / 0.22
 		var r: float = f.r * lerpf(1.6, 3.2, 1.0 - pow(1.0 - k, 2.0))
-		_glow.draw_texture_rect(TEX_SOFT, Rect2(f.at - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.35 * (1.0 - k) * (1.0 - k)))
+		_glow.draw_texture_rect(TEX_SOFT, Rect2(f.at - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(f.col, 0.5 * (1.0 - k) * (1.0 - k)))
 
 
 ## Additive: the moments' shafts and bloom, and the sweep.
@@ -1053,7 +1181,10 @@ func _draw() -> void:
 		var rise := ease(k, 0.35) * POPUP_RISE
 		var alpha := 1.0 if k < 0.55 else 1.0 - (k - 0.55) / 0.45
 		alpha *= 1.0 - 0.45 * _hush * (0.0 if int(p.get("prio", 1)) >= 2 else 1.0)
-		var s := 1.0 + (0.3 if p.accent else 0.12) * maxf(0.0, 1.0 - k * 8.0)
+		# A pop: in from small, a little past its size, and settled within
+		# a fifth of its life (it used to appear at size and barely move).
+		var u := minf(1.0, k / 0.2)
+		var s := 1.0 - 0.42 * pow(1.0 - u, 3.0) + (0.42 if p.accent else 0.26) * sin(u * PI) * (1.0 - u * 0.4)
 		var pos: Vector2 = p.pos - Vector2(0, rise)
 		var w := font.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size).x
 		draw_set_transform(pos, 0.0, Vector2(s, s))

@@ -36,7 +36,7 @@ var _trail_t := 0.0
 var _impact_t := 1.0
 var _impact_n := Vector2.UP
 
-const TRAIL := 6
+const TRAIL := 10
 const TEX_SOFT := preload("res://assets/particles/soft.png")
 
 ## Overload: every ball in flight burns with a halo (set by the game).
@@ -244,10 +244,12 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if not active:
 		return
-	# Six fading segments, matte gold, no glow.
+	# The tail: ten fading segments in the ball's own colour, tapering to
+	# nothing (its light is drawn in the halo, on the additive layer).
+	var tail: Color = Meta.skin_colors(Prefs.skin)[1]
 	for i in TRAIL:
 		var k := 1.0 - float(i) / TRAIL
-		draw_line(_trail[i], _trail[i + 1], Color(Meta.skin_colors(Prefs.skin)[0], 0.4 * k), RADIUS * 1.5 * k, true)
+		draw_line(_trail[i], _trail[i + 1], Color(tail, 0.5 * k * k), RADIUS * 1.6 * k, true)
 	# Stretch along the flight (speed) or squash against a fresh contact.
 	# R·S·R⁻¹ keeps the lighting world-aligned while the shape deforms.
 	var axis := vel.angle()
@@ -270,16 +272,19 @@ func _draw() -> void:
 
 ## A pierce ball glows faintly; in overload every ball burns, trail too.
 func _draw_halo() -> void:
-	if not active or not (special or hot):
+	if not active:
 		return
+	# Every ball carries a little light, and leaves it along its tail (a
+	# shot reads as a streak of light across the wall); a pierce ball more,
+	# and in overload every ball burns.
 	var c: Color = Meta.skin_colors(Prefs.skin)[2]
-	var a := (0.5 if hot else 0.28) * modulate.a
-	var r := RADIUS * (3.4 if hot else 2.6)
-	if hot:
-		for i in range(1, TRAIL, 2):
-			var k := 1.0 - float(i) / TRAIL
-			var tr := r * 0.6 * k
-			_halo.draw_texture_rect(TEX_SOFT, Rect2(_trail[i] - Vector2(tr, tr), Vector2(tr, tr) * 2.0), false, Color(c, a * 0.5 * k))
+	var a := (0.5 if hot else (0.28 if special else 0.16)) * modulate.a
+	var r := RADIUS * (3.4 if hot else (2.6 if special else 2.2))
+	var fast := clampf(vel.length() / 1400.0, 0.0, 1.0)
+	for i in range(1, TRAIL, 2):
+		var k := 1.0 - float(i) / TRAIL
+		var tr := r * 0.62 * k
+		_halo.draw_texture_rect(TEX_SOFT, Rect2(_trail[i] - Vector2(tr, tr), Vector2(tr, tr) * 2.0), false, Color(c, a * (0.5 if hot else 0.42 * fast) * k))
 	_halo.draw_texture_rect(TEX_SOFT, Rect2(pos - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(c, a))
 
 
