@@ -25,6 +25,17 @@ func _test() -> void:
 	await wait_until(func() -> bool: return in_state("MAIN_MENU"), 900)
 	await frames(150)
 	_snap("01_menu")
+	# The balls (with enough points to have won some, and one on the way).
+	prefs.skin_points = 420000
+	game.hud._open_meta(game.hud._skins, game.hud._skins_box, game.hud._fill_skins)
+	await frames(50)
+	_snap("01a_balls")
+	game.hud._close_meta(game.hud._skins)
+	await frames(40)
+	prefs.skin_points = 0
+	# A record to play against, with its pace (the score as wave 2 began).
+	prefs.record = 900
+	prefs.pace = [150]
 	var o := grip()
 	touch(o, true)
 	await frames(1)
@@ -82,6 +93,17 @@ func _test() -> void:
 			game.lives = 99
 			await process_frame
 		_snap(step[1])
+	# The next wave's card (with how the run stands against the record's).
+	var w: int = game.director.wave
+	var waited2 := 0
+	while game.director.wave == w and waited2 < 400:
+		game.lives = 99
+		await process_frame
+		waited2 += 1
+	for i in 40:
+		game.lives = 99
+		await process_frame
+	_snap("07d_next_wave")
 	for i in 60:
 		game.lives = 99
 		await process_frame

@@ -157,7 +157,11 @@ func _trace() -> void:
 
 func _result(suffix: String) -> void:
 	var d = game.director
-	print("RESULT seed=%d skill=%s time=%.0fs%s score=%d acc=%d%% over=%d wave=%d cuts=%d flows=%d shots=%d reach=%.2f %s" % [rng.seed, skill, d.elapsed, suffix, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave, game.cuts, game.flows, d.shots, _reach(), game.mind.report()])
+	# What the missions count, too (see Meta.MISSIONS): their goals are set
+	# against what runs like these reach.
+	var run: Dictionary = game._run_stats()
+	var feats := "kills=%d bank=%d chain=%d double=%d break=%d" % [run.kills, run.bank, run.chain, run.double, run["break"]]
+	print("RESULT seed=%d skill=%s time=%.0fs%s score=%d acc=%d%% over=%d wave=%d cuts=%d flows=%d shots=%d reach=%.2f run %s %s" % [rng.seed, skill, d.elapsed, suffix, game.score, int(100.0 * d.hits / maxf(1, d.shots)), game.overloads, d.wave, game.cuts, game.flows, d.shots, _reach(), feats, game.mind.report()])
 	check(d.elapsed > 20.0, "the run lasted (%.0f s)" % d.elapsed)
 	check(d.shots > 10, "the bot got its shots off (%d)" % d.shots)
 	finish()

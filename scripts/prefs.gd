@@ -36,6 +36,7 @@ var daily_best := 0
 var habits := {}               # what the enemies know of the player (see Habits)
 var feats := {}                # achievements won: id -> the day (see Feats)
 var best_runs: Array = []      # the ten best runs: {"score", "wave", "secs", "acc", "day", "daily"}
+var pace: Array = []           # the record run's score as each wave began (wave 2 first): the pace to beat
 
 ## Where the progress is kept. Tests point it at a file of their own
 ## (the SPENN_SAVE environment variable), so they never touch a player's.
@@ -93,7 +94,7 @@ func load_from_disk() -> void:
 	missions = []
 	for m: Variant in _array("meta", "missions"):
 		if m is Dictionary and Meta.MISSIONS.has(m.get("id", "")) and missions.size() < Meta.ACTIVE:
-			missions.append({"id": str(m.id), "level": maxi(0, int(m.get("level", 0)))})
+			missions.append({"id": str(m.id), "level": maxi(0, int(m.get("level", 0))), "runs": maxi(0, int(m.get("runs", 0)))})
 	stats = _dict("meta", "stats")
 	daily_date = _int("meta", "daily_date", 0)
 	daily_best = maxi(0, _int("meta", "daily_best", 0))
@@ -103,6 +104,10 @@ func load_from_disk() -> void:
 	for r: Variant in _array("meta", "best_runs"):
 		if r is Dictionary and best_runs.size() < 10:
 			best_runs.append(r)
+	pace = []
+	for v: Variant in _array("meta", "pace"):
+		if (v is int or v is float) and pace.size() < 64:
+			pace.append(maxi(0, int(v)))
 	_generation = _int("seal", "n", 0)
 	_dirty = false
 	_fill_missions()
@@ -219,12 +224,16 @@ func mark_intro_seen() -> void:
 
 
 ## Returns true when `score` is a new record.
-func submit_score(score: int) -> bool:
+## `run_pace`: the run's score as each of its waves began (see `pace`); it
+## is kept when the run is the new record, as the pace the next runs are
+## measured against.
+func submit_score(score: int, run_pace: Array = []) -> bool:
 	if score <= record:
 		return false
 	if record > 0:
 		fresh["best"] = true
 	record = score
+	pace = run_pace.duplicate()
 	save()
 	return true
 
@@ -257,9 +266,20 @@ func complete_mission(i: int) -> int:
 
 
 ## A run ended: lifetime counters and points.
-func record_run(run: Dictionary) -> void:
+## `new_slots`: the mission slots filled during this run (their missions
+## were not played for yet).
+func record_run(run: Dictionary, new_slots: Array = []) -> void:
 	total_points += int(run.get("score", 0))
 	skin_points += int(run.get("score", 0))
+	# A mission that has gone unfinished for many runs gives up its slot to
+	# another (see Meta.STALE_RUNS).
+	for i in missions.size():
+		if new_slots.has(i):
+			continue
+		var m: Dictionary = missions[i]
+		m["runs"] = int(m.get("runs", 0)) + 1
+		if int(m.runs) >= Meta.STALE_RUNS:
+			missions[i] = {"id": Meta.roll(missions), "level": mission_level, "runs": 0}
 	if int(run.get("wave", 0)) > int(stats.get("best_wave", 0)) and int(stats.get("runs", 0)) > 0:
 		fresh["wave"] = true
 	for k: String in ["kills", "overloads", "bank", "chain", "cuts", "double", "break", "shots", "hits", "secs", "score"]:
@@ -295,6 +315,7 @@ func reset_progress() -> void:
 	habits = {}
 	feats = {}
 	best_runs = []
+	pace = []
 	stats = {}
 	total_points = 0
 	daily_best = 0
@@ -388,6 +409,7 @@ func flush() -> bool:
 	c.set_value("meta", "habits", habits)
 	c.set_value("meta", "feats", feats)
 	c.set_value("meta", "best_runs", best_runs)
+	c.set_value("meta", "pace", pace)
 	# The seal goes last: a file without it was cut short.
 	c.set_value("seal", "format", FORMAT)
 	c.set_value("seal", "n", _generation + 1)

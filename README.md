@@ -17,7 +17,7 @@ Engelsk navn i appen er «Taut».
 Åpne fila på telefonen og godta installasjon fra nettleseren. Begge versjonene er signert
 med samme nøkkel og har samme versjonskode, så den ene kan installeres over den andre
 uten at rekorder og fremgang går tapt. Hvilken som er installert, står under
-Innstillinger → Apper → Spenn på telefonen: 8.1.0 (eller nyere) er den oppgraderte, 2.0.0 er
+Innstillinger → Apper → Spenn på telefonen: 8.2.0 (eller nyere) er den oppgraderte, 2.0.0 er
 originalen.
 
 **Slik spiller du:** legg fingeren på lomma i spretterten, dra nedover og slipp. Jo

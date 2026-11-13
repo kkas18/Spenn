@@ -4,6 +4,40 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.2 – Én runde til
+
+Det som skal få deg til å ta en runde til: mål som alltid er i sikte, og belønninger som
+ikke stopper opp.
+
+### Nytt
+
+- **Resultatskjermen ser fremover.** Under tallene står oppdraget du var nærmest
+  («2 av 3»), og neste kule med en linje som fylles av det runden ga. Vinner du en kule i
+  runden, står det der.
+- **Rekordtempo.** Ved hver ny bølge ser du om du ligger foran eller bak rekordrunden din
+  på samme sted («1 250 foran rekorden din»). Tempoet lagres første gang du setter ny
+  rekord i denne versjonen.
+- **Tre nye kuler** å spille seg til: Is (600 000 poeng), Ametyst (1 500 000) og Perlemor
+  (4 000 000). Etter v8.0 gir gode runder mye høyere poengsummer, og de seks første kulene
+  var vunnet på få runder.
+
+### Rettet
+
+- **Oppdragene kunne låse seg for godt.** Kravene vokste uten tak og ujevnt: etter ti
+  fullførte oppdrag kunne du få «bryt 11 formasjoner» eller «nå bølge 13», som ingen
+  klarer, mens «få 18 000 poeng» var gjort på et halvt minutt. Et umulig oppdrag ble
+  stående i ruten sin for alltid, og til slutt kom det ingen belønninger. Nå stopper hvert
+  krav på det en god runde når omtrent annenhver gang (målt på botrunder), og et oppdrag
+  som har stått uløst i åtte runder, byttes ut med et annet.
+
+### Uendret
+
+- Veien tilbake i spill er målt: resultatene kommer 0,9 s etter tapet, knappene virker
+  0,6 s senere, og ny runde starter 0,12 s etter trykket. Det er kort nok, og er ikke
+  endret.
+- Spillet har ingen kjøp, reklame, varsler eller tidsbegrensede tilbud. Det som skal få
+  deg tilbake, er tydelige mål og rask omstart.
+
 ## v8.1 – Lys og liv
 
 Spillet har fått et nytt uttrykk: fra et mørkt rom med én lampe til en lyssatt scene.

@@ -17,7 +17,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 0 | Sikre originalen, testgrunnlag og målinger | Ferdig |
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
-| 3 | Én runde til: resultatskjerm, rask omstart, mål i sikte, balanse og progresjon (v8.2) | Neste |
+| 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2) | Ferdig (fiendenes rettferdighet og en ny balansemåling gjenstår) |
 | 4 | Lyd | Gjenstår |
 | 5 | Grensesnitt og tilgjengelighet (draglengde, styrke på effekter, tekststørrelse, hjelp) | Gjenstår |
 | 6 | Kode og motor | Gjenstår (vurdering under) |
@@ -56,6 +56,7 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 | 16 | **Runden avhang av hva appen hadde gjort før.** En kontroll av kryssede snorer ble fordelt i tid etter motorens interne objektnummer | Ny test (`repeat`): to spill på samme frø i samme økt | 1 ✔ (v8.0.1) |
 | 17 | **Dagens utfordring var ikke lik på alle telefoner.** Fiendenes valg og partikkeleffektene trakk fra samme terninger, så antall gnister og bildefrekvens endret hva fiendene gjorde | Kodegjennomgang da flere effekter skulle legges til. `repeat` spiller nå det andre spillet med færre effekter | 2 ✔ (v8.1) |
 | 18 | **Lange titler ble kuttet i skjermkanten** (for eksempel «Prestasjon · uten riper») | Skjermbilde | 2 ✔ (v8.1) |
+| 19 | **Oppdragene kunne låse seg for godt.** Kravene vokste uten tak og ujevnt. Etter ca. ti fullførte oppdrag var flere umulige («bryt 11 formasjoner», «nå bølge 13»), ruten ble aldri ledig, og belønningene stoppet | Tolv botrunder med telling av det oppdragene måler, sammenholdt med kravene per nivå | 3 ✔ (v8.2) |
 
 ### Valgfritt (forbedringer)
 
@@ -119,20 +120,39 @@ grensesnittet. Det som er endret, er lyset.
   står klart mot den, tekst i feltet står på et mørkt bånd, og lysglimtene i veggen har
   et tak.
 
-### Trinn 3 – Én runde til (v8.2, neste)
+### Trinn 3 – Én runde til (v8.2, ferdig)
 
-Du ba om et spill man spiller om og om igjen. Det handler om tre ting:
+Du ba om et spill man spiller om og om igjen. Tre ting er gjort:
 
-- **Kort vei tilbake i spill.** Tiden fra tap til ny runde måles og kortes ned.
-- **Resultatskjermen som belønning.** Opptelling som animeres, tydelig «så nære»,
-  og neste mål (rekord, neste kule, oppdrag) vist med hvor mye som mangler.
-- **Mål i sikte underveis.** Rekordtempo (ligger du foran eller bak din beste runde?),
-  oppdrag som viser fremgang, og en rekke for dager på rad.
-- **Balanse og progresjon:** krav til oppdrag og prestasjoner mot de nye poengnivåene,
-  og fiendenes triks gjennomgått for rettferdighet (hvert triks skal varsles).
+- **Mål i sikte.** Resultatskjermen viser oppdraget du var nærmest og neste kule med en
+  linje som fylles. Ved hver ny bølge ser du om du ligger foran eller bak rekordrunden.
+- **Belønninger som ikke stopper.** Oppdragenes krav har fått et tak, og et oppdrag som
+  står uløst i åtte runder, byttes ut (funn 19).
+- **Noe å spille seg til.** Tre nye kuler på 600 000, 1 500 000 og 4 000 000 poeng.
+
+Hva oppdragene nå høyst krever, og hva tolv botrunder nådde (svak, middels, god):
+
+| Oppdrag | Tak | Botrunder nådde |
+|---|---|---|
+| Knus fiender | 400 | 127–1 545 (middels 359–641) |
+| Poeng | 150 000 | 18 000–769 000 (middels 132 000–256 000) |
+| Nå bølge | 8 | 3–16 (middels 7–9) |
+| Veggskudd | 60 | 12–213 (middels 34–82) |
+| Overbelastninger | 24 | 7–67 (middels 20–38) |
+| Kjedereaksjoner | 15 | 3–58 (middels 8–34) |
+| Snorkutt | 12 | 1–97 (middels 2–48) |
+| Dobbelttreff | 150 | 32–631 (middels 112–214) |
+| Overlev sekunder | 270 | 147–552 (middels 228–333) |
+| Bryt formasjoner | 4 | 1–7 (middels 3–5) |
+
+Veien tilbake i spill ble målt og funnet kort nok (1,5 s fra tap til knappene virker,
+0,12 s fra trykk til ny runde), så den er ikke endret.
 
 Alt dette er ærlige virkemidler: tydelige mål, rask omstart og belønning for fremgang.
-Spillet har ingen kjøp, reklame eller tidsbegrensede tilbud, og får det ikke.
+Spillet har ingen kjøp, reklame, varsler eller tidsbegrensede tilbud, og får det ikke.
+
+**Gjenstår i dette trinnet:** fiendenes triks gjennomgått for rettferdighet (hvert triks
+skal varsles), og en ny balansemåling med samme frø før og etter.
 
 ### Trinn 4 – Lyd
 
@@ -247,8 +267,9 @@ Tallene er median, med laveste og høyeste runde i parentes.
   halvannen gang så lenge som før. Om det er riktig nivå, bør avgjøres av en person som
   spiller, ikke av boter. Vil du ha det strammere, er det to tall å endre (hvor fort
   nedstigningen øker, og hvor mye overload bremses). Tas i trinn 3.
-- **Krav til oppdrag og prestasjoner** er ikke justert for at poengsummene er høyere
-  enn før. Gjennomgås i trinn 3.
+- **Prestasjonene** er ikke gjennomgått mot de nye poengnivåene (oppdragene er, se
+  trinn 3).
+- **En rekke for dager på rad** er vurdert og ikke lagt inn ennå.
 - **Innstillinger** for draglengde, tekststørrelse og styrke på effekter og
   kamerabevegelse, og en hjelpeside (trinn 5).
 - **Det jeg ikke kan prøve herfra:** spillet er ikke kjørt på en fysisk telefon i dette

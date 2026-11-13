@@ -210,6 +210,38 @@ best_runs=[1, "two", {"score": 5}]
 	check(prefs._dirty, "... and the change stays pending")
 	prefs.path = real
 	check(prefs.flush(), "... until it can be written")
+
+	# --- missions stay within reach, and none is held for ever
+	var meta: Script = load("res://scripts/meta.gd")
+	var templates: Dictionary = meta.get_script_constant_map()["MISSIONS"]
+	var capped := true
+	var rising := true
+	for id: String in templates:
+		var top := int(templates[id][4])
+		var last := 0
+		for level in 200:
+			var g: int = meta.goal(id, level)
+			capped = capped and g <= top and g >= 1
+			rising = rising and g >= last
+			last = g
+		capped = capped and last == top
+	check(capped, "every mission's goal stops at its ceiling, however many are completed")
+	check(rising, "... and never falls as the level rises")
+	prefs.missions = [{"id": "break", "level": 50, "runs": 0}, {"id": "wave", "level": 50, "runs": 0}, {"id": "kills", "level": 50, "runs": 0}]
+	prefs.mission_level = 50
+	var stale: int = meta.get_script_constant_map()["STALE_RUNS"]
+	for i in stale - 1:
+		prefs.record_run({"score": 10})
+	check(prefs.missions[0].id == "break" and int(prefs.missions[0].runs) == stale - 1, "a mission keeps its slot for %d unfinished runs" % (stale - 1))
+	prefs.flush()
+	_forget()
+	prefs.load_from_disk()
+	check(prefs.missions.size() == 3 and int(prefs.missions[0].get("runs", -1)) == stale - 1, "... and the count is stored with it")
+	# The slot filled during this run is not counted; the others give way.
+	prefs.record_run({"score": 10}, [2])
+	var ids: Array = prefs.missions.map(func(m: Dictionary) -> String: return m.id)
+	check(ids[0] != "break" and ids[1] != "wave" and ids[2] == "kills", "after %d unfinished runs another mission takes the slot (%s)" % [stale, str(ids)])
+	check(ids[0] != ids[1] and _missions_valid() and int(prefs.missions[0].runs) == 0, "... a different one in each, counted from nought")
 	finish()
 
 

@@ -340,8 +340,9 @@ func cancel_countdown() -> void:
 	overlay.count_n = 0
 
 
-func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0, was_daily := false, done: Array = []) -> void:
-	_over.play(score, prev_best, is_record, secs, acc, skills, overloads, was_daily, done)
+## `goals`: what the next run can go for (see GameOver._goals).
+func show_game_over(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array = [], overloads := 0, was_daily := false, done: Array = [], goals := {}) -> void:
+	_over.play(score, prev_best, is_record, secs, acc, skills, overloads, was_daily, done, goals)
 
 
 func hide_game_over() -> void:
@@ -352,9 +353,17 @@ func hide_game_over() -> void:
 ## A new wave opens: its number comes in large while light sweeps the field.
 func wave_intro(n: int, sub := "", col := Tok.PRIMARY) -> void:
 	overlay.wave_n = n
+	overlay.wave_pace = ""
 	overlay.wave_sub = sub
 	overlay.wave_col = col
 	overlay.wave_t = 0.0
+
+
+## On the wave's card: how this run stands against the record run at the
+## start of the same wave ("1 250 ahead of your best").
+func wave_pace(line: String, ahead: bool) -> void:
+	overlay.wave_pace = sentence(line)
+	overlay.wave_ahead = ahead
 
 
 ## A perk won: its card pops up, then flies into the tray (top left).
@@ -2884,6 +2893,8 @@ class Overlay extends Control:
 	var wave_n := 1
 	var wave_sub := ""
 	var wave_col := Tok.PRIMARY
+	var wave_pace := ""            # this run against the record run, as the wave begins
+	var wave_ahead := true
 	var toast_t := 99.0
 	var names_t := 99.0            # the perk names tag (tap on the tray)
 	var toast_id := ""
@@ -2940,6 +2951,19 @@ class Overlay extends Control:
 			# The wave's mood, in its own colour, under the rule.
 			var sa := a * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.25) / 0.4, 0.0, 1.0))
 			draw_string(caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(wave_col, sa))
+		if wave_pace != "":
+			# Against the record run at this point: gold and an up arrow when
+			# ahead, quiet and a down arrow when behind (never colour alone).
+			var pa := a * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.4) / 0.4, 0.0, 1.0))
+			var py := y + (86.0 if wave_sub != "" else 60.0)
+			var body := hud.body_font()
+			var pw := body.get_string_size(wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+			var pc := Tok.PRIMARY_HI if wave_ahead else Tok.TEXT_SECONDARY
+			var ax := w * 0.5 - pw * 0.5 - 16.0
+			var up := -1.0 if wave_ahead else 1.0
+			draw_colored_polygon(PackedVector2Array([Vector2(ax - 7.0, py - 6.0 - 4.0 * up), Vector2(ax + 7.0, py - 6.0 - 4.0 * up), Vector2(ax, py - 6.0 + 6.0 * up)]), Color(pc, pa))
+			draw_string(body, Vector2(w * 0.5 - pw * 0.5 + 1.5, py + 1.5), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0, 0, 0, 0.35 * pa))
+			draw_string(body, Vector2(w * 0.5 - pw * 0.5, py), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(pc, pa))
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:
@@ -3302,6 +3326,11 @@ class GameOver extends Control:
 	var _overloads := 0
 	var _daily := false
 	var _done: Array = []
+	## What the next run can go for, so the screen ends looking forward:
+	## "mission": [text, have, goal] for the unfinished mission this run came
+	## closest to (or absent), "points_from" / "points_to": the lifetime
+	## points before and after this run (they earn the balls).
+	var _goals := {}
 	var _ticked := 0.0
 	var _record_done := false
 	var _box: VBoxContainer
@@ -3357,7 +3386,42 @@ class GameOver extends Control:
 			line += 30.0
 		if not _done.is_empty():
 			bottom = line + (_done.size() - 1) * 28.0 + 6.0
+			line += _done.size() * 28.0
+		if _mission_goal() != "":
+			bottom = line + 6.0
+			line += 30.0
+		if _ball_goal() != "":
+			bottom = line + 26.0
 		return d + bottom
+
+	## The unfinished mission this run came closest to: "text  have/goal".
+	func _mission_goal() -> String:
+		var m: Array = _goals.get("mission", [])
+		if m.size() < 3:
+			return ""
+		return Loc.t("gameOver.mission") % [str(m[0]), Hud._group(int(m[1])), Hud._group(int(m[2]))]
+
+	## The next ball to earn at `points` lifetime points (its place in
+	## Meta.SKINS), or -1 when every ball is won.
+	static func _next_ball(points: int) -> int:
+		for i in Meta.SKINS.size():
+			if int(Meta.SKINS[i][1]) > points:
+				return i
+		return -1
+
+	## The line about the balls: one just won in this run, or how far it is
+	## to the next. Empty when all are won (or the points are unknown).
+	func _ball_goal() -> String:
+		if not _goals.has("points_to"):
+			return ""
+		var to := int(_goals.points_to)
+		var was := GameOver._next_ball(int(_goals.get("points_from", to)))
+		var now := GameOver._next_ball(to)
+		if was >= 0 and was != now:
+			return Loc.t("gameOver.newBall") % Hud.sentence(Loc.t(Meta.SKINS[was][0]))
+		if now < 0:
+			return ""
+		return Loc.t("gameOver.nextBall") % [Hud.sentence(Loc.t(Meta.SKINS[now][0])), Hud._group(int(Meta.SKINS[now][1]) - to)]
 
 	## Centres title, score, tiles and buttons as one group (a little above
 	## the middle) and returns where the buttons go. Sets `_cy`.
@@ -3376,10 +3440,11 @@ class GameOver extends Control:
 		_retry.text = Loc.t("gameOver.restart")
 		_menu.text = Loc.t("gameOver.mainMenu")
 
-	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array, overloads: int, was_daily: bool, done: Array) -> void:
+	func play(score: int, prev_best: int, is_record: bool, secs: int, acc: int, skills: Array, overloads: int, was_daily: bool, done: Array, goals := {}) -> void:
 		refresh_text()
 		_daily = was_daily
 		_done = done
+		_goals = goals
 		_score = score
 		_prev = prev_best
 		_record = is_record
@@ -3587,6 +3652,39 @@ class GameOver extends Control:
 				var x0 := w * 0.5 - (lw + 30.0) * 0.5
 				draw_polyline(PackedVector2Array([Vector2(x0, yy - 7), Vector2(x0 + 6, yy - 1), Vector2(x0 + 17, yy - 13)]), Color(Tok.PRIMARY_HI, km), 3.0, true)
 				draw_string(body, Vector2(x0 + 30.0, yy), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(Tok.TEXT_PRIMARY, km))
+		ky += _done.size() * 28.0
+		# Looking forward: the mission this run came closest to, and the
+		# next ball with a bar that fills by what this run earned.
+		var kq := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.75) / Motion.NORMAL)
+		var mission := _mission_goal()
+		if mission != "":
+			if kq > 0.0:
+				draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), mission, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, 19, Color(Tok.TEXT_SECONDARY, kq))
+			ky += 30.0
+		var ball := _ball_goal()
+		if ball != "" and kq > 0.0:
+			var to := int(_goals.points_to)
+			var from := int(_goals.get("points_from", to))
+			var won := GameOver._next_ball(from) != GameOver._next_ball(to)
+			draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), ball, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, 19, Color(Tok.PRIMARY_HI if won else Tok.TEXT_SECONDARY, kq))
+			var now := GameOver._next_ball(to)
+			if now >= 0:
+				# From the last ball's price to the next one's.
+				var lo := int(Meta.SKINS[now - 1][1]) if now > 0 else 0
+				var span := maxf(1.0, int(Meta.SKINS[now][1]) - lo)
+				var f0 := clampf((from - lo) / span, 0.0, 1.0)
+				var f1 := clampf((to - lo) / span, 0.0, 1.0)
+				var fill := Motion.ease_value(Motion.Ease.STANDARD, clampf((_t - 0.95) / 0.8, 0.0, 1.0))
+				var bw := minf(360.0, w - 160.0)
+				var br := Rect2(w * 0.5 - bw * 0.5, ky + 12.0, bw, 10.0)
+				Hud.pill(self, br.grow(1.5), Color(Tok.PRIMARY_LO, kq))
+				Hud.pill(self, br, Color(Color("0A0C10"), kq))
+				var shown_f := lerpf(f0, f1, fill)
+				if shown_f > 0.02:
+					Hud.pill(self, Rect2(br.position + Vector2(2, 2), Vector2(maxf(6.0, (br.size.x - 4.0) * shown_f), br.size.y - 4.0)), Color(Tok.PRIMARY, kq))
+				if f0 > 0.02 and f1 > f0:
+					# What was there before this run, a shade darker.
+					Hud.pill(self, Rect2(br.position + Vector2(2, 2), Vector2(maxf(6.0, (br.size.x - 4.0) * f0), br.size.y - 4.0)), Color(Tok.PRIMARY_LO.lerp(Tok.PRIMARY, 0.45), kq))
 		if _record and _record_done:
 			# Badge pops with a small overshoot; a ring of gold grains opens.
 			var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)

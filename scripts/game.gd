@@ -235,6 +235,8 @@ var daily := false              # this run is the daily challenge
 var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
 var _mission_slots: Array = []  # slots already paid this run
+var _points_start := 0          # lifetime points when the run began (the results show what it added)
+var _run_pace: Array = []       # this run's score as each wave began (wave 2 first), see Prefs.pace
 var _mission_t := 0.0
 # Tilt parallax: the phone's lean (relative to how it is usually held)
 # shifts the world a few px against the wall behind it.
@@ -457,6 +459,8 @@ func _start_run() -> void:
 	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
 	_missions_done = []
 	_mission_slots = []
+	_points_start = Prefs.skin_points
+	_run_pace = []
 	_mission_t = 0.0
 	score = 0
 	lives = LIVES
@@ -1068,6 +1072,7 @@ func _wave_tick(delta: float) -> void:
 				Pal.next_theme()
 				var wm := director.roll_mood()
 				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
+				_note_pace()
 				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
 				_schedule_hazard()
 				if director.wave == ACRO_WAVE and not _acro_told:
@@ -2140,20 +2145,58 @@ func _show_results() -> void:
 	if not daily:
 		habits.end_run(director.elapsed, run_kills)
 		Prefs.habits = habits.store()
-	Prefs.record_run(_run_stats())
+	Prefs.record_run(_run_stats(), _mission_slots)
 	Prefs.add_run({"score": score, "wave": director.wave, "secs": int(director.elapsed),
 		"acc": int(round(100.0 * director.hits / maxf(1.0, director.shots))), "day": Meta.today(), "daily": daily})
 	var prev := Prefs.daily_record() if daily else Prefs.record
-	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
+	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score, _run_pace)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
 	_set_state(State.GAME_OVER)
 	var feats: Array = []
 	for i in skill_counts.size():
 		feats.append([SKILL_KEY[i], skill_counts[i]])
-	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads, daily, _missions_done)
+	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads, daily, _missions_done, _next_goals())
 	if not is_record:
 		Sfx.play("lose")
 	Motion.after(0.6, func() -> void: hud.locked = false)
+
+
+## A wave begins: the score is noted (should this run become the record,
+## it is the pace later runs are measured against), and the wave's card
+## says how this run stands against the record run at the same point. The
+## daily challenge has no pace: it is a different run every day.
+func _note_pace() -> void:
+	if daily:
+		return
+	_run_pace.append(score)
+	var i := _run_pace.size() - 1
+	if Prefs.record <= 0 or i >= Prefs.pace.size():
+		return
+	var diff := score - int(Prefs.pace[i])
+	if diff >= 0:
+		hud.wave_pace(Loc.t("pace.ahead") % Hud._group(diff), true)
+	else:
+		hud.wave_pace(Loc.t("pace.behind") % Hud._group(-diff), false)
+
+
+## What the next run can go for, for the results screen: the unfinished
+## mission this run came closest to, and the lifetime points before and
+## after it (they earn the balls).
+func _next_goals() -> Dictionary:
+	var goals := {"points_from": _points_start, "points_to": Prefs.skin_points}
+	var run := _run_stats()
+	var best := -1.0
+	for i in Prefs.missions.size():
+		if _mission_slots.has(i):
+			continue   # finished in this run: its slot holds the next one, not yet played for
+		var m: Dictionary = Prefs.missions[i]
+		var goal := Meta.goal(m.id, int(m.level))
+		var have := mini(Meta.progress(m.id, run), goal)
+		var k := float(have) / maxf(1.0, goal)
+		if k > best:
+			best = k
+			goals["mission"] = [Meta.describe(m.id, int(m.level)), have, goal]
+	return goals
 
 
 # ---------------------------------------------------------------- learning

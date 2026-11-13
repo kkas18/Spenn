@@ -2723,3 +2723,17 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG
    lenger endre hva fiendene gjør. Dagens utfordring er dermed lik på alle telefoner.
 7. **Tester:** `repeat` spiller det andre spillet med færre effekter. Hele pakken passerer.
 
+## v8.2 – Én runde til
+
+Ønsket var et spill man spiller om og om igjen. Detaljene står i
+[OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Resultatskjermen ser fremover:** nærmeste uløste oppdrag («2 av 3») og neste kule
+   med en linje som fylles av det runden ga (`Game._next_goals`, `GameOver._goals`).
+2. **Rekordtempo:** rekordrundens poengsum ved starten av hver bølge lagres (`Prefs.pace`),
+   og bølgekortet sier om du ligger foran eller bak (`Game._note_pace`).
+3. **Oppdrag med tak** (`Meta.MISSIONS`, femte tall) og bytte etter åtte uløste runder
+   (`Meta.STALE_RUNS`). Før vokste kravene til de var umulige, og ruten ble aldri ledig.
+4. **Tre nye kuler:** Is, Ametyst og Perlemor.
+5. **Tester:** `save` kontrollerer takene og byttet. Hele pakken passerer.
+
