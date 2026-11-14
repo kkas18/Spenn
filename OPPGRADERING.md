@@ -20,9 +20,9 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3), dager på rad (v8.5) | Ferdig |
 | 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Ferdig |
 | 5 | Lyd | Gjenstår |
-| 6 | Grensesnitt og tilgjengelighet | Delvis: draglengde, kamerabevegelse og tekststørrelse (v8.3), hjelpeside (v8.5). Kontroll av farge og lyd og flere skjermformer gjenstår |
-| 7 | Kode og motor | Gjenstår (vurdering under) |
-| 8 | Sluttkontroll og levering | Gjenstår |
+| 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
+| 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
+| 8 | Sluttkontroll og levering | Ferdig for denne runden (v8.5). Det som gjenstår, er å prøve spillet på en telefon |
 
 Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
 et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
@@ -323,19 +323,73 @@ Gjort i v8.5:
   knutene, fiendenes varsler, flyt og overbelastning, veggskudd og snorkutt, og dagens
   utfordring. Teksten følger «Større tekst».
 
-Gjenstår:
+**Ingenting signaliseres bare med farge eller bare med lyd.** Hvert signal ble gått
+gjennom:
 
-- Kontroll av at ingenting signaliseres bare med farge eller bare med lyd.
-- Skjermbilder på flere skjermformer (16:9, 20:9, nettbrett, brettbar).
+| Signal | Farge | I tillegg |
+|---|---|---|
+| En fiende nær linjen | Korall over figuren | Plassen selv (nær linjen), tråden over linjen svinger mer jo nærmere den er, hjerteslag i lyden, veggen gløder ved linjen |
+| Liv | – | Antall knuter i toppfeltet |
+| Fiendetype | Fargetone | Form, lyshet og detaljer (nagler, kors, eiker, briller) |
+| Stemning (vaktsom, rasende, veteran) | Toning | Et tegn over figuren (!, flamme, stjerne) |
+| Triks-merker | Perlens farge | Et lite symbol på perlen |
+| Gullfiende | Gull | Blinker i lyshet |
+| Leder og mester | Gull | Krone og gullring |
+| Tempo mot rekorden | Grønn eller korall | Pil og tekst («1 250 foran rekorden din») |
+| Overbelastning og flyt | Glød | Kort med tekst og merke i toppfeltet |
+| Ny rekord | Gull | Stempel med tekst |
+| Av og på i innstillinger | Gull | Spakens stilling og ordene Av og På |
+| Lyder (treff, kutt, tap, nedtelling) | – | Alle har noe som vises samtidig |
+
+Fargeblindhet ble i tillegg simulert (protanopi, deuteranopi og tritanopi) på figurer
+nær linjen i alle fem verdener. For rød-grønn fargeblindhet skiller korall-tonen seg
+mindre ut i noen verdener, men faren vises også med plass, tråd, lyd og vegg.
+
+**Fire skjermformer kontrollert:** 16:9 (720 × 1280), 20:9 (720 × 1600), nettbrett 3:4
+(960 × 1280) og brettbar (1066 × 1280). Meny, felt, innstillinger og resultatskjerm får
+plass på alle, uten overlapp. Testen `layout` regner i tillegg på ni telefonformer.
 
 ### Trinn 7 – Kode og motor
 
-- Fjerne dobbel kode der det gir lavere risiko.
-- Vurdere motoroppgradering (se beslutninger).
+**Ytelse, målt per del** (skripttid per bilde i et travelt felt på utviklingsmaskinen,
+hver del skrudd av og på i omganger, median):
 
-### Trinn 8 – Sluttkontroll
+| Del | Tid |
+|---|---|
+| Hele bildet | 6,8 ms |
+| Fiendene (kropp, tau, ansikt) | 2,9 ms, av det ansiktene 1,1 ms |
+| Bakteppet (fibre, skygger, tråden) | 1,7 ms |
+| Fysikken (to steg à 0,66 ms) | 1,3 ms |
+| Toppfeltet og resten av grensesnittet | 0,6 ms |
+| Effektlaget | under 0,1 ms |
 
-- Full testrunde, tabell før og etter, endringslogg og kjente feil.
+- Toppfeltet koster mindre enn anslått før (0,6 ms, ikke 2,5), og effektlaget nesten
+  ingenting, så det er ikke noe å hente der.
+- **Spillet senker effektnivået selv** hvis bildefrekvensen synker under spill
+  (`Device`, tre nivåer), og velger et lavere nivå fra start på telefoner med få kjerner
+  eller lite minne. En tregere telefon får derfor færre partikler og glorier i stedet for
+  hakking.
+- Det som er igjen å hente, ligger i tegningen av fiendene og fibrene i bakteppet. Det er
+  mange små beregninger per bilde i GDScript. Gevinsten er usikker uten en telefon å måle
+  på, så det er ikke gjort.
+
+**Motor.** Godot 4.3 beholdes (se beslutninger). Dobbel kode er ikke fjernet ut over det
+som ble gjort underveis: der det gjenstår, er risikoen for å endre oppførsel større enn
+gevinsten.
+
+### Trinn 8 – Sluttkontroll (v8.5)
+
+- **Testene:** hele pakken passerer, lokalt og i byggingen på GitHub: `layout`, `colours`,
+  `flow`, `save`, `timing`, `physics`, `repeat`, `soak` og botrundene.
+- **Spillet er det samme fra v8.3 til v8.5.** Fargene, figurenes utseende, dager på rad
+  og hjelpesiden endrer ikke hva som skjer i en runde: botrundene på faste frø gir
+  nøyaktig de samme tallene.
+- **Balansen** er målt med botspillere fra originalen til i dag (se målingene under).
+- **Skjermbilder:** fem verdener, fire skjermformer, alle hovedskjermer.
+- **Endringslogg:** [CHANGELOG.md](CHANGELOG.md). **Slik kjører du spillet og testene:**
+  [README.md](README.md). **Kjente feil og forbehold:** nederst i dette dokumentet.
+- **Ikke kontrollert:** spillet på en fysisk telefon (berøring, haptikk, lydnivå,
+  bildefrekvens og hvordan fargene ser ut på en ekte skjerm).
 
 ## Målinger før og etter
 
@@ -415,10 +469,15 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Samme versjonskode som originalen.** Da kan originalen installeres over v8 (og
   omvendt) uten at fremgangen går tapt. Lagringsfila kan leses av begge. Versjonsnavnet
   er endret fra 2.0.0 til 8.0.0, så du ser på telefonen hvilken som er installert.
-- **Motor: blir på Godot 4.3 inntil videre.** En oppgradering endrer tegning og oppførsel
-  i 18 800 linjer egen kode og gir ingen dokumentert gevinst for dette spillet i dag.
-  Det som kan gjøre den aktuell, er krav fra Google Play (støtte for 16 KB minnesider på
-  nyere Android) hvis spillet skal publiseres der. Vurderes i trinn 7.
+- **Motor: blir på Godot 4.3, med én viktig forutsetning.** En oppgradering endrer
+  tegning og oppførsel i over 19 000 linjer egen kode og må testes på nytt fra bunnen. For
+  APK-en som lastes ned fra GitHub, gir den ingen dokumentert gevinst i dag.
+  **Forutsetningen er Google Play.** Play krever støtte for 16 KB minnesider for nye apper
+  og oppdateringer som retter seg mot Android 15 eller nyere (se Androids egen side om
+  dette). Godot 4.3 har ikke denne støtten. Ifølge Godots forum og prosjektets egne saker
+  kom den med Godot 4.5.1 (dette er ikke bekreftet i Godots utgivelsesnotater). Skal
+  spillet publiseres på Google Play, må motoren oppgraderes til minst 4.5.1 først, som et
+  eget trinn med full testrunde.
 
 ## Kjente feil og det som gjenstår
 
@@ -437,12 +496,12 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 **Gjenstår**
 
-- **Ytelse i travle felt.** Skripttiden er 8–12 ms per bilde med 20 fiender på
-  utviklingsmaskinen (den varierer med hvor travel maskinen er), så 60 bilder i sekundet
-  er på grensen for en mellomklasse-telefon sent i en runde. Det nye bakteppet og
-  partiklene i v8.1 regnes av grafikkbrikken og motoren, ikke av spillkoden, men er ikke
-  målt på en telefon. Neste poster er tegning av effekter (ca. 3 ms under ild) og
-  toppfeltet (ca. 2,5 ms), som begge tegnes på nytt hvert bilde. Tas i trinn 7.
+- **Ytelse på telefon er ikke målt.** Skripttiden er 6,8 ms per bilde i et travelt felt
+  på utviklingsmaskinen (fordelt per del i trinn 7). På en mellomklasse-telefon kan det
+  være to til tre ganger så mye. Spillet senker selv effektnivået hvis bildefrekvensen
+  synker, men om det holder 60 bilder i sekundet sent i en runde, må prøves på en telefon.
+- **Google Play krever en nyere motor** (16 KB minnesider, se beslutninger). For APK-en
+  fra GitHub gjelder det ikke.
 - **Balansen sent i runden er ny** og bare prøvd av botspillere. Gode spillere varer nå
   halvannen gang så lenge som før. Om det er riktig nivå, bør avgjøres av en person som
   spiller, ikke av boter. Vil du ha det strammere, er det to tall å endre (hvor fort

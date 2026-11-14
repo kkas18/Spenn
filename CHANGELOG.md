@@ -4,6 +4,17 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## Kontroller etter v8.5 (bare dokumentasjon)
+
+- **Ingenting signaliseres bare med farge eller bare med lyd.** Alle signaler er gått
+  gjennom, og fargeblindhet er simulert på figurer nær linjen i alle fem verdener.
+- **Fire skjermformer** (16:9, 20:9, nettbrett og brettbar) er kontrollert med
+  skjermbilder. Alt får plass.
+- **Ytelse målt per del:** fiendene 2,9 ms, bakteppet 1,7 ms, fysikken 1,3 ms og
+  grensesnittet 0,6 ms av 6,8 ms per bilde på utviklingsmaskinen.
+- **Motoren:** Godot 4.3 beholdes for APK-en fra GitHub. Skal spillet på Google Play,
+  må motoren først oppgraderes til minst 4.5.1 (krav om 16 KB minnesider).
+
 ## v8.5 – Kom tilbake
 
 En ærlig grunn til å komme tilbake, og en side som forklarer spillet.
