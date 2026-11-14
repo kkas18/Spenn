@@ -409,12 +409,13 @@ func _stars(a: float) -> void:
 		var p := Vector2(cos(q) * rx, cy + sin(q) * ry)
 		var r := lerpf(4.0, 6.4, front)
 		var al := lerpf(0.6, 1.0, front) * a * k
-		var d1 := Vector2.from_angle(_clock * 2.5) * r
-		var d2 := d1.orthogonal()
+		# Six points (three strokes): a star, never a plus (that is the
+		# Legen's cross).
 		f.disc(p + Vector2(0.5, 0.8), r * 0.75, Color(Pal.PUPIL, 0.4 * al))
-		f.draw_line(p - d1, p + d1, Color(col, al), 2.4, true)
-		f.draw_line(p - d2, p + d2, Color(col, al), 2.4, true)
-		f.disc(p, r * 0.32, Color(1, 1, 1, al))
+		for j in 3:
+			var d := Vector2.from_angle(_clock * 2.5 + j * PI / 3.0) * r
+			f.draw_line(p - d, p + d, Color(col, al), 2.0, true)
+		f.disc(p, r * 0.36, Color(1, 1, 1, al))
 
 
 ## A sleepy one left alone dozes: small z's drift up from it. (In body
