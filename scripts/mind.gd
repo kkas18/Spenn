@@ -59,7 +59,7 @@ func reset() -> void:
 	_iq_sum = 0.0
 	_iq_n = 0
 	_board.clear()
-	_play_t = randf_range(PLAY_EVERY.x, PLAY_EVERY.y)
+	_play_t = Target.dice.randf_range(PLAY_EVERY.x, PLAY_EVERY.y)
 
 
 ## Once a frame, after the game has read your aim and the balls in flight.
@@ -205,7 +205,7 @@ static func _draw(u: PackedFloat32Array, temp: float) -> int:
 		var e := exp((v - top) / temp) if v > -INF else 0.0
 		w.append(e)
 		sum += e
-	var r := randf() * sum
+	var r := Target.dice.randf() * sum
 	for i in w.size():
 		r -= w[i]
 		if r <= 0.0 and w[i] > 0.0:
@@ -235,7 +235,7 @@ func _plays(dt: float) -> void:
 	_play_t -= dt
 	if _play_t > 0.0:
 		return
-	_play_t = randf_range(PLAY_EVERY.x, PLAY_EVERY.y) * lerpf(1.3, 0.8, iq)
+	_play_t = Target.dice.randf_range(PLAY_EVERY.x, PLAY_EVERY.y) * lerpf(1.3, 0.8, iq)
 	var bait: Target = null
 	var best := 0.35
 	for t: Target in g.targets:

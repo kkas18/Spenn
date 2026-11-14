@@ -1,71 +1,70 @@
-extends SceneTree
-## Performance probe: a crowded late-game field (about 25 enemies), then
-## draw calls, primitives and process time sampled over 10 s. Needs a real
-## renderer for the draw counts (not --headless); script times on a busy
-## desktop are noisy, so compare medians across runs.
+extends "res://tools/tests/harness.gd"
+## Performance probe: a busy late game (about twenty enemies, kept topped
+## up, under steady fire) for ten seconds. Prints the time each frame took
+## and, with a real renderer, draw calls and primitives.
 ##
-##   godot --path . --resolution 720x1600 -s res://tools/tests/perf.gd
+##   godot --headless --path . --fixed-fps 60 -s res://tools/tests/perf.gd
+##       script time per frame: everything a frame runs except the GPU
+##   xvfb-run godot --path . --resolution 720x1560 -s res://tools/tests/perf.gd
+##       also draw calls and primitives (frame times then include a
+##       software renderer and say little)
 ##
-## Budget (see PLAN.md, v7.50): under 400 draw calls in this scene.
+## Timings are noisy on a busy machine: compare medians of a few runs, on
+## the same machine. Budgets (see OPPGRADERING.md): under 250 draw calls,
+## and a median script time that leaves a mid-range phone room for 60 Hz.
 
-var frame := 0
-var game: Node
-var samples := {"draw": [], "prims": [], "proc": []}
-
-
-func _initialize() -> void:
-	change_scene_to_file("res://scenes/main.tscn")
+const FRAMES := 600
+const CROWD := 20
 
 
-func _touch(p: Vector2, pressed: bool) -> void:
-	var e := InputEventScreenTouch.new()
-	e.index = 0
-	e.position = p
-	e.pressed = pressed
-	Input.parse_input_event(e)
-
-
-func _drag(p: Vector2) -> void:
-	var e := InputEventScreenDrag.new()
-	e.index = 0
-	e.position = p
-	Input.parse_input_event(e)
-
-
-func _process(_d: float) -> bool:
-	frame += 1
-	game = current_scene
-	if game == null or not ("layout" in game):
-		return false
-	var l = game.layout
-	var o := Vector2(l.center_x, l.fork_y + 40)
-	match frame:
-		230:
-			_touch(o, true)
-		232:
-			_drag(o + Vector2(0, 150))
-		240:
-			_touch(o + Vector2(0, 150), false)
-		300:
-			seed(12345)
-			game.director.elapsed = 170.0
-			game.lives = 99
-			for k in [1, 2, 3, 4, 5, 7, 8, 0, 0, 1, 2, 7]:
-				game._spawn_one(k)
-	if frame > 500 and frame <= 1100:
+func _test() -> void:
+	if not await start_run():
+		return
+	game.lives = 99
+	await frames(30)
+	seed(12345)
+	game.director.elapsed = 170.0
+	for k: int in [1, 2, 3, 4, 5, 7, 8, 0, 0, 1, 2, 7]:
+		game._spawn_one(k)
+	for i in 200:
 		game.lives = 99
-		samples.draw.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
-		samples.prims.append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
-		samples.proc.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
-	if frame == 1101:
-		var alive := 0
-		for t in game.targets:
-			if t.phase != 0:
-				alive += 1
-		for k in samples:
-			var a: Array = samples[k]
-			a.sort()
-			print("PERF %-5s median=%.1f max=%.1f" % [k, a[a.size() / 2], a[a.size() - 1]])
-		print("PERF enemies=%d" % alive)
-		quit()
-	return false
+		await process_frame
+	var ms: Array[float] = []
+	var crowd: Array[float] = []
+	var draws: Array[float] = []
+	var prims: Array[float] = []
+	var o := grip()
+	var last := Time.get_ticks_usec()
+	for f in FRAMES:
+		game.lives = 99
+		# Keep the field full: top up what was shot down.
+		if f % 30 == 0 and alive() < CROWD:
+			game._spawn_one([0, 1, 2, 7, 4, 5][f / 30 % 6])
+		if f % 20 == 0:
+			touch(o, true)
+		elif f % 20 == 8:
+			drag(o + pull(Vector2.UP.rotated(randf_range(-0.5, 0.5)), 0.8))
+		elif f % 20 == 12:
+			touch(o + pull(Vector2.UP, 0.8), false)
+		await process_frame
+		var now := Time.get_ticks_usec()
+		ms.append((now - last) / 1000.0)
+		last = now
+		crowd.append(float(alive()))
+		draws.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		prims.append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+	_stat("frame ms", ms)
+	_stat("enemies", crowd)
+	if DisplayServer.get_name() != "headless":
+		_stat("draw calls", draws)
+		_stat("primitives", prims)
+	finish()
+
+
+func _stat(what: String, a: Array[float]) -> void:
+	a.sort()
+	var n := a.size()
+	var sum := 0.0
+	for v in a:
+		sum += v
+	print("PERF %-10s mean=%.2f median=%.2f p95=%.2f p99=%.2f max=%.2f" % [what, sum / n, a[n / 2], a[int(n * 0.95)], a[int(n * 0.99)], a[n - 1]])

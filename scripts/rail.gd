@@ -32,7 +32,7 @@ func flex(x: float, amp: float) -> void:
 
 
 func _process(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_flex_t += delta
 	_clock += rd
 	_shown = lerpf(_shown, charge, Pal.damp(0.12, rd)) if absf(charge - _shown) > 0.001 else charge

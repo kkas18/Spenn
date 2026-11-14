@@ -40,6 +40,10 @@ const ANG_C := 2.6             # angular damping (1/s)
 # slide speed px/s, hop px, aggression needed]. Reactions shorten and moves
 # grow with aggression; every move is telegraphed by a narrowed, watching
 # eye first, and followed by a cooldown, so it can be read and punished.
+## The least a creature watches before it moves (s): at a held aim, and at
+## a ball already in flight (see _evade).
+const REACT_MIN := 0.16
+const REACT_MIN_FLIGHT := 0.1
 const EVADE := {
 	Kind.RING: [0.7, 110.0, 330.0, 55.0, 0.0],
 	Kind.HEAVY: [0.95, 60.0, 150.0, 0.0, 0.35],
@@ -131,7 +135,7 @@ var smug := 0.0                # 0..1: half-lidded eye and a raised brow
 var _taunt := -1.0             # time into a taunt (<0: none)
 var _taunt_in := 3.0           # until the next unprompted taunt
 var _taunt_delay := -1.0       # a near miss is mocked a moment later
-static var _last_tease_ms := 0
+static var _last_tease_step := -1000   # the substep of the last "na-na" (one per 1.6 s at most)
 # Teamwork: a sturdy one steps into the line of fire to shield an ally.
 var covered := false           # an ally is guarding this one: it holds still
 var _guard_wait := -1.0        # reaction time before the guard moves
@@ -443,9 +447,10 @@ var _pluck_cd := 0.0
 
 func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wait: float) -> void:
 	life += 1
+	last_push = Vector2.ZERO
 	kind = k
 	posed = false
-	orders_cd = randf_range(1.2, 2.2)
+	orders_cd = dice.randf_range(1.2, 2.2)
 	order_flash = 0.0
 	ordered_by = null
 	tired_t = 0.0
@@ -457,7 +462,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_m_key = -1
 	_jelly_reset()
 	_ring_t = 1.0
-	_wander_t = randf_range(2.0, 5.0)
+	_wander_t = dice.randf_range(2.0, 5.0)
 	_queued_x = NAN
 	pop_t = 0.0
 	_gone = false
@@ -465,14 +470,14 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	# The common Ring spreads a little wider (still clear of the Rod's
 	# violet), so a crowd of them is a crowd of individuals.
 	var spread := 1.6 if k == Kind.RING else 1.0
-	_hue_shift = randf_range(-0.04, 0.04) * spread
-	_val_shift = randf_range(-0.05, 0.05) * (1.8 if k == Kind.RING else 1.0)
+	_hue_shift = dice.randf_range(-0.04, 0.04) * spread
+	_val_shift = dice.randf_range(-0.05, 0.05) * (1.8 if k == Kind.RING else 1.0)
 	covered = false
 	_guard_wait = -1.0
 	guard_of = null
 	smug = 0.0
 	_taunt = -1.0
-	_taunt_in = randf_range(2.0, 4.0)
+	_taunt_in = dice.randf_range(2.0, 4.0)
 	_taunt_delay = -1.0
 	temper = _roll_temper()
 	_roll_trait()
@@ -488,7 +493,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 		_pupil_scale *= 1.15
 	hp = HP[k]
 	var sr: Vector2 = SIZE[k]
-	size_k = randf_range(sr.x, sr.y)
+	size_k = dice.randf_range(sr.x, sr.y)
 	radius = RADIUS[k] * size_k
 	rod_half = ROD_HALF * size_k
 	anchor = anchor_pos
@@ -512,7 +517,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	hurry = false
 	patched = false
 	wants_heal = false
-	_heal_t = randf_range(2.0, 3.0)
+	_heal_t = dice.randf_range(2.0, 3.0)
 	boss_stage = 0
 	stage_changed = false
 	z_swing = 0.0
@@ -523,9 +528,9 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	landed = false
 	_entry_run = 0.0
 	_admire_t = 0.0
-	_vain_in = randf_range(4.0, 8.0)
+	_vain_in = dice.randf_range(4.0, 8.0)
 	# Armoured kinds keep to the middle plane: their plates are world-sized.
-	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else randf_range(-0.85, 0.85)
+	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else dice.randf_range(-0.85, 0.85)
 	_rope_side.clear()
 	_depth_sort()
 	_pluck_cd = 0.0
@@ -534,7 +539,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	tele_t = 0.0
 	flash_t = 0.0
 	wants_minion = false
-	orbit = randf() * TAU
+	orbit = dice.randf() * TAU
 	shield_ang = PI * 0.5
 	_aim_t = 0.0
 	_dodge_cd = 1.0
@@ -545,7 +550,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_slide_to = NAN
 	_hop_left = 0.0
 	_hopped = 0.0
-	_brain_t = randf_range(2.5, 5.0)
+	_brain_t = dice.randf_range(2.5, 5.0)
 	_minion_t = 4.0
 	_lunge_left = 0.0
 	_order_drop = 0.0
@@ -585,8 +590,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_floor_hits = 0
 	_settle_t = 0.0
 	_bob_off = 0.0
-	_bob_ph = randf() * TAU
-	_hopper_t = randf_range(1.5, 3.0)
+	_bob_ph = dice.randf() * TAU
+	_hopper_t = dice.randf_range(1.5, 3.0)
 	raged = false
 	crying = 0.0
 	wants_help = false
@@ -594,7 +599,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	wants_vine = false
 	_charm_cd = 0.0
 	_ghost_t = 0.0
-	_pipp_hop = randf_range(0.8, 2.0)
+	_pipp_hop = dice.randf_range(0.8, 2.0)
 	_speed_bonus = 1.0
 	_cut = false
 	alarm = false
@@ -604,7 +609,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	fray_t = 0.0
 	_reeled = 0.0
 	_calm_t = 0.0
-	_shade_t = randf_range(1.5, 3.0)
+	_shade_t = dice.randf_range(1.5, 3.0)
 	_shade_hidden = false
 	danger = 0.0
 	rope_alpha = 1.0
@@ -616,9 +621,9 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_pupil = Vector2.ZERO
 	_open = 1.0
 	_closed_t = 0.0
-	_blink_in = randf_range(3.0, 7.0)
+	_blink_in = dice.randf_range(3.0, 7.0)
 	_blink_t = 0.0
-	_clock = randf() * 10.0
+	_clock = dice.randf() * 10.0
 	_attached = true
 	_rope_len = start_len
 	for i in N:
@@ -627,7 +632,7 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	phase = Phase.HANGING
 	visible = true
 	if k == Kind.ROD:
-		vel.x = 70.0 if randf() < 0.5 else -70.0
+		vel.x = 70.0 if dice.randf() < 0.5 else -70.0
 
 
 ## Most are calm early on; the mix grows livelier as aggression rises.
@@ -649,7 +654,7 @@ func pose(k: Kind, at: Vector2) -> void:
 
 
 func _roll_temper() -> Temper:
-	var r := randf()
+	var r := dice.randf()
 	var a := aggression
 	if kind == Kind.BOSS:
 		return Temper.CALM
@@ -673,12 +678,12 @@ func _roll_trait() -> void:
 			pool = [Trait.PROUD, Trait.PROUD, Trait.CURIOUS]
 		Temper.ERRATIC:
 			pool = [Trait.JITTERY, Trait.CURIOUS]
-	trait_kind = pool[randi() % pool.size()]
-	_eye_scale = randf_range(0.88, 1.12)
-	_pupil_scale = randf_range(0.85, 1.15)
-	_mouth_w = randf_range(0.8, 1.2)
-	_smile = randf_range(-0.3, 1.0) if trait_kind != Trait.PROUD else randf_range(-0.4, 0.2)
-	curious_in = randf_range(1.5, 4.0)
+	trait_kind = pool[dice.randi() % pool.size()]
+	_eye_scale = dice.randf_range(0.88, 1.12)
+	_pupil_scale = dice.randf_range(0.85, 1.15)
+	_mouth_w = dice.randf_range(0.8, 1.2)
+	_smile = dice.randf_range(-0.3, 1.0) if trait_kind != Trait.PROUD else dice.randf_range(-0.4, 0.2)
+	curious_in = dice.randf_range(1.5, 4.0)
 
 
 static func is_soft_kind(k: int) -> bool:
@@ -709,8 +714,8 @@ func _land() -> void:
 			tilt = 0.0
 			flash_t = 0.12
 			Sfx.play("metal", 1.6, -14.0)
-	Sfx.play("knock", randf_range(0.9, 1.15), -12.0)
-	if randf() < 0.35:
+	Sfx.play("knock", Sfx.vary(0.9, 1.15), -12.0)
+	if dice.randf() < 0.35:
 		voice("up", -9.0)
 
 
@@ -727,7 +732,7 @@ func _on_entry() -> void:
 ## Sings one syllable on a note of the key, in this kind's register.
 func voice(shape: String, db := 0.0) -> void:
 	var reg: float = VOICE_REG[kind] * (0.82 if mood == Mood.GRUMPY else (1.22 if mood == Mood.CUTE else 1.0))
-	Sfx.voice(shape, reg, randi() % 4, db)
+	Sfx.voice(shape, reg, Sfx.pick(4), db)
 
 
 ## Looks at a neighbour for a moment (it fell, or just arrived).
@@ -781,7 +786,7 @@ func _tease(dt: float) -> void:
 	elif smug > 0.5 and not aimed:
 		_taunt_in -= dt
 		if _taunt_in <= 0.0:
-			_taunt_in = randf_range(1.5, 3.0) if temper == Temper.BOLD else randf_range(2.5, 4.5)
+			_taunt_in = dice.randf_range(1.5, 3.0) if temper == Temper.BOLD else dice.randf_range(2.5, 4.5)
 			taunt()
 
 
@@ -794,9 +799,10 @@ func taunt() -> void:
 	if soft:
 		# A three-lobed wiggle.
 		_jv[2] += 110.0 * (radius / 30.0)
-	var now := Time.get_ticks_msec()
-	if now - _last_tease_ms > 1600:
-		_last_tease_ms = now
+	# Game time (substeps), not the wall clock: what happens in a run must
+	# not depend on when it is played.
+	if rope_clock - _last_tease_step > 192 or rope_clock < _last_tease_step:
+		_last_tease_step = rope_clock
 		voice("taunt", -2.0)
 
 
@@ -1041,11 +1047,11 @@ func _debris_bounce(screen_h: float) -> void:
 		if speed > 120.0 and _floor_hits <= 2:
 			var loud := linear_to_db(clampf(speed / 1400.0, 0.1, 0.55))
 			if soft:
-				Sfx.play("squish", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("squish", Sfx.vary(0.8, 0.95), loud - 6.0)
 			elif kind in [Kind.SHIELD, Kind.MIRROR, Kind.BOSS]:
-				Sfx.play("metal", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("metal", Sfx.vary(0.8, 0.95), loud - 6.0)
 			else:
-				Sfx.play("wood", randf_range(0.8, 0.95), loud - 6.0)
+				Sfx.play("wood", Sfx.vary(0.8, 0.95), loud - 6.0)
 
 
 ## Radius of the collision shape around `closest_point` (a rod's capsule
@@ -1081,6 +1087,14 @@ func keep_in(w: float) -> void:
 	elif pos.x > w - r:
 		pos.x = w - r
 		vel.x = -absf(vel.x) * 0.45
+	# The rail is a beam, not a line in the air: a body knocked or winched
+	# upward stops under it (tucked up against its hook, as when it drops
+	# in) and falls back, instead of sailing over the rail into the top bar.
+	var top := anchor.y + HOOK_LEN * 0.5
+	if pos.y < top:
+		pos.y = top
+		if vel.y < 0.0:
+			vel.y = -vel.y * 0.3
 
 
 ## The string's bounding box (hook to body), refreshed once per step for
@@ -1091,6 +1105,9 @@ var rope_box := Rect2()
 ## ago, and how far back from `pos` to draw it this frame.
 var prev_pos := Vector2.ZERO
 var render_off := Vector2.ZERO
+## How far the contacts moved this body in the last step (see
+## Contacts.target_contacts: opposing pushes are damped).
+var last_push := Vector2.ZERO
 
 
 func update_rope_box() -> void:
@@ -1163,13 +1180,18 @@ func panicked() -> bool:
 	return scared or stun_t > 0.0
 
 
-## Distance test against the top third of the string, just under the hook:
-## cutting is a precision shot, not something a stray ball does by luck.
-func rope_hit(p: Vector2, r: float) -> bool:
+## Does a ball's centre, moving from `p0` to `p` in this substep, pass
+## within `r` of the top third of the string, just under the hook? Cutting
+## is a precision shot, not something a stray ball does by luck; and the
+## whole of the step is tested, so a fast, slanting ball cannot step over
+## the string between two substeps.
+func rope_hit(p0: Vector2, p: Vector2, r: float) -> bool:
 	if not _attached:
 		return false
+	var reach := r + 1.5
 	for i in range(0, 3):
-		if Geometry2D.get_closest_point_to_segment(p, _pts[i], _pts[i + 1]).distance_to(p) < r + 1.5:
+		var cps := Geometry2D.get_closest_points_between_segments(p0, p, _pts[i], _pts[i + 1])
+		if (cps[0] as Vector2).distance_squared_to(cps[1]) < reach * reach:
 			return true
 	return false
 
@@ -1183,7 +1205,7 @@ func strike_string(p: Vector2) -> bool:
 	fray_t = 4.0
 	_fray_at = p
 	for i in range(1, 4):
-		_prev[i] = _pts[i] - Vector2(randf_range(-2.0, 2.0), 3.0)
+		_prev[i] = _pts[i] - Vector2(dice.randf_range(-2.0, 2.0), 3.0)
 	return false
 
 
@@ -1215,7 +1237,7 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 		annoy(0.5)
 		if mood == Mood.CUTE:
 			cry()
-		if play_dead_on and kind in PLAY_DEAD_KINDS and playdead <= 0.0 and leader == null and not is_leader and randf() < 0.45:
+		if play_dead_on and kind in PLAY_DEAD_KINDS and playdead <= 0.0 and leader == null and not is_leader and dice.randf() < 0.45:
 			_play_dead()
 			return false
 		if kind == Kind.HEAVY and not enraged:
@@ -1335,10 +1357,40 @@ func consume_pluck() -> bool:
 ## along the rail the strings must cross: the pair lets them, until they
 ## have come apart, and then keeps the new side.
 const ROPE_GAP := 3.5
+## The most a string can move a body sideways in one step (px). Strings
+## used to shove bodies up to 2 px at a time, and a body that swung back
+## was shoved again: heavy bodies shook on the spot in a crowded field.
+## At this pace (36 px/s) a body still makes room, but smoothly.
+const BODY_YIELD := 0.3
 const ROPE_DEPTH := 0.5         # depth apart at which strings are in different planes
 const ROPE_FORGET := 30         # steps after which a pair that no longer meets is forgotten
-static var rope_clock := 0      # contact steps so far (see Contacts.target_contacts)
+static var rope_clock := 0      # contact steps so far in this run (see Contacts.target_contacts)
 var _rope_side := {}            # other's instance id -> [side, last step met, passing]
+## Which of the game's bodies this is (0, 1, 2 ...): what staggers the
+## checks that are not made every step. It used to be the engine's object
+## id, which made a run depend on what the app had done before it.
+var slot := 0
+
+
+## The creatures' dice: every roll that decides what one is or does (its
+## temper and traits at the spawn, each choice its brain makes). They are
+## the run's own, seeded with it. They used to be the engine's shared
+## generator, which the particle systems draw from too: how many sparks a
+## phone showed, and how often it drew a frame, then changed what the
+## creatures did, so a daily challenge was not the same on two phones.
+static var dice := RandomNumberGenerator.new()
+## The faces' dice (blinks, the eyes' small movements): looks only, drawn
+## once per frame shown, and so kept apart from the dice above.
+static var look_dice := RandomNumberGenerator.new()
+
+
+## A run begins: its dice are seeded, and the clocks that pace checks and
+## voices start over, so a run plays the same whenever in a session, and on
+## whatever phone, it is started.
+static func new_run(run_seed: int) -> void:
+	dice.seed = run_seed ^ 0x7A26E7
+	rope_clock = 0
+	_last_tease_step = -1000
 
 
 func rope_rope(o: Target) -> void:
@@ -1348,7 +1400,7 @@ func rope_rope(o: Target) -> void:
 	var hook := o._pts[0].x - _pts[0].x
 	var hook_side := signf(hook) if absf(hook) > 2.0 else 0.0
 	var e: Array = _rope_side.get(id, [])
-	if e.is_empty() or int(e[1]) < rope_clock - ROPE_FORGET:
+	if e.is_empty() or int(e[1]) < rope_clock - ROPE_FORGET or int(e[1]) > rope_clock:
 		# Newly met: the side is their hooks' order (their bodies', when
 		# the hooks are level). Met already crossed (they came together at
 		# different depths), they are left to part.
@@ -1360,7 +1412,7 @@ func rope_rope(o: Target) -> void:
 		# The hooks have passed each other along the rail.
 		e[0] = hook_side
 		e[2] = true
-	elif not e[2] and (rope_clock + id) % 8 == 0 and _ropes_cross(o):
+	elif not e[2] and (rope_clock + o.slot) % 8 == 0 and _ropes_cross(o):
 		# Now and then a check that the strings did not slip through.
 		e[2] = true
 	if e[2]:
@@ -1434,7 +1486,9 @@ func _rope_order(o: Target, s: float) -> void:
 		var mine := 0.25 if body else 0.5
 		var dx := -s * v * mine
 		if body:
-			pos.x += dx
+			# A body is heavy and gives way slowly (see BODY_YIELD): the
+			# other string, which is light, does the rest over the next steps.
+			pos.x += clampf(dx, -BODY_YIELD, BODY_YIELD)
 			if s * vel.x > 0.0:
 				vel.x *= 0.7
 		else:
@@ -1455,7 +1509,7 @@ func _give_way(k: int, dx: float) -> void:
 	if k <= 0 or dx == 0.0:
 		return
 	if k == N - 1 and _attached:
-		pos.x += dx * 0.5
+		pos.x += clampf(dx * 0.5, -BODY_YIELD, BODY_YIELD)
 		if signf(vel.x) == -signf(dx):
 			vel.x *= 0.7
 		return
@@ -1540,7 +1594,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if (kind == Kind.HEAVY or kind == Kind.BOSS) and _entry_run > 34.0:
 					# Lowered on its chain: a quiet clank per few links.
 					_entry_run = 0.0
-					Sfx.play("clank", randf_range(1.3, 1.5), -20.0)
+					Sfx.play("clank", Sfx.vary(1.3, 1.5), -20.0)
 				if kind == Kind.MIRROR:
 					tilt += 11.0 * dt
 			else:
@@ -1656,7 +1710,7 @@ func _brain(dt: float) -> void:
 			# A chick can't keep still: little hops on its string.
 			_pipp_hop -= dt
 			if _pipp_hop <= 0.0:
-				_pipp_hop = randf_range(1.2, 2.4)
+				_pipp_hop = dice.randf_range(1.2, 2.4)
 				vel.y -= 150.0
 				squash_t = 0.0
 				squash_dir = Vector2.UP
@@ -1665,12 +1719,12 @@ func _brain(dt: float) -> void:
 				# Hoppering: a quick sideways hop now and then.
 				_hopper_t -= dt
 				if _hopper_t <= 0.0:
-					_hopper_t = randf_range(2.0, 3.2)
+					_hopper_t = dice.randf_range(2.0, 3.2)
 					var sc := _screen_h / 1280.0
-					var dir := -1.0 if randf() < 0.5 else 1.0
+					var dir := -1.0 if dice.randf() < 0.5 else 1.0
 					if anchor.x + dir * 70.0 * sc > slide_hi or anchor.x + dir * 70.0 * sc < slide_lo:
 						dir = -dir
-					_slide(anchor.x + dir * randf_range(50.0, 80.0) * sc, 420.0 * sc, true)
+					_slide(anchor.x + dir * dice.randf_range(50.0, 80.0) * sc, 420.0 * sc, true)
 					vel.y -= 110.0
 					squash_t = 0.0
 					squash_dir = Vector2.UP
@@ -1684,7 +1738,7 @@ func _brain(dt: float) -> void:
 			# Pendel: pumps its own swing up to a cap, so it is never still.
 			var swing := atan2(pos.x - anchor.x, pos.y - anchor.y)
 			if absf(swing) < lerpf(0.28, 0.5, a):
-				var dir := signf(vel.x) if absf(vel.x) > 4.0 else (1.0 if randf() < 0.5 else -1.0)
+				var dir := signf(vel.x) if absf(vel.x) > 4.0 else (1.0 if dice.randf() < 0.5 else -1.0)
 				vel.x += dir * lerpf(40.0, 95.0, a) * dt
 		Kind.DROP:
 			# Dykker: when it sees the shot coming it ducks under it early.
@@ -1716,7 +1770,7 @@ func _brain(dt: float) -> void:
 				_calm_t = 0.0
 				var d := minf(lerpf(240.0, 380.0, a) * dt, maxf(0.0, length - 40.0))
 				if d > 0.0 and _reeled == 0.0:
-					Sfx.play("reel", randf_range(0.95, 1.1))
+					Sfx.play("reel", Sfx.vary(0.95, 1.1))
 				length -= d
 				_reeled += d
 			else:
@@ -1739,9 +1793,9 @@ func _brain(dt: float) -> void:
 					_aim_t = 0.0
 			if _shade_t <= 0.0:
 				_shade_hidden = not _shade_hidden
-				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * randf_range(0.85, 1.2)
+				_shade_t = lerpf(1.3, 1.9, a) if _shade_hidden else lerpf(2.6, 1.7, a) * dice.randf_range(0.85, 1.2)
 				if _shade_hidden:
-					Sfx.play("fade", randf_range(0.95, 1.05))
+					Sfx.play("fade", Sfx.vary(0.95, 1.05))
 			hidden_amt = move_toward(hidden_amt, 1.0 if _shade_hidden else 0.0, dt / 0.35)
 		Kind.BOSS:
 			# Spinneren: aimed at, it spins its plates faster to close the gap.
@@ -1789,8 +1843,15 @@ func _evade(dt: float) -> void:
 		react *= 0.45
 	if stance == Stance.WARY:
 		react *= 0.7
-	# They know your rhythm: the moment you usually let go, they go.
-	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03
+	# However keen, wary, bold or in command it is, it watches for at least
+	# this long before it moves: the narrowed eye is the warning, and a
+	# warning shown for four frames is no warning. (Stacked, the factors
+	# above came to 0.02 to 0.06 s late in a run: measured, a tenth of the
+	# dodges at an aim came sooner than 0.1 s.)
+	react = maxf(react, REACT_MIN_FLIGHT if incoming and not aimed else REACT_MIN)
+	# They know your rhythm: the moment you usually let go, they go (having
+	# watched that long at least).
+	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03 and _aim_t >= REACT_MIN_FLIGHT
 	if on_beat:
 		_rhythm_used = true
 	elif _aim_t < react:
@@ -1818,7 +1879,7 @@ func mind_climb(amount: float) -> void:
 	_hop_left += amount
 	squash_t = 0.0
 	squash_dir = Vector2.UP
-	Sfx.play("creak", randf_range(0.95, 1.1))
+	Sfx.play("creak", Sfx.vary(0.95, 1.1))
 
 
 ## A bluff: it stands its ground with a defiant flinch and a smirk.
@@ -1862,7 +1923,7 @@ func _slide(x: float, speed: float, quiet := false) -> void:
 		feint = 0.6
 	elif tactic >= 2:
 		feint = 0.2 + 0.3 * aggression
-	if not quiet and randf() < feint:
+	if not quiet and dice.randf() < feint:
 		# Feint: a quick jink the wrong way, then the real move. The eye
 		# gives it away: it looks where it is really going.
 		var fake := clampf(anchor.x - signf(x - anchor.x) * 30.0 * (_screen_h / 1280.0), minf(slide_lo, anchor.x), maxf(slide_hi, anchor.x))
@@ -1873,7 +1934,7 @@ func _slide(x: float, speed: float, quiet := false) -> void:
 	_slide_to = x
 	_slide_speed = speed
 	if not quiet:
-		Sfx.play("slide", randf_range(0.92, 1.08))
+		Sfx.play("slide", Sfx.vary(0.92, 1.08))
 
 
 ## Idle life: now and then a target drifts along the rail on its own. Bold
@@ -1887,22 +1948,22 @@ func _wander(dt: float) -> void:
 	var sc := _screen_h / 1280.0
 	match temper:
 		Temper.TIMID:
-			_wander_t = randf_range(5.0, 9.0)
+			_wander_t = dice.randf_range(5.0, 9.0)
 			return
 		Temper.BOLD:
-			_wander_t = randf_range(2.5, 4.5)
-			vel.x += (1.0 if randf() < 0.5 else -1.0) * 70.0
-			_slide(anchor.x + randf_range(-80.0, 80.0) * sc, 70.0 * sc, true)
+			_wander_t = dice.randf_range(2.5, 4.5)
+			vel.x += (1.0 if dice.randf() < 0.5 else -1.0) * 70.0
+			_slide(anchor.x + dice.randf_range(-80.0, 80.0) * sc, 70.0 * sc, true)
 		Temper.ERRATIC:
-			_wander_t = randf_range(0.9, 2.0)
-			_slide(anchor.x + randf_range(-35.0, 35.0) * sc, 160.0 * sc, true)
+			_wander_t = dice.randf_range(0.9, 2.0)
+			_slide(anchor.x + dice.randf_range(-35.0, 35.0) * sc, 160.0 * sc, true)
 		_:
-			_wander_t = randf_range(3.5, 6.5)
-			if tactic >= 3 and not is_nan(cold_x) and randf() < 0.6:
+			_wander_t = dice.randf_range(3.5, 6.5)
+			if tactic >= 3 and not is_nan(cold_x) and dice.randf() < 0.6:
 				# Drifts toward where you rarely shoot.
 				_slide(anchor.x + clampf(cold_x - anchor.x, -90.0 * sc, 90.0 * sc), 60.0 * sc, true)
 			elif aggression > 0.2:
-				_slide(anchor.x + randf_range(-45.0, 45.0) * sc, 55.0 * sc, true)
+				_slide(anchor.x + dice.randf_range(-45.0, 45.0) * sc, 55.0 * sc, true)
 
 
 ## The hook glides along the rail (eased in and out); the body follows on
@@ -1985,11 +2046,11 @@ func _evolve_step(dt: float) -> void:
 
 
 func _play_dead() -> void:
-	playdead = randf_range(2.6, 4.0)
-	_peek_at = playdead * randf_range(0.35, 0.6)
+	playdead = dice.randf_range(2.6, 4.0)
+	_peek_at = playdead * dice.randf_range(0.35, 0.6)
 	_closed_t = 0.3
 	voice("down", -4.0)
-	ang_vel += (1.0 if randf() < 0.5 else -1.0) * 4.0
+	ang_vel += (1.0 if dice.randf() < 0.5 else -1.0) * 4.0
 
 
 ## Limp and still, eye shut; one quick peek; then the surprise drop.
@@ -2000,7 +2061,7 @@ func _dead_step(dt: float) -> void:
 	if not peeking:
 		_closed_t = maxf(_closed_t, 0.1)
 	if was >= _peek_at and playdead < _peek_at:
-		_pupil = Vector2(signf(randf() - 0.5), 0.2)
+		_pupil = Vector2(signf(dice.randf() - 0.5), 0.2)
 	# Hangs a little askew, like something lifeless.
 	ang_vel += (0.45 - ang_off) * 3.0 * dt
 	if playdead <= 0.0:
@@ -2021,7 +2082,7 @@ func slide_now(x: float, speed: float) -> void:
 	_queued_x = NAN
 	_tell_t = 0.0
 	startle_t = 0.25
-	Sfx.play("slide", randf_range(0.95, 1.1))
+	Sfx.play("slide", Sfx.vary(0.95, 1.1))
 
 
 ## Makes this one a variant of its family (right after spawning).
@@ -2080,7 +2141,7 @@ func _stance_step(dt: float) -> void:
 		match want:
 			Stance.FURIOUS:
 				# Not every furious one throws itself down: the grumpy often do.
-				if kind != Kind.DROP and tele_t <= 0.0 and mood != Mood.CUTE and randf() < (0.6 if mood == Mood.GRUMPY else 0.3):
+				if kind != Kind.DROP and tele_t <= 0.0 and mood != Mood.CUTE and dice.randf() < (0.6 if mood == Mood.GRUMPY else 0.3):
 					order_plunge(30.0, 0.35)
 				voice("taunt", -4.0)
 			Stance.VETERAN:
@@ -2099,10 +2160,10 @@ func set_mood(m: int) -> void:
 	mood = m as Mood
 	match mood:
 		Mood.GRUMPY:
-			_smile = randf_range(-0.9, -0.5)
+			_smile = dice.randf_range(-0.9, -0.5)
 			_val_shift -= 0.06
 		Mood.CUTE:
-			_smile = randf_range(0.7, 1.0)
+			_smile = dice.randf_range(0.7, 1.0)
 			_eye_scale *= 1.1
 			_pupil_scale *= 1.15
 			_val_shift += 0.04
@@ -2309,7 +2370,7 @@ func _charm_step(dt: float) -> void:
 				_ghost_t = 1.2
 				_charm_cd = 4.0
 				charm_flash = 1.0
-				Sfx.play("fade", randf_range(1.0, 1.15))
+				Sfx.play("fade", Sfx.vary(1.0, 1.15))
 		Charm.BALLOON:
 			if aimed:
 				length = maxf(60.0 * (_screen_h / 1280.0), length - 110.0 * dt)
@@ -2390,10 +2451,10 @@ func _release() -> void:
 	_attached = false
 	# A little spring in the leap.
 	vel = vel * 1.1 + Vector2(0, -50.0)
-	spin = signf(vel.x) * randf_range(2.0, 3.5)
+	spin = signf(vel.x) * dice.randf_range(2.0, 3.5)
 	startle_t = 0.5
 	voice("up")
-	Sfx.play("whoosh", randf_range(1.0, 1.2), -4.0)
+	Sfx.play("whoosh", Sfx.vary(1.0, 1.2), -4.0)
 
 
 ## In the air: a thrown body. It grabs the host's rope if it passes close
@@ -2460,7 +2521,7 @@ func _try_grab(h: Target) -> bool:
 	_dodge_cd = 1.5
 	grabbed = true
 	voice("up")
-	Sfx.play("creak", randf_range(0.9, 1.05), -2.0)
+	Sfx.play("creak", Sfx.vary(0.9, 1.05), -2.0)
 	return true
 
 
@@ -2485,8 +2546,8 @@ func scatter(from: Vector2) -> void:
 	if tactic < 4 or leader != null or guard_of != null or kind == Kind.BOSS or _dodge_cd > 0.6:
 		return
 	var sc := _screen_h / 1280.0
-	var dir := signf(pos.x - from.x) if absf(pos.x - from.x) > 2.0 else (1.0 if randf() < 0.5 else -1.0)
-	_slide(anchor.x + dir * randf_range(55.0, 90.0) * sc, 300.0 * sc, true)
+	var dir := signf(pos.x - from.x) if absf(pos.x - from.x) > 2.0 else (1.0 if dice.randf() < 0.5 else -1.0)
+	_slide(anchor.x + dir * dice.randf_range(55.0, 90.0) * sc, 300.0 * sc, true)
 	startle_t = 0.35
 	_dodge_cd = maxf(_dodge_cd, 0.6)
 
@@ -2516,11 +2577,11 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 		tele_t -= dt
 		if tele_t <= 0.0:
 			_lunge_left += drop * (_screen_h / 1280.0)
-			Sfx.play("whoosh", randf_range(0.95, 1.15), -8.0)
+			Sfx.play("whoosh", Sfx.vary(0.95, 1.15), -8.0)
 		return
 	_brain_t -= dt
 	if _brain_t <= 0.0:
-		_brain_t = every * randf_range(0.8, 1.25)
+		_brain_t = every * dice.randf_range(0.8, 1.25)
 		tele_t = 0.45
 
 
@@ -2605,11 +2666,11 @@ func _snap(impulse: Vector2) -> void:
 	_attached = false
 	vel = impulse * 0.5 / body_mass() + Vector2(0, -120)
 	# Keep the wobble it already had; heavier bodies tumble slower.
-	spin = ang_vel * 0.5 + randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0) / body_mass()
+	spin = ang_vel * 0.5 + dice.randf_range(3.0, 6.0) * (1.0 if impulse.x >= 0.0 else -1.0) / body_mass()
 	# Whip recoil: the freed rope springs upward for a few frames.
 	for i in range(1, N):
 		var k := float(i) / (N - 1)
-		_prev[i] = _pts[i] + Vector2(randf_range(-2.0, 2.0), 9.0 + 12.0 * k)
+		_prev[i] = _pts[i] + Vector2(dice.randf_range(-2.0, 2.0), 9.0 + 12.0 * k)
 
 
 ## Current distance from the hook to the body (how stretched the string is).

@@ -14,9 +14,21 @@ enum Ease { STANDARD, ENTER, EXIT, EMPHASIZED, LINEAR }
 
 var _tracks: Array[Dictionary] = []
 
+## This frame's length in real seconds: what everything that runs in real
+## time (the interface, the camera, slow motion and overload running out)
+## counts with. A frame's delta is scaled by the time scale in force as the
+## frame began; a hit-stop that begins in the middle of the frame changes
+## Engine.time_scale at once, and dividing by the new scale made every
+## real-time clock leap most of a second ahead on each hit. So the scale is
+## noted as the frame begins (before anything in the tree runs), and the
+## real delta is worked out from that.
+var rd := 0.0
+var _frame_scale := 1.0
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().process_frame.connect(func() -> void: _frame_scale = Engine.time_scale)
 
 
 ## Duration adjusted for reduced motion.
@@ -66,7 +78,7 @@ func cancel(obj: Object, path := "") -> void:
 
 
 func _process(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	rd = delta / maxf(_frame_scale, 0.001)
 	var i := 0
 	while i < _tracks.size():
 		var tr: Dictionary = _tracks[i]

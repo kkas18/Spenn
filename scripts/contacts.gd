@@ -11,6 +11,7 @@ var g: Game
 var _hang: Array[Target] = []     # broad phase: the hanging bodies,
 var _reach: Array[float] = []     # how far each one's shape reaches,
 var _pushers: Array[Target] = []  # and the bodies that push strings aside
+var _was := PackedVector2Array()  # where each hanging body was before the contacts moved it
 
 
 func _init(game: Game) -> void:
@@ -28,12 +29,14 @@ func target_contacts() -> void:
 	# subtractions before any closest-point work.
 	_hang.clear()
 	_reach.clear()
+	_was.clear()
 	for t in g.targets:
 		if t.phase != Target.Phase.OFF:
 			t.update_rope_box()
 		if t.is_hittable():
 			_hang.append(t)
 			_reach.append(t.shape_radius() + (t.rod_half if t.kind == Target.Kind.ROD else 0.0))
+			_was.append(t.pos)
 	var n := _hang.size()
 	for i in n:
 		var a := _hang[i]
@@ -101,11 +104,11 @@ func target_contacts() -> void:
 				g._knock_sfx_cd = 0.07
 				var loud := linear_to_db(clampf(closing / 600.0, 0.15, 0.75))
 				if a.soft and c.soft:
-					Sfx.play("squish", randf_range(1.05, 1.25), loud - 4.0)
+					Sfx.play("squish", Sfx.vary(1.05, 1.25), loud - 4.0)
 				elif not a.soft and not c.soft:
-					Sfx.play("clank", randf_range(1.1, 1.3), loud - 3.0)
+					Sfx.play("clank", Sfx.vary(1.1, 1.3), loud - 3.0)
 				else:
-					Sfx.play("knock", randf_range(0.9, 1.1), loud)
+					Sfx.play("knock", Sfx.vary(0.9, 1.1), loud)
 				Sfx.haptic(6, 0.2)
 	# Ropes slide around the bodies they meet instead of passing through,
 	# and bodies keep inside the walls.
@@ -130,6 +133,23 @@ func target_contacts() -> void:
 			var o := _hang[j]
 			if box.intersects(o.rope_box.grow(6.0)):
 				t.rope_rope(o)
+	# A body the rules above cannot all satisfy (squeezed between a
+	# neighbour held by the wall and a string it must keep clear of) was
+	# moved one way this step and back the next, a pixel or two at 60 Hz: it
+	# buzzed. Where this step's net push reverses the last one's, only half
+	# of it is taken, so opposing rules settle on the middle within a few
+	# steps instead of trading blows for ever. A push that keeps its
+	# direction (any ordinary contact) is untouched.
+	for i in n:
+		var t := _hang[i]
+		var push := t.pos - _was[i]
+		if push.x * t.last_push.x < 0.0:
+			t.pos.x -= push.x * 0.5
+			push.x *= 0.5
+		if push.y * t.last_push.y < 0.0:
+			t.pos.y -= push.y * 0.5
+			push.y *= 0.5
+		t.last_push = push
 
 
 ## A killed shell or a cut target falls; whatever still hangs in its way is
@@ -186,7 +206,7 @@ func ball_contacts() -> void:
 			c.friction(n, a.vel, jn, 0.15, 1.0)
 			a.impact(-n)
 			c.impact(n)
-			Sfx.play("clank", randf_range(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0)
+			Sfx.play("clank", Sfx.vary(1.5, 1.7), linear_to_db(clampf(vn / 1200.0, 0.1, 0.5)) - 6.0)
 
 
 func collide(b: Ball) -> void:
@@ -196,13 +216,16 @@ func collide(b: Ball) -> void:
 		# Spent against the rail: it drops out of play instead of raining
 		# back down through the field.
 		return
+	# Where the ball was a substep ago: strings are tested against the
+	# whole of the step, not only where it ends.
+	var before := b.pos - b.vel * Game.SUBSTEP
 	for t in g.targets:
 		if not t.is_hittable():
 			continue
 		# A fast ball severs the string it crosses; a slower one plucks it.
 		# Cut: the ball's centre (±5 px) crosses the string near its hook on
 		# the way up, fast, before touching the rail. A precision shot.
-		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(b.pos, cut_r):
+		if t.kind != Target.Kind.BOSS and not b.cut_any and not b.hit_rail and b.vel.y < 0.0 and b.vel.length() > cut_speed and t.rope_hit(before, b.pos, cut_r):
 			b.cut_any = true
 			if g.perk("edge") > 0 or t.strike_string(b.pos):
 				g._on_cut(b, t)
@@ -213,7 +236,7 @@ func collide(b: Ball) -> void:
 			continue
 		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:
 			g._break_charm(t)
-		var rdv := t.rope_contact(b.pos, b.pos - b.vel * Game.SUBSTEP, b.vel, Ball.RADIUS)
+		var rdv := t.rope_contact(b.pos, before, b.vel, Ball.RADIUS)
 		if rdv != Vector2.ZERO:
 			b.vel += rdv
 			# The string rubs the ball: a touch of spin from the drag.

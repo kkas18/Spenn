@@ -123,7 +123,7 @@ func _place() -> void:
 func _process(delta: float) -> void:
 	if l == null:
 		return
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_clock += rd
 	var want := 1.0 if _on else 0.0
 	_amount = move_toward(_amount, want, rd / (1.4 if _on else 0.7))

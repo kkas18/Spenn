@@ -2667,3 +2667,92 @@ v7.55, med to endringer.
    (under −90 dB).
 4. **Tester:** testpakken passerer. Seks runder med middels bot gir median 178 s (v7.55:
    168 s), altså ingen endring i balansen.
+
+## v8.0 – Helhetlig oppgradering, trinn 0 og 1: stabilitet, kontroll og jevn flyt
+
+Fra v8 føres planen, funnene og målingene i [OPPGRADERING.md](OPPGRADERING.md), og en kort
+endringslogg i [CHANGELOG.md](CHANGELOG.md). Originalen (v7.57) er tatt vare på som
+`spenn-v7.57-original`. Her står bare hovedlinjene.
+
+1. **Gjennomgang av hele prosjektet** ga 14 feil som måtte rettes. De viktigste:
+   - Hvert treff fikk sanntidsklokkene til å hoppe 0,83 s. Overload varte derfor ca. 2,5 s
+     (ikke 5), flyt ca. 3 s (ikke 7), og risting, kamerabevegelse og sakte film utløst av
+     treff ble kuttet. Klokken er rettet (`Motion.rd`), og varighetene er satt til det som
+     faktisk er spilt.
+   - Pausemenyen låste seg hvis appen ble lagt i bakgrunnen midt i nedtellingen.
+   - En avbrutt berøring fyrte av et skudd.
+   - Et nytt drag ble avvist i 0,8 s etter hvert skudd. Nå styrer ladetiden skuddtakten.
+   - Full kraft var utenfor rekkevidde fra lomma (51–67 %). Draglengden følger nå plassen
+     på skjermen.
+   - Siktelinjen viste feil bane etter veggtreff, og snorkutt ble ikke alltid registrert.
+   - Kropper ristet i tette felt og kunne fly over bjelken.
+   - En avkuttet lagringsfil mistet fremgang uten varsel.
+2. **Testene spilte et annet spill:** uten vindu var feltet et kvadrat på 1280 × 1280 og
+   alle botskudd på full kraft. Balansetallene i v7.50–v7.57 gjaldt derfor ikke telefon.
+   Testene spiller nå på en skjerm formet som en telefon, med egen lagringsfil og fast frø.
+3. **Nye tester:** `layout`, `flow`, `save`, `timing` og `physics`, i tillegg til `soak` og
+   `bot`. `balance.sh` måler tre ferdighetsnivåer.
+4. **Balanse:** ladetiden er ca. 1 s per kule (før 0,6–0,88 s bak en lås på 0,8 s),
+   overload lades 15 % saktere per bølge fra bølge 5, og nedstigningen fortsetter å øke
+   etter intensitet 5 (før flatet den ut på et nivå ingen runde nådde). Bot, median
+   overlevelse: svak 190 s (før 182 s), middels 289 s (før 194 s), god 326 s (før 196 s).
+   En svak spiller varer altså som før, og dyktighet lønner seg.
+5. **Ytelse:** små prikker, buer og streker tegnes samlet (`Ink`). Et ansikt tegnes på
+   92 µs mot 165 µs før, med samme bilde.
+6. **Siktelinjen** har større prikker med mørk kant.
+7. **v8.0.1 – samme frø, samme runde:** to runder på samme frø skilte lag etter 15–45 s.
+   Oppdragene trakk fra rundens terninger (nå har de egne), og en kontroll av kryssede
+   snorer fulgte motorens objektnummer (nå fiendens plass i spillet). Ny test: `repeat`.
+
+## v8.1 – Lys og liv: nytt visuelt uttrykk
+
+Ønsket var et visuelt oppløftende spill med bedre design, effekter og animasjoner.
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Fra mørkt rom til lyssatt scene.** Bakteppet (`shaders/backdrop.gdshader`) har fem
+   verdener (`Pal.WORLDS`: Blåtime, Dyphav, Nordlys, Skumring, Morgen) som skifter med
+   bølgen: dyp farge øverst, drivende fargeslør, lys over linjen, gulv som speiler veggen.
+   Veggens lysstyrke holdes under ca. 0,3, så tekst, gullkule og figurer står klart.
+2. **Figurene** har litt rikere farger (`Pal.vivid`) og kantlys fra verdenen
+   (`sky` i `shaders/lit.gdshader`).
+3. **Rommet svarer:** `Backdrop.pulse` lyser opp veggen ved treff, `Fx.glitter` kaster
+   lysglimt ved en knust fiende, kula har lys og lengre hale.
+4. **Feiring:** lysflom og konfetti (`Fx.confetti`) ved ryddet bølge og ny rekord.
+5. **Sikte og tall:** små prikker mellom siktelinjens åtte, poengtall som spretter inn.
+6. **Fiendenes egne terninger** (`Target.dice`): effekter og bildefrekvens kan ikke
+   lenger endre hva fiendene gjør. Dagens utfordring er dermed lik på alle telefoner.
+7. **Tester:** `repeat` spiller det andre spillet med færre effekter. Hele pakken passerer.
+
+## v8.2 – Én runde til
+
+Ønsket var et spill man spiller om og om igjen. Detaljene står i
+[OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Resultatskjermen ser fremover:** nærmeste uløste oppdrag («2 av 3») og neste kule
+   med en linje som fylles av det runden ga (`Game._next_goals`, `GameOver._goals`).
+2. **Rekordtempo:** rekordrundens poengsum ved starten av hver bølge lagres (`Prefs.pace`),
+   og bølgekortet sier om du ligger foran eller bak (`Game._note_pace`).
+3. **Oppdrag med tak** (`Meta.MISSIONS`, femte tall) og bytte etter åtte uløste runder
+   (`Meta.STALE_RUNS`). Før vokste kravene til de var umulige, og ruten ble aldri ledig.
+4. **Tre nye kuler:** Is, Ametyst og Perlemor.
+5. **Tester:** `save` kontrollerer takene og byttet. Hele pakken passerer.
+
+## v8.3 – Rettferdig og tilpasset
+
+Fiendenes triks ble gjennomgått for rettferdighet, og innstillingene for kontroll og
+tilgjengelighet kom på plass. Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og
+[CHANGELOG.md](CHANGELOG.md).
+
+1. **Minste reaksjonstid** (`Target.REACT_MIN` 0,16 s, `REACT_MIN_FLIGHT` 0,10 s). Sent i
+   en runde ble reaksjonstiden ganget ned til 0,02–0,06 s, kortere enn det smale blikket
+   (varselet) rekker å vises. Rytme-trikset krever også at fienden har sett på deg så lenge.
+2. **Innstillinger:** draglengde (`Prefs.pull`, `Layout.pull_scale` 0,78 / 1 / 1,28),
+   kamerabevegelse for seg (`Prefs.camera`) og større tekst (`Prefs.big_text`, `Hud.ts`).
+3. **Treff-stopp etter tyngde** (`Fx.hitstop(weight)`: 0,6 for treff, 1 for knust, 1,5 for
+   sjef) og **haptikk** der en svak vibrasjon ikke kutter en sterk (`Sfx._take_haptic`).
+4. **Feiring og liv:** papirdusj bak poengsummen ved ny rekord (`GameOver._draw_paper`), og
+   menyen skifter verden hvert 12. sekund.
+5. **Balanse:** uendret innenfor spredningen (svak 165 → 197 s, middels 293 → 283 s, god
+   286 → 308 s på de samme åtte frøene).
+6. **Tester:** `timing` låser minste reaksjonstid, treff-stoppets tyngde og haptikkens
+   rekkefølge. `flow` og `layout` dekker de nye innstillingene. Hele pakken passerer.
