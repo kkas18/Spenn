@@ -44,94 +44,213 @@ const MEDIC_BADGE := Color("4FC79A")   # mint: its badge and its bubbles
 const MIRROR := Color("B3C3D6")   # silver, luma .76 – Speilet (polished hexagon)
 const EYE := Color("E4E7EC")
 
-# Colour themes: enamels, fired and a little muted, so the creatures sit in
-# the same room as the brass, gunmetal and leather around them. Every wave
-# the enemies change into another curated set,
-# easing over two seconds. Each theme keeps the rules of the base one: the
-# kinds sit apart in hue and in lightness (they read in greyscale too),
-# nothing is gold (that is the ball's) or coral (that is danger), and the
-# Vokter (steel), Legen (pearl) and Speilet (silver) keep their materials.
-# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD, BOSS, REEL, SHADE, MEDIC, MIRROR, PIPP, PAKKIS,
-# CAPTAIN (navy steel), SEER (violet), SNEAK (moss)
-# (Pipp is a pastel lilac chick, Pakkis a pastel pink knot: soft, childlike tones)
-const THEMES := [
-	# Emalje: cobalt, verdigris and plum, muted like fired enamel
-	[Color("5486D8"), Color("2F7D5A"), Color("4BB4C4"), Color("8A68C9"), Color("98D2E4"), Color("7E9CC9"), Color("A8508F"), Color("A9C46E"), Color("D98AA8"), Color("E9EAE4"), Color("B3C3D6"), Color("CDC0EE"), Color("EDB9C6"), Color("3E4E7A"), Color("9A5BB0"), Color("6F9A5B")],
-	# Patina: greener, like old copper
-	[Color("5D9ED4"), Color("347A4F"), Color("53C0BC"), Color("7E6EC5"), Color("9BDBDF"), Color("7E9CC9"), Color("A5559B"), Color("B5C073"), Color("D58DB4"), Color("E9EAE4"), Color("B3C3D6"), Color("C5C0E9"), Color("E8B9CD"), Color("415978"), Color("8C60AC"), Color("7A975E")],
-	# Blekk: deeper and richer
-	[Color("4475C7"), Color("257350"), Color("3CA4B4"), Color("7A59B9"), Color("86C0D2"), Color("7E9CC9"), Color("9B4382"), Color("99B45F"), Color("C87997"), Color("E9EAE4"), Color("B3C3D6"), Color("BAADDB"), Color("DAA6B3"), Color("354570"), Color("8C4DA2"), Color("638E4F")],
-	# Lyng: warmer, toward heather
-	[Color("546CD8"), Color("2F7D6A"), Color("4B9CC4"), Color("9D68C9"), Color("98C3E4"), Color("7E9CC9"), Color("A8507D"), Color("98C46E"), Color("D98A98"), Color("E9EAE4"), Color("B3C3D6"), Color("D6C0EE"), Color("EDB9BC"), Color("3E427A"), Color("AB5BB0"), Color("629A5B")],
-	# Frost: paler and lighter
-	[Color("76A1E7"), Color("438668"), Color("6AC4D2"), Color("A184D7"), Color("B3E5F4"), Color("7E9CC9"), Color("B4689E"), Color("BBD288"), Color("E8A5BE"), Color("E9EAE4"), Color("B3C3D6"), Color("E2D7FF"), Color("FED1DC"), Color("4F5D83"), Color("A974BC"), Color("80A56F")],
+# ------------------------------------------------------------ colour harmony
+# Every world is a chord of three: the stage, the creatures and the gold of
+# the ball each hold their own part of the colour wheel. The creatures'
+# family is centred 80 to 140 degrees round from the stage's hue, and gold
+# keeps clear of both. So each world reads as one palette, the creatures
+# stand clear of the wall behind them, and the ball stands out of both.
+#
+# The colours are set in OKLCH (lightness, chroma, hue: a colour space made
+# to match the eye), so a kind keeps its lightness and strength from world
+# to world and only its hue turns with the world.
+#   - The stage is one family of hues, dark and quiet.
+#   - The creatures are another family, FAMILY degrees to either side of the
+#     world's creature hue. The muted kinds take the end nearer the stage's
+#     hue and sit back; the vivid ones take the far end and stand out.
+#   - Steel, pearl and silver stay materials: all but grey.
+#   - Nothing on the stage or in a family comes near gold (the ball's) or
+#     coral (danger's). The families keep from green round to rose, and the
+#     stage keeps to the cool side (the lamp may be warm: it is a light,
+#     not a surface).
+# Before v8.4 the same blues, greens and teals hung in every world.
+#
+# Name, and the hues (degrees) of the stage, the creatures, the lamp and the
+# footlights (the haze above the line).
+const HARMONY := [
+	["Blåtime", 250.0, 168.0, 250.0, 250.0],    # cobalt; emerald and teal
+	["Dyphav", 205.0, 318.0, 205.0, 205.0],     # teal water; orchid and rose
+	["Nordlys", 160.0, 297.0, 160.0, 160.0],    # night green; violet
+	["Skumring", 295.0, 205.0, 295.0, 295.0],   # violet dusk; aqua
+	["Morgen", 330.0, 245.0, 75.0, 290.0],      # rose under a warm sun; sky blue.
+	# Its footlights are cool, so danger's coral glow at the line is never
+	# taken for the morning's rose.
 ]
-const THEME_TIME := 2.0
-
-# Worlds: the light the stage is washed in, one for each theme above (they
-# change together, wave by wave). The wall behind the rail is no longer a
-# dark room with one lamp but a lit backcloth: deep colour at the top
-# opening toward the footlights, slow curtains of a second and third
-# colour drifting across it, a glow gathering above the line. Every world
-# stays dark enough for white text, the gold ball and the creatures to
-# stand clear of it (the wall's luma keeps under about 0.3), and none is
-# coral: that is still danger's colour alone.
+const FAMILY := 29.0            # degrees of hue to either side of the creature hue
+const HUE_LO := 132.0           # the families' bounds: below it greens turn olive
+const HUE_HI := 350.0           # (toward gold), above it rose runs into coral
+const COOL_LO := 129.0          # the stage's bounds: it keeps out of the warm part
+const COOL_HI := 339.0          # of the wheel, gold's and coral's
+# The stage: lightness, chroma, degrees from the stage hue (lamp and rim
+# take the lamp's hue). The wall keeps dark enough for white text, the gold
+# ball and the creatures to stand clear of it.
 #   top, low     the wall from the rail down to the line
 #   lamp         the light falling from the upper left
 #   aura_a/b     the two colours of the drifting curtains
 #   haze         the glow above the line (the footlights)
 #   ground       the floor around the slingshot
 #   rim          the light the creatures catch on their edges
-const WORLDS := [
-	# Blåtime: cobalt deepening to indigo, a cool white light
-	{"top": Color(0.050, 0.075, 0.200), "low": Color(0.105, 0.180, 0.400), "lamp": Color(0.55, 0.70, 1.00),
-		"aura_a": Color(0.08, 0.42, 0.62), "aura_b": Color(0.34, 0.24, 0.72), "haze": Color(0.30, 0.50, 0.95),
-		"ground": Color(0.050, 0.068, 0.150), "rim": Color(0.55, 0.75, 1.00)},
-	# Dyphav: teal water, light falling in from above
-	{"top": Color(0.022, 0.105, 0.150), "low": Color(0.040, 0.250, 0.300), "lamp": Color(0.55, 1.00, 0.95),
-		"aura_a": Color(0.05, 0.55, 0.50), "aura_b": Color(0.10, 0.30, 0.70), "haze": Color(0.15, 0.70, 0.75),
-		"ground": Color(0.025, 0.085, 0.110), "rim": Color(0.45, 0.95, 0.90)},
-	# Nordlys: night green, with violet in the curtains
-	{"top": Color(0.020, 0.085, 0.085), "low": Color(0.035, 0.250, 0.150), "lamp": Color(0.62, 1.00, 0.70),
-		"aura_a": Color(0.10, 0.80, 0.36), "aura_b": Color(0.52, 0.24, 0.86), "haze": Color(0.22, 0.80, 0.42),
-		"ground": Color(0.025, 0.080, 0.065), "rim": Color(0.60, 1.00, 0.72)},
-	# Skumring: violet running to magenta
-	{"top": Color(0.095, 0.050, 0.210), "low": Color(0.290, 0.110, 0.360), "lamp": Color(1.00, 0.72, 0.92),
-		"aura_a": Color(0.72, 0.22, 0.60), "aura_b": Color(0.26, 0.26, 0.82), "haze": Color(0.80, 0.36, 0.78),
-		"ground": Color(0.085, 0.045, 0.130), "rim": Color(1.00, 0.65, 0.95)},
-	# Morgen: a warm sun through the upper left over rose and plum; the
-	# footlights stay cool, so the coral of danger is never mistaken
-	{"top": Color(0.150, 0.070, 0.160), "low": Color(0.400, 0.170, 0.270), "lamp": Color(1.00, 0.78, 0.52),
-		"aura_a": Color(0.78, 0.40, 0.26), "aura_b": Color(0.46, 0.24, 0.70), "haze": Color(0.56, 0.40, 0.92),
-		"ground": Color(0.090, 0.055, 0.105), "rim": Color(1.00, 0.84, 0.62)},
+const STAGE := {
+	"top": [0.20, 0.060, 6.0], "low": [0.34, 0.100, 0.0], "lamp": [0.87, 0.105, 0.0],
+	"aura_a": [0.58, 0.140, -22.0], "aura_b": [0.48, 0.170, 22.0], "haze": [0.66, 0.170, -6.0],
+	"ground": [0.185, 0.035, 4.0], "rim": [0.87, 0.120, 0.0],
+}
+# A kind's place in its family: degrees from the creature hue (minus: toward
+# the dark end, plus: toward the bright one), lightness, chroma. The kinds
+# sit apart in lightness, so they read in greyscale too; silhouettes carry
+# identity first.
+# Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD (steel), BOSS, REEL, SHADE,
+# MEDIC (pearl), MIRROR (silver: it shows the stage), PIPP, PAKKIS, CAPTAIN,
+# SEER, SNEAK
+const KIND_LCH := [
+	[-6.0, 0.67, 0.150], [-24.0, 0.55, 0.115], [12.0, 0.78, 0.125], [27.0, 0.63, 0.170],
+	[6.0, 0.84, 0.090], [-6.0, 0.72, 0.045], [29.0, 0.50, 0.170], [-16.0, 0.80, 0.115],
+	[26.0, 0.72, 0.120], [0.0, 0.93, 0.010], [0.0, 0.82, 0.030], [29.0, 0.88, 0.075],
+	[-29.0, 0.88, 0.075], [-12.0, 0.49, 0.090], [12.0, 0.56, 0.150], [-28.0, 0.64, 0.075],
 ]
+const KIND_MEDIC := 9
+const KIND_MIRROR := 10
+# The variants keep to the family too: each is its kind moved a little in
+# hue, lightness and chroma (they used to be four colours of their own).
+# Order: STD, BOB (lighter, fresher), TWIN (paler), BIG (deeper), HOPPER
+# (brighter and stronger).
+const VARIANT_LCH := [[0.0, 0.0, 0.0], [12.0, 0.10, -0.010], [-8.0, 0.13, -0.045], [-10.0, -0.10, 0.020], [18.0, 0.08, 0.030]]
+const THEME_TIME := 2.0
 
 static var _theme_from := 0
 static var _theme_to := 0
 static var _theme_k := 1.0
+static var _worlds: Array = []   # per world: its stage colours by key (see STAGE)
+static var _kinds: Array = []    # per world, per variant: the kinds' colours
 
 
-static var _vivid: Array = []    # THEMES with every colour through vivid(), worked out once
+## A colour from lightness (0..1), chroma (0..0.4) and hue (degrees) in
+## OKLCH. Where the screen cannot show it, the chroma gives way and the
+## lightness and hue are kept.
+static func oklch(l: float, c: float, h: float) -> Color:
+	var a := cos(deg_to_rad(h))
+	var b := sin(deg_to_rad(h))
+	var rgb := _oklab_to_linear(l, c * a, c * b)
+	if not _shown(rgb):
+		var lo := 0.0
+		var hi := c
+		for i in 20:
+			var mid := (lo + hi) * 0.5
+			if _shown(_oklab_to_linear(l, mid * a, mid * b)):
+				lo = mid
+			else:
+				hi = mid
+		rgb = _oklab_to_linear(l, lo * a, lo * b)
+	return Color(_gamma(rgb.x), _gamma(rgb.y), _gamma(rgb.z))
 
 
-static func kind_color(kind: int) -> Color:
-	if _vivid.is_empty():
-		for theme: Array in THEMES:
+## Lightness, chroma and hue (degrees) of a colour: the reverse of oklch().
+static func to_oklch(col: Color) -> Vector3:
+	var r := _linear(col.r)
+	var g := _linear(col.g)
+	var b := _linear(col.b)
+	var l := pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1.0 / 3.0)
+	var m := pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1.0 / 3.0)
+	var s := pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1.0 / 3.0)
+	var ok_l := 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+	var ok_a := 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+	var ok_b := 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+	return Vector3(ok_l, Vector2(ok_a, ok_b).length(), fposmod(rad_to_deg(atan2(ok_b, ok_a)), 360.0))
+
+
+static func _oklab_to_linear(l: float, a: float, b: float) -> Vector3:
+	var l_ := l + 0.3963377774 * a + 0.2158037573 * b
+	var m_ := l - 0.1055613458 * a - 0.0638541728 * b
+	var s_ := l - 0.0894841775 * a - 1.2914855480 * b
+	l_ = l_ * l_ * l_
+	m_ = m_ * m_ * m_
+	s_ = s_ * s_ * s_
+	return Vector3(
+		4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
+		-1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
+		-0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_)
+
+
+static func _shown(rgb: Vector3) -> bool:
+	return rgb.x >= -0.0001 and rgb.x <= 1.0001 and rgb.y >= -0.0001 and rgb.y <= 1.0001 and rgb.z >= -0.0001 and rgb.z <= 1.0001
+
+
+static func _gamma(v: float) -> float:
+	v = clampf(v, 0.0, 1.0)
+	return 12.92 * v if v <= 0.0031308 else 1.055 * pow(v, 1.0 / 2.4) - 0.055
+
+
+static func _linear(v: float) -> float:
+	return v / 12.92 if v <= 0.04045 else pow((v + 0.055) / 1.055, 2.4)
+
+
+## The smallest turn between two hues (degrees, 0..180).
+static func hue_gap(a: float, b: float) -> float:
+	return absf(fposmod(a - b + 180.0, 360.0) - 180.0)
+
+
+## Which way a world's family runs: 1 when its dark end is the lower hue,
+## -1 when it is the higher. The dark end is the one nearer the stage's hue.
+static func family_dir(world_i: int) -> float:
+	var stage: float = HARMONY[world_i][1]
+	var mid: float = HARMONY[world_i][2]
+	return 1.0 if hue_gap(mid - FAMILY, stage) < hue_gap(mid + FAMILY, stage) else -1.0
+
+
+## The hue of `kind` (and `variant`) in a world, kept inside the family's
+## bounds.
+static func kind_hue(world_i: int, kind: int, variant := 0) -> float:
+	var off: float = float(KIND_LCH[kind][0]) + float(VARIANT_LCH[variant][0])
+	return clampf(float(HARMONY[world_i][2]) + family_dir(world_i) * off, HUE_LO, HUE_HI)
+
+
+## `h` kept on the cool side of the wheel (see COOL_LO, COOL_HI).
+static func cool_hue(h: float) -> float:
+	h = fposmod(h, 360.0)
+	if h >= COOL_LO and h <= COOL_HI:
+		return h
+	return COOL_HI if hue_gap(h, COOL_HI) < hue_gap(h, COOL_LO) else COOL_LO
+
+
+static func _build() -> void:
+	for w in HARMONY.size():
+		var stage_hue: float = HARMONY[w][1]
+		var lamp_hue: float = HARMONY[w][3]
+		var haze_hue: float = HARMONY[w][4]
+		var world := {}
+		for key: String in STAGE:
+			var e: Array = STAGE[key]
+			if key == "lamp" or key == "rim":
+				world[key] = oklch(e[0], e[1], lamp_hue + float(e[2]))
+			else:
+				world[key] = oklch(e[0], e[1], cool_hue((haze_hue if key == "haze" else stage_hue) + float(e[2])))
+		_worlds.append(world)
+		var by_variant: Array = []
+		for v in VARIANT_LCH.size():
 			var row: Array[Color] = []
-			for c: Color in theme:
-				row.append(vivid(c))
-			_vivid.append(row)
+			for k in KIND_LCH.size():
+				var l: float = clampf(float(KIND_LCH[k][1]) + float(VARIANT_LCH[v][1]), 0.3, 0.93)
+				var c: float = maxf(0.0, float(KIND_LCH[k][2]) + float(VARIANT_LCH[v][2]))
+				if k == KIND_MEDIC:
+					row.append(oklch(l, c, 100.0))            # pearl: a breath of warmth
+				elif k == KIND_MIRROR:
+					row.append(oklch(l, c, stage_hue))        # silver: it shows the room
+				else:
+					row.append(oklch(l, c, kind_hue(w, k, v)))
+			by_variant.append(row)
+		_kinds.append(by_variant)
+
+
+## The colour of a kind (and one of its variants) in the current world,
+## easing with it from wave to wave.
+static func kind_color(kind: int, variant := 0) -> Color:
+	if _kinds.is_empty():
+		_build()
+	var b: Color = _kinds[_theme_to][variant][kind]
 	if _theme_k >= 1.0:
-		return _vivid[_theme_to][kind]
-	var a: Color = _vivid[_theme_from][kind]
-	return a.lerp(_vivid[_theme_to][kind], smoothstep(0.0, 1.0, _theme_k))
-
-
-## The enamels a touch richer and lighter than they were fired: on a lit
-## wall the muted ones looked grey. Hue is kept, so the kinds stay as far
-## apart as the themes set them.
-static func vivid(c: Color) -> Color:
-	return Color.from_hsv(c.h, minf(1.0, c.s * 1.16 + 0.03), minf(1.0, c.v * 1.07 + 0.02), c.a)
+		return b
+	var a: Color = _kinds[_theme_from][variant][kind]
+	return a.lerp(b, smoothstep(0.0, 1.0, _theme_k))
 
 
 ## A number that changes whenever the world's colours do (while one world
@@ -141,18 +260,20 @@ static func world_stamp() -> float:
 	return _theme_k + _theme_to * 2.0 + _theme_from * 64.0
 
 
-## One of the current world's colours (see WORLDS), easing with the theme.
+## One of the current world's colours (see STAGE), easing with the theme.
 static func world(key: String) -> Color:
-	var b: Color = WORLDS[_theme_to % WORLDS.size()][key]
+	if _worlds.is_empty():
+		_build()
+	var b: Color = _worlds[_theme_to][key]
 	if _theme_k >= 1.0:
 		return b
-	var a: Color = WORLDS[_theme_from % WORLDS.size()][key]
+	var a: Color = _worlds[_theme_from][key]
 	return a.lerp(b, smoothstep(0.0, 1.0, _theme_k))
 
 
-## Start easing to theme `i` (or straight there with `instant`).
+## Start easing to world `i` (or straight there with `instant`).
 static func set_theme(i: int, instant := false) -> void:
-	i = posmod(i, THEMES.size())
+	i = posmod(i, HARMONY.size())
 	_theme_from = i if instant else _theme_to
 	_theme_to = i
 	_theme_k = 1.0 if instant else 0.0

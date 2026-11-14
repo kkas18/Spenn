@@ -9,6 +9,7 @@
 # What runs:
 #   import, boot   the project loads and starts without an error
 #   layout         the screen layout on nine phone shapes
+#   colours        the colour harmony's rules, in every world
 #   flow           a whole session: menu, play, pause, resume, restart, losing
 #   save           the stored progress survives damage and interrupted writes
 #   timing         real time and game time (hit-stop, slow motion, overload)
@@ -61,6 +62,7 @@ if wanted boot; then
 	check boot "$LOG/boot.log"
 fi
 run_test layout 120
+run_test colours 120
 run_test flow 300
 # The save test feeds the game damaged files on purpose: the engine's own
 # complaints about those are expected.

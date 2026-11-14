@@ -18,7 +18,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
 | 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3) | Ferdig |
-| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Neste |
+| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Ferdig |
 | 5 | Lyd | Gjenstår |
 | 6 | Grensesnitt og tilgjengelighet | Delvis: draglengde, kamerabevegelse og tekststørrelse er inne (v8.3). Hjelpeside gjenstår |
 | 7 | Kode og motor | Gjenstår (vurdering under) |
@@ -27,7 +27,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
 et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
 å ta én runde til (trinn 3) ble flyttet foran lyd, innstillinger og kode. Etter v8.2 ba
-du om fargeharmoni og kulere, morsommere fiender. Det er trinn 4 og kommer nå.
+du om fargeharmoni og kulere, morsommere fiender. Det ble trinn 4 (v8.4).
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -72,6 +72,7 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 | Balanse | Dyktighet ga nesten ingen forskjell i overlevelse i originalen (median 182–196 s på alle nivåer) | 1 (delvis ✔), 3 |
 | Tilbakemelding | Treff-stopp er lik for alle treff (40 ms), uansett hvor stort treffet er | ✔ (v8.3) |
 | Grensesnitt | Liten tekst i feltet (16–18 px), ingen tekststørrelse-innstilling, ingen egen hjelpeside | Tekststørrelse ✔ (v8.3). Hjelpeside: 6 |
+| Farger | De samme figurfargene hang i alle fem verdener og var ikke laget sammen med veggen. Den mørkeste figuren hadde 1,7–1,9 i kontrast mot veggen, og en rosa figur lå 36° fra fare-fargen korall | ✔ (v8.4) |
 | Tilgjengelighet | Kamerabevegelse kan bare slås av sammen med alt annet («redusert bevegelse») | ✔ (v8.3) |
 | Lyd | Effektene er filtrert for å gi plass til musikk som ikke lenger spilles under runden | 5 |
 | Kode | `game.gd` (3 300 linjer) og `hud.gd` (3 600 linjer) er store filer | 7 |
@@ -189,20 +190,94 @@ ikke juks: de får aldri evner som ikke vises.
 Balansen ble målt på nytt med de samme åtte frøene før og etter (se målingene). Den er
 uendret innenfor spredningen.
 
-### Trinn 4 – Farger og figurer (v8.4, neste)
+### Trinn 4 – Farger og figurer (v8.4, ferdig)
 
 Du ba om fargeharmoni i det visuelle og om kulere fiender som er morsommere og mer
 gøyale.
 
-- **Fargeharmoni.** Fiendenes farger er i dag fem håndplukkede sett som ikke er laget
-  sammen med verdenene fra v8.1. De bygges opp på nytt slik at hver verden og figurene i
-  den følger én fargeregel, med jevn lyshet og metning, og målt kontrast mot veggen.
-  Gull er fortsatt kulas farge og korall farens, og typene skilles fortsatt på form og
-  lyshet, aldri bare på farge.
-- **Figurene.** Mer personlighet som synes: tilbehør, komiske reaksjoner på det som
-  skjer (nesten-treff, en nabo som knuses, å være sist igjen), småpåfunn når de henger i
-  ro, og morsommere måter å gå ned på. Alt tegnes i kode som før, og ingenting av det
-  skal skjule det du trenger å se.
+#### Fargeharmoni
+
+Før v8.4 hang de samme blå, grønne og turkise figurene i alle fem verdener. Fargene var
+håndplukket i v7 og ikke laget sammen med verdenene fra v8.1. Nå bygges hver verden
+etter én regel:
+
+- **Tre fargeroller som er laget sammen:** scenen (veggen), figurene og gullet i kula.
+  Figurene er én fargefamilie med sentrum 80–140° fra veggens farge på fargesirkelen, og
+  gull holdes unna begge.
+- **Fargene settes i OKLCH**, et fargerom som følger øyet. En type har samme lyshet og
+  styrke i alle verdener, og bare fargetonen følger verdenen. De dempede typene ligger
+  nær veggens farge og trekker seg tilbake, de sterke ligger lengst unna og står frem.
+- **Typene skilles på form og lyshet.** Stål (Vokteren), perlemor (Legen) og sølv
+  (Speilet) er fortsatt materialer, nesten uten farge.
+- **Gull og korall er reservert.** Figurene holder seg mellom grønt og rosa, og veggen
+  holder seg på den kalde siden. Lampen kan være varm, siden den er lys og ikke en
+  flate. I Morgen er lyset over linjen kjølig, så det korallrøde varselet ved linjen
+  ikke forveksles med morgenrosa.
+- **Variantene** (sprett-, tvilling- og kjempedykker, hoppe- og kjempering) er nyanser av
+  sin egen type, ikke fire faste farger som før. Hver figur har fortsatt sin egen lille
+  nyanse, men spredningen er smalere, så typene ikke flyter over i hverandre.
+
+| Verden | Scene | Figurer |
+|---|---|---|
+| Blåtime | Kobolt | Smaragd og turkis |
+| Dyphav | Havgrønt | Orkidé og rosa |
+| Nordlys | Nattegrønt | Fiolett |
+| Skumring | Fiolett skumring | Akvamarin |
+| Morgen | Rosa under en varm sol | Himmelblått |
+
+Målt på fargene spillet bygger, før (v8.3) og etter (v8.4). Kontrast er målt som for
+tekst (WCAG) mot midten av veggen. ΔE er avstand i OKLab, og 0,05 er omtrent det øyet
+skiller lett.
+
+| Verden | Svakeste kontrast mot veggen | Median kontrast | Nærmeste figur til korall | Figurenes fargespenn | Minste forskjell mellom to typer (ΔE) |
+|---|---|---|---|---|---|
+| Blåtime | 1,89 → 2,54 | 5,77 → 6,18 | 36° → 100° | 239° → 58° | 0,057 → 0,054 (ringene 0,114 → 0,096) |
+| Dyphav | 1,75 → 2,25 | 5,36 → 5,62 | 36° → 52° | 239° → 58° | 0,057 → 0,054 (ringene 0,114 → 0,108) |
+| Nordlys | 1,86 → 2,21 | 5,68 → 5,57 | 36° → 73° | 239° → 58° | 0,057 → 0,053 (ringene 0,114 → 0,100) |
+| Skumring | 1,91 → 2,53 | 5,85 → 6,31 | 36° → 137° | 239° → 59° | 0,057 → 0,053 (ringene 0,114 → 0,087) |
+| Morgen | 1,69 → 2,45 | 5,15 → 6,23 | 36° → 124° | 239° → 59° | 0,057 → 0,053 (ringene 0,114 → 0,100) |
+
+- **Den svakeste figuren (Kommandøren) står klarere** mot veggen i alle verdener.
+- **Fargespennet er smalere med vilje.** Det er det som gir harmonien. Prisen er at
+  typene ligger litt nærmere hverandre i farge. Minste forskjell er omtrent som før
+  (0,053 mot 0,057), og ringtypene, som har samme form, ligger mellom 0,087 og 0,108.
+  Typene skilles derfor først og fremst på form og lyshet, slik regelen sier.
+- **Veggen er like lys som før** (lysstyrke 0,33–0,39 målt i skjermbildene, mot
+  0,34–0,42 i v8.1), og jevnere fra verden til verden.
+- **En ny test (`colours`) passer på reglene** i alle fem verdener: kontrast mot veggen
+  minst 2,0, ingen figur nærmere enn 45° fra gull eller korall, minste forskjell mellom
+  to typer 0,05, og samme lyshet for en type i alle verdener.
+
+#### Kulere og morsommere figurer
+
+Figurene hadde allerede mye personlighet i koden: humør, temperament, damp, tårer,
+erting og en kikk når de spiller døde. Det som manglet, var det man ser med en gang. Nå
+er dette lagt til:
+
+| Hva | Når |
+|---|---|
+| Spire, lue med dusk, sløyfe eller propellhatt (propellen snurrer, fort når figuren flytter seg eller faller) | Omtrent hver tredje Vakt |
+| Svømmebriller på pannen | Dykkeren, alltid |
+| Solbriller på hodet | Skyggen, alltid |
+| Stjerner rundt hodet, øyet ruller, munnen vingler | En figur som tåler et treff, i 1,2 s etter et kort grimase (ikke sjefen: den lar seg aldri imponere) |
+| Kryss i øyet, tunga ute, stjerner rundt hodet | En figur som er slått ut og faller |
+| Svettedråper som spruter | De siste i en bølge |
+| «z z» som stiger opp | Søvnige figurer som får være i fred |
+| Blunk med et lite glimt og et skjevt smil | Av og til, når figuren får være i fred |
+| Øynene lukket av fryd | Når de erter deg |
+
+- **Ingenting av dette skjuler et varsel.** Det smale blikket og øyet som peker dit
+  figuren skal, er varslene om at den skal flytte seg (se rettferdige fiender over).
+  Blunk, fryd og døsing vises derfor bare når ingenting er siktet mot figuren, ingen kule
+  er på vei, den ikke er i ferd med å flytte seg, og den ikke er nær linjen. Hatter og
+  briller sitter aldri over øyet, og stjernene viker for øyet som peker.
+- **Bare utseende.** Det nye trekker ikke fra rundens terninger og endrer ikke hva
+  figurene gjør. Botrundene på faste frø gir nøyaktig samme resultat som i v8.3.
+- **Redusert bevegelse:** stjernene og propellen går saktere, og svetten står stille.
+- **Ytelse:** alt er tegnet med streker og sirkler i samme tegnekall som ansiktet. Et
+  ansikt tar 79 µs å tegne mot 76 µs før (median av tre målinger), og skripttiden per
+  bilde i et travelt felt under ild er 7,7 ms både før og etter (median av fire). En
+  første versjon med mangekanter kostet merkbart mer og ble skrevet om.
 
 ### Trinn 5 – Lyd
 
@@ -297,9 +372,12 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 - **Lyssatt scene i stedet for mørkt rom (v8.1).** Det gamle uttrykket var bevisst
   dempet: nesten svart vegg, én lampe, matte emaljefarger. Du ba om noe mer oppløftende.
-  Retningen jeg har valgt, er å beholde materialene og figurene og endre lyset. Vil du
-  ha det lysere, mørkere eller med andre farger, er hver verden åtte farger i
-  `scripts/pal.gd`.
+  Retningen jeg har valgt, er å beholde materialene og figurene og endre lyset.
+- **Farger etter regel, ikke håndplukket (v8.4).** Med 16 typer og fem verdener blir
+  80 håndplukkede farger fort ujevne. Nå er hver verden fire fargetoner i `Pal.HARMONY`
+  (scene, figurer, lampe og lyset over linjen), og hver type en plass i familien i
+  `Pal.KIND_LCH`. Vil du ha en verden varmere, kaldere eller med andre figurfarger, er
+  det ett tall å endre, og lyshet og kontrast følger med.
 - **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 5
   gjelder effektene.
 - **Ingen pauseknapp.** Fjernet etter ønske tidligere. Pause er dobbelttrykk eller
@@ -322,8 +400,11 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Poengtekster kan overlappe hverandre** når to kommer på samme sted (for eksempel
   «Dobbelttreff» og poengsummen).
 - **Det nye uttrykket er ikke sett på en telefon.** Farger, lysstyrke og effekter er
-  vurdert på skjermbilder fra PC. Skjermer er forskjellige, og bevegelse kan ikke
-  bedømmes på stillbilder.
+  vurdert på skjermbilder fra PC og målt i tall. Skjermer er forskjellige, og bevegelse
+  kan ikke bedømmes på stillbilder.
+- **Tilbehøret er lite på de minste figurene.** En spire eller propell på en liten Vakt
+  er 10–15 piksler i spillets oppløsning. Det synes, men bare så vidt på en liten
+  telefon.
 - **Meldinger om «leaked instance» i loggen når spillet avsluttes på PC** mens
   menymusikken spiller. Ufarlig, og gjelder ikke telefon.
 

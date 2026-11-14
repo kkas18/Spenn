@@ -459,7 +459,7 @@ func _start_run() -> void:
 	Target.new_run(run_seed)
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
-	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
+	Pal.set_theme(_rng.randi() % Pal.HARMONY.size(), true)
 	_missions_done = []
 	_mission_slots = []
 	_points_start = Prefs.skin_points

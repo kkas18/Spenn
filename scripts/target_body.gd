@@ -148,6 +148,18 @@ var hp := 1
 var radius := 30.0
 var size_k := 1.0              # this one's size (see SIZE)
 var posed := false             # shown in the collection, not in a run (see pose)
+# Looks (v8.4): what it wears, and how it shows what happens to it. All of
+# this is for the eye: none of it changes what it does, and it draws only
+# from look_dice, never from the run's dice.
+enum Hat { NONE, SPROUT, BEANIE, BOW, PROPELLER }
+const HAT_SHARE := 0.34         # of the Vakter that wear something of their own
+const DIZZY_TIME := 1.5         # s of seeing stars after a hit it survives
+const WINCE := 0.3              # s of the wince before the stars
+var hat := Hat.NONE
+var dizzy_t := 0.0
+var _wink_in := 0.0             # s to its next wink at you (when left alone)
+var _wink_t := 0.0              # s left of a wink
+var _prop := 0.0                # the propeller cap's turn (rad)
 var rod_half := ROD_HALF       # the Pendel's half length, by its size
 var anchor := Vector2.ZERO
 var length := 100.0            # rest length of the string
@@ -327,13 +339,13 @@ var crying := 0.0               # cute: tears (s)
 var wants_help := false         # cute: asks the game for a friend's help
 var _help_cd := 0.0
 # Variants: members of a family that look and act a little differently.
-#   Dykker (DROP):  BOB (mint) bobs on its bungee; TWIN (lilac) splits into
-#                   two little drops; BIG (deep blue) is large, takes two
-#                   hits and dives further.
-#   Vakt (RING):    HOPPER (pink) hops sideways now and then; BIG (deep
-#                   blue) is large, takes two hits and is slower.
+# Each is a shade of its kind's own colour (see Pal.VARIANT_LCH).
+#   Dykker (DROP):  BOB (lighter, fresher) bobs on its bungee; TWIN (paler)
+#                   splits into two little drops; BIG (deeper) is large,
+#                   takes two hits and dives further.
+#   Vakt (RING):    HOPPER (brighter, stronger) hops sideways now and then;
+#                   BIG (deeper) is large, takes two hits and is slower.
 enum Var { STD, BOB, TWIN, BIG, HOPPER }
-const VARIANT_TINT := [Color.WHITE, Color("7FE3B8"), Color("C3A8FF"), Color("3C6BD6"), Color("FF9CC6")]
 var variant := Var.STD
 # Champion: a wave's finale, bigger, tougher, grumpy, ringed in gold.
 var champion := false
@@ -467,11 +479,13 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	pop_t = 0.0
 	_gone = false
 	_dropping = false
-	# The common Ring spreads a little wider (still clear of the Rod's
-	# violet), so a crowd of them is a crowd of individuals.
+	# The common Ring spreads a little wider (still clear of its neighbours
+	# in the family), so a crowd of them is a crowd of individuals.
 	var spread := 1.6 if k == Kind.RING else 1.0
-	_hue_shift = dice.randf_range(-0.04, 0.04) * spread
-	_val_shift = dice.randf_range(-0.05, 0.05) * (1.8 if k == Kind.RING else 1.0)
+	# (Narrower from v8.4: the kinds of a world now share one family of
+	# hues, so a wider spread would blur one kind into the next.)
+	_hue_shift = dice.randf_range(-0.025, 0.025) * spread
+	_val_shift = dice.randf_range(-0.035, 0.035) * (1.5 if k == Kind.RING else 1.0)
 	covered = false
 	_guard_wait = -1.0
 	guard_of = null
@@ -481,6 +495,10 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt_delay = -1.0
 	temper = _roll_temper()
 	_roll_trait()
+	hat = _roll_hat(k)
+	dizzy_t = 0.0
+	_wink_t = 0.0
+	_wink_in = look_dice.randf_range(6.0, 14.0)
 	mind_ask = false
 	mind_beat = false
 	wait_t = 0.0
@@ -684,6 +702,28 @@ func _roll_trait() -> void:
 	_mouth_w = dice.randf_range(0.8, 1.2)
 	_smile = dice.randf_range(-0.3, 1.0) if trait_kind != Trait.PROUD else dice.randf_range(-0.4, 0.2)
 	curious_in = dice.randf_range(1.5, 4.0)
+
+
+## A Vakt now and then wears something of its own (a sprout, a beanie, a
+## bow or a propeller cap), so a crowd of them is a crowd of characters.
+func _roll_hat(k: Kind) -> Hat:
+	if k != Kind.RING or look_dice.randf() >= HAT_SHARE:
+		return Hat.NONE
+	return (1 + look_dice.randi() % 4) as Hat
+
+
+## Seeing stars after a hit it survived (past the first wince).
+func seeing_stars() -> bool:
+	return dizzy_t > 0.0 and dizzy_t < DIZZY_TIME - WINCE
+
+
+## Free to clown about: hanging, not aimed at, no ball coming, no move being
+## shown, not hurt, frightened or near the line. A joke must never cover a
+## tell, so every face it pulls for fun checks this first.
+func calm_for_fun() -> bool:
+	return phase == Phase.HANGING and not aimed and not incoming and is_nan(_queued_x) \
+		and not squint and tele_t <= 0.0 and not panicked() and not hurry and _closed_t <= 0.0 \
+		and dizzy_t <= 0.0 and hidden_amt < 0.5 and danger < 0.5 and playdead <= 0.0
 
 
 static func is_soft_kind(k: int) -> bool:
@@ -1240,6 +1280,10 @@ func hit(impulse: Vector2, at: Vector2) -> bool:
 		if play_dead_on and kind in PLAY_DEAD_KINDS and playdead <= 0.0 and leader == null and not is_leader and dice.randf() < 0.45:
 			_play_dead()
 			return false
+		# Still standing: it sees stars for a moment, after a short wince.
+		# (Not the Spinneren: it is never impressed.)
+		if kind != Kind.BOSS:
+			dizzy_t = DIZZY_TIME
 		if kind == Kind.HEAVY and not enraged:
 			# Bulwark rage: throws itself down and sinks faster from now on.
 			enraged = true

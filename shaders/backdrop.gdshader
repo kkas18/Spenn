@@ -7,7 +7,7 @@ shader_type canvas_item;
 // line the floor takes over, with a pool of light around the slingshot.
 // Fine grain and triangular dithering keep every gradient clean on 8-bit
 // panels. As a target nears the line, a coral warmth rises from it.
-// The colours come from the world the wave is played in (see Pal.WORLDS).
+// The colours come from the world the wave is played in (see Pal.STAGE).
 
 uniform vec4 sky_top : source_color = vec4(0.050, 0.075, 0.200, 1.0);
 uniform vec4 sky_low : source_color = vec4(0.105, 0.180, 0.400, 1.0);

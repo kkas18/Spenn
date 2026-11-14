@@ -271,10 +271,183 @@ func _face_ink() -> void:
 	_eye()
 	if (champion or is_leader) and phase == Phase.HANGING:
 		_crown(col.a)
+	elif hat != Hat.NONE and phase == Phase.HANGING and not posed:
+		_hat(col)
+	_gear(col)
 	if nemesis > 0:
 		_scar(col.a)
 	if crying > 0.0 and phase == Phase.HANGING:
 		_tears(col.a)
+	if hurry and phase == Phase.HANGING:
+		_sweat_fly(col.a)
+	elif trait_kind == Trait.SLEEPY and fposmod(_clock * 0.1 + _hue_shift * 37.0, 1.0) < 0.3 and calm_for_fun():
+		# A sleepy one dozes off now and then (three seconds in ten).
+		_snooze(col.a)
+	if seeing_stars() or phase == Phase.FALLING:
+		_stars(col.a)
+
+
+## What a Vakt wears, set at a jaunty angle on the upper left of the rim (the
+## string keeps the top), turning and squashing with the body.
+func _hat(col: Color) -> void:
+	var f := _ink
+	var a := col.a
+	var ang := -PI * 0.5 - 0.55
+	var u := Vector2.from_angle(ang)              # out of the rim
+	var t := u.orthogonal()                       # along it
+	var b := u * (radius - 1.5)
+	var w := maxf(9.0, radius * 0.42)
+	var sh := Color(0, 0, 0, 0.3 * a)
+	match hat:
+		Hat.BEANIE:
+			# A knitted cap: a dome with a rolled band and a pompom.
+			var cap := Color(col.darkened(0.28), a)
+			var dome := PackedVector2Array()
+			for i in 11:
+				var q := PI * i / 10.0
+				dome.append(b + t * cos(q) * w + u * sin(q) * w * 0.95)
+			f.draw_colored_polygon(dome, cap)
+			for k in 3:
+				var q := PI * (0.3 + 0.2 * k)
+				f.draw_line(b + t * cos(q) * w * 0.25, b + t * cos(q) * w * 0.82 + u * sin(q) * w * 0.8, Color(col.darkened(0.45), 0.7 * a), 1.0, true)
+			f.draw_line(b - t * w * 1.04, b + t * w * 1.04, Color(col.lightened(0.3), a), 3.2, true)
+			var pom := b + u * (w * 0.95 + 2.6)
+			f.disc(pom + Vector2(0.8, 1.0), 3.4, sh)
+			f.disc(pom, 3.4, Color(Pal.EYE, a))
+			f.disc(pom - Vector2(1.0, 1.0), 1.3, Color(1, 1, 1, 0.8 * a))
+		Hat.SPROUT:
+			# A seedling: a curved stem and two leaves.
+			var leaf := Color(Color("8FD6A0").lerp(col, 0.25), a)
+			var tip := b + u * (w * 1.1) + t * 2.0
+			f.draw_polyline(PackedVector2Array([b, b + u * w * 0.55 + t * 1.5, tip]), Color(leaf.darkened(0.3), a), 1.8, true)
+			for sx: float in [-1.0, 1.0]:
+				var dir := (u + t * sx * 1.1).normalized()
+				var base := tip - u * 1.0
+				var mid := base + dir * w * 0.5
+				var side := dir.orthogonal() * w * 0.2
+				f.draw_colored_polygon(PackedVector2Array([base, mid + side, base + dir * w * 0.95, mid - side]), leaf)
+				f.draw_line(base, base + dir * w * 0.8, Color(leaf.darkened(0.25), a), 0.9, true)
+		Hat.BOW:
+			# A ribbon bow on the side of the head.
+			var rib := Color(col.lightened(0.42), a)
+			var edge := Color(col.darkened(0.35), a)
+			var c := b + u * 2.0
+			for sx: float in [-1.0, 1.0]:
+				var loop := PackedVector2Array([c, c + t * sx * w * 0.95 + u * w * 0.55, c + t * sx * w * 1.05 - u * w * 0.35])
+				f.draw_colored_polygon(loop, rib)
+				f.draw_polyline(PackedVector2Array([loop[0], loop[1], loop[2], loop[0]]), edge, 1.0, true)
+				f.draw_line(c, c + t * sx * w * 0.5 - u * w * 0.9, rib, 2.0, true)
+			f.disc(c, 2.6, edge)
+			f.disc(c, 1.8, rib)
+		Hat.PROPELLER:
+			# A beanie with a propeller on a stem: it turns with the breeze
+			# and whirs when the wearer moves or falls.
+			var cap := Color(col.darkened(0.22), a)
+			var dome := PackedVector2Array()
+			for i in 9:
+				var q := PI * i / 8.0
+				dome.append(b + t * cos(q) * w * 0.9 + u * sin(q) * w * 0.7)
+			f.draw_colored_polygon(dome, cap)
+			f.draw_line(b - t * w * 0.92, b + t * w * 0.92, Color(col.lightened(0.3), a), 2.2, true)
+			var hub := b + u * (w * 0.7 + 6.0)
+			f.draw_line(b + u * w * 0.6, hub, Color(Pal.INK_DIM, a), 1.8, true)
+			var span := w * 1.35 * cos(_prop)
+			if absf(span) > 0.6:
+				f.draw_line(hub - t * span, hub + t * span, Color(Pal.METAL_DARK, 0.8 * a), 5.6, true)
+				f.draw_line(hub - t * span, hub + t * span, Color(Pal.METAL_LIGHT.lerp(Pal.EYE, 0.45), a), 3.8, true)
+			f.disc(hub, 2.2, Color(Pal.INK, a))
+
+
+## Kit some kinds always wear: the Dykker's swimming goggles pushed up on its
+## brow, the Skygge's shades perched on its head. Never over the eye: the
+## eye shows when it is about to move.
+func _gear(col: Color) -> void:
+	var f := _ink
+	var a := col.a
+	if a <= 0.02:
+		return
+	if kind == Kind.DROP:
+		var y := -radius * 1.05
+		var lr := radius * 0.18
+		var strap := Color(col.darkened(0.55), 0.9 * a)
+		var hw := radius * 0.44
+		f.draw_line(Vector2(-hw, y + 0.5), Vector2(hw, y + 0.5), strap, 2.0, true)
+		for sx: float in [-1.0, 1.0]:
+			var c := Vector2(sx * radius * 0.22, y)
+			f.disc(c + Vector2(0.6, 0.9), lr + 1.5, Color(0, 0, 0, 0.3 * a))
+			f.disc(c, lr + 1.4, Color(Pal.METAL_DARK.lerp(col, 0.3), a))
+			f.disc(c, lr, Color(Pal.world("rim").lerp(Pal.EYE, 0.5), 0.9 * a))
+			f.disc(c - Vector2(lr, lr) * 0.35, lr * 0.35, Color(1, 1, 1, 0.85 * a))
+	elif kind == Kind.SHADE:
+		# Two dark lenses on a fine bridge, tilted along the rim.
+		var c := Vector2(-radius * 0.55, -radius * 0.8)
+		var lw := radius * 0.2
+		var frame := Color(Pal.PUPIL, 0.95 * a)
+		# Squashed to an oval and tilted along the rim (the batch's own
+		# transform: two plain discs, no polygons).
+		f.draw_set_transform_matrix(Transform2D(-0.42, Vector2(1.0, 0.7), 0.0, c))
+		for sx: float in [-1.0, 1.0]:
+			f.disc(Vector2(sx * lw * 1.05, 0.0), lw, frame)
+			f.draw_line(Vector2(sx * lw * 1.05 - lw * 0.5, -lw * 0.25), Vector2(sx * lw * 1.05 - lw * 0.05, -lw * 0.6), Color(1, 1, 1, 0.55 * a), 1.2, true)
+		f.draw_line(Vector2(-lw * 0.2, -lw * 0.3), Vector2(lw * 0.2, -lw * 0.3), frame, 1.6, true)
+		f.draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## Stars round its head: a hit it survived (for a moment), or out cold as it
+## falls.
+func _stars(a: float) -> void:
+	var f := _ink
+	var k := 1.0 if phase == Phase.FALLING else minf(1.0, dizzy_t / 0.25)
+	var speed := 2.0 if Prefs.reduced_motion else 4.2
+	var rx := maxf(radius * 0.75, 16.0)
+	var ry := radius * 0.2
+	var cy := -radius - 10.0
+	var col := Pal.EYE.lerp(Pal.GOLD_LIGHT, 0.3)
+	for i in 3:
+		var q := _clock * speed + i * TAU / 3.0
+		var front := 0.5 + 0.5 * sin(q)
+		var p := Vector2(cos(q) * rx, cy + sin(q) * ry)
+		var r := lerpf(4.0, 6.4, front)
+		var al := lerpf(0.6, 1.0, front) * a * k
+		var d1 := Vector2.from_angle(_clock * 2.5) * r
+		var d2 := d1.orthogonal()
+		f.disc(p + Vector2(0.5, 0.8), r * 0.75, Color(Pal.PUPIL, 0.4 * al))
+		f.draw_line(p - d1, p + d1, Color(col, al), 2.4, true)
+		f.draw_line(p - d2, p + d2, Color(col, al), 2.4, true)
+		f.disc(p, r * 0.32, Color(1, 1, 1, al))
+
+
+## A sleepy one left alone dozes: small z's drift up from it. (In body
+## space, so they lean with it; drawn only while nothing is aimed at it.)
+func _snooze(a: float) -> void:
+	var f := _ink
+	var col := Color(Pal.EYE, 0.8 * a)
+	for i in 2:
+		var k := fposmod(_clock * 0.45 + i * 0.5, 1.0)
+		var fade := sin(PI * k)
+		if fade < 0.05:
+			continue
+		var s := lerpf(3.0, 5.5, k)
+		var p := Vector2(radius * 0.55 + k * 12.0 + sin(k * 6.0) * 2.0, -radius * 0.7 - k * 22.0)
+		var z := PackedVector2Array([p + Vector2(-s, -s), p + Vector2(s, -s), p + Vector2(-s, s), p + Vector2(s, s)])
+		f.draw_polyline(z, Color(Pal.PUPIL, 0.4 * a * fade), 3.2, true)
+		f.draw_polyline(z, Color(col, col.a * fade), 1.6, true)
+
+
+## The last of a wave, sinking fast: sweat flies off it.
+func _sweat_fly(a: float) -> void:
+	var f := _ink
+	var c := Color(Pal.DROP.lightened(0.45), 0.95 * a)
+	var rim := Color(Pal.PUPIL, 0.45 * a)
+	for i in 2:
+		var sx := -1.0 if i == 0 else 1.0
+		var k := 0.4 if Prefs.reduced_motion else fposmod(_clock * 1.6 + i * 0.5, 1.0)
+		var p := Vector2(sx * (radius * 0.7 + k * 16.0), -radius * 0.6 - k * 14.0 + k * k * 20.0)
+		var fade := minf(1.0, sin(PI * k) * 1.6)
+		f.disc(p, 4.4, Color(rim, rim.a * fade))
+		f.disc(p, 3.4, Color(c, c.a * fade))
+		f.draw_colored_polygon(PackedVector2Array([p + Vector2(-2.6, -1.2), p + Vector2(-sx * 1.2, -7.0), p + Vector2(2.6, -1.2)]), Color(c, c.a * fade))
+		f.disc(p + Vector2(-1.0, -1.0), 1.0, Color(1, 1, 1, 0.8 * a * fade))
 
 
 ## A crown set on the top of the body, in its own space, so it turns and
@@ -517,7 +690,22 @@ func _mouth(er: float) -> void:
 	var dark := Color(Pal.PUPIL, 0.95 * modulate.a)
 	var pts := PackedVector2Array()
 	w *= _mouth_w
-	if _closed_t > 0.0 or phase == Phase.FALLING:
+	if phase == Phase.FALLING:
+		# Out cold: a slack wavy line, the tongue lolling out of one corner.
+		for i in 9:
+			var t := lerpf(-1.0, 1.0, i / 8.0)
+			pts.append(Vector2(t * w * 0.5, y + sin(t * 5.0) * 1.4))
+		f.draw_polyline(pts, ink, 1.9, true)
+		var tp := Vector2(w * 0.3, y + 1.0)
+		f.disc(tp + Vector2(0.0, w * 0.2), w * 0.17, Color("E86A8A", modulate.a))
+		f.draw_line(tp + Vector2(0.0, w * 0.06), tp + Vector2(0.0, w * 0.3), Color(Color("B84A6A"), modulate.a), 1.0, true)
+	elif seeing_stars():
+		# Woozy: a wobbling line.
+		for i in 9:
+			var t := lerpf(-1.0, 1.0, i / 8.0)
+			pts.append(Vector2(t * w * 0.45, y + 1.0 + sin(t * 6.0 + _clock * 9.0) * 1.3))
+		f.draw_polyline(pts, ink, 1.8, true)
+	elif _closed_t > 0.0:
 		# Clenched: a short tight line, pinched at the corners.
 		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 2.1, true)
 		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.6, true)
@@ -545,11 +733,12 @@ func _mouth(er: float) -> void:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
 			pts.append(Vector2(t * w * 0.36, y + 1.6 - (1.0 - t * t) * 1.6))
 		f.draw_polyline(pts, ink, 1.8, true)
-	elif smug > 0.35:
+	elif smug > 0.35 or (_wink_t > 0.0 and calm_for_fun()):
 		# Smirk: flat on one side, curled up on the other.
+		var sm := maxf(smug, 0.8)
 		for i in 7:
 			var t := i / 6.0
-			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * smug))
+			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * sm))
 		f.draw_polyline(pts, ink, 2.2, true)
 	else:
 		# At rest, each its own: from a pout to a broad smile, drawn wide
@@ -661,8 +850,18 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	var lower := 0.0
 	if squint or tele_t > 0.0:
 		lower = 0.22
-	if _closed_t > 0.0:
+	if _closed_t > 0.0 and not seeing_stars():
 		upper = 1.0
+	if (_wink_t > 0.0 or (_taunt >= 0.0 and _taunt < TAUNT_TIME * 0.7)) and side >= 0.0 and calm_for_fun():
+		# A wink, or the glee of a taunt: the eye shut in a happy upturned
+		# curve. (Only when nothing is aimed at it: see calm_for_fun.)
+		_lid_curve(f, er, 0.15, -1.0, Color(Pal.EYE, 0.95), 2.2)
+		if _wink_t > 0.0:
+			var sp := Vector2(er * 1.05, -er * 0.9)
+			var s := sin(PI * clampf(_wink_t / 0.5, 0.0, 1.0)) * 3.5
+			f.draw_line(sp - Vector2(s, 0), sp + Vector2(s, 0), Color(1, 1, 1, 0.9), 1.3, true)
+			f.draw_line(sp - Vector2(0, s), sp + Vector2(0, s), Color(1, 1, 1, 0.9), 1.3, true)
+		return
 	if upper + lower > 0.92:
 		# Shut: a single soft curve, the lashes of a closed lid.
 		_lid_curve(f, er, 0.08, 1.0, Color(Pal.EYE, 0.9), 2.0)

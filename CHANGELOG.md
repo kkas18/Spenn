@@ -4,6 +4,49 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.4 – Farger og figurer
+
+Hver verden har fått sin egen fargeklang, og figurene har fått mer personlighet.
+
+### Nytt
+
+- **Hver verden er én palett.** Før hang de samme blå, grønne og turkise figurene i alle
+  fem verdener. Nå er veggen, figurene og gullet i kula laget sammen: smaragd mot kobolt
+  i Blåtime, orkidé og rosa mot havgrønt i Dyphav, fiolett mot nattegrønt i Nordlys,
+  akvamarin mot fiolett i Skumring og himmelblått mot rosa i Morgen.
+- **Figurene står klarere mot veggen.** Den svakeste figuren har nå 2,2–2,5 i kontrast mot
+  veggen, mot 1,7–1,9 før. Hver type har samme lyshet i alle verdener, og typene skilles
+  fortsatt på form og lyshet.
+- **Figurene har fått mer personlighet:**
+  - Omtrent hver tredje Vakt har på seg noe eget: en spire, en lue med dusk, en sløyfe
+    eller en propellhatt som snurrer.
+  - Dykkeren har svømmebriller på pannen, og Skyggen har solbriller på hodet.
+  - En figur som tåler et treff, ser stjerner: de går rundt hodet, øyet ruller og munnen
+    vingler.
+  - En figur som er slått ut, faller med kryss i øyet, tunga ute og stjerner rundt hodet.
+  - De siste i en bølge svetter så dråpene spruter.
+  - Søvnige figurer som får være i fred, døser med «z z».
+  - Av og til blunker en figur til deg, og når de erter deg, lukker de øynene av fryd.
+
+### Rettet
+
+- **Fare-fargen er bare fare.** En rosa figur lå 36° fra korall på fargesirkelen. Nå er
+  ingen figur nærmere enn 52°. I Morgen er lyset over linjen kjølig, så det korallrøde
+  varselet ved linjen ikke forveksles med morgenrosa.
+- **Legen var gulaktig** og pastellfigurene sterkere enn de var satt til. Det kom av en
+  nedre grense for fargemetning i hver figurs egen nyanse. Grensen er fjernet.
+
+### Uendret
+
+- **Ingenting av det nye skjuler et varsel.** Blunk, fryd og døsing vises bare når
+  ingenting er siktet mot figuren og den ikke er i ferd med å flytte seg. Hatter og
+  briller sitter aldri over øyet.
+- **Spillet oppfører seg helt likt.** Det nye er bare utseende. Testene på faste frø gir
+  nøyaktig samme runder som i v8.3.
+- **Ytelsen er den samme.** Skripttiden per bilde i et travelt felt er 7,7 ms både før og
+  etter.
+- Gull er fortsatt bare kula, og korall bare fare.
+
 ## v8.3 – Rettferdig og tilpasset
 
 Fiendene spiller rent, og du kan stille spillet etter hånden og øynene dine.

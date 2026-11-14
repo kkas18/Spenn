@@ -2756,3 +2756,26 @@ tilgjengelighet kom på plass. Detaljene står i [OPPGRADERING.md](OPPGRADERING.
    286 → 308 s på de samme åtte frøene).
 6. **Tester:** `timing` låser minste reaksjonstid, treff-stoppets tyngde og haptikkens
    rekkefølge. `flow` og `layout` dekker de nye innstillingene. Hele pakken passerer.
+
+## v8.4 – Farger og figurer
+
+Ønsket var fargeharmoni og kulere, morsommere fiender. Detaljene står i
+[OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Farger etter regel** (`Pal.HARMONY`, `Pal.STAGE`, `Pal.KIND_LCH`, `Pal.oklch`): hver
+   verden har en scenefarge, en figurfamilie (±29° rundt sitt sentrum, 80–140° fra
+   scenen) og en lampe. Fargene settes i OKLCH, så en type har samme lyshet i alle
+   verdener. Familiene holdes mellom 132° og 350°, og scenen på den kalde siden
+   (`Pal.cool_hue`). Erstatter de fem håndplukkede settene (`THEMES`) og verdenene fra
+   v8.1 (`WORLDS`).
+2. **Varianter** er nyanser av sin type (`Pal.VARIANT_LCH`), og veteranen blir dypere i
+   sin egen farge i stedet for marineblå.
+3. **Figurenes utseende** (`Target.Hat`, `dizzy_t`, `_wink_t`, `calm_for_fun`): hatter på
+   Vaktene, briller på Dykkeren og Skyggen, stjerner etter et treff de tåler og når de er
+   slått ut, svette for de siste, døsing, blunk og fryd. Bare utseende, trukket fra
+   `look_dice`.
+4. **Tester:** ny test `colours` låser fargereglene (kontrast mot veggen, avstand til gull
+   og korall, minste forskjell mellom typer, lik lyshet i alle verdener). Hele pakken
+   passerer, og `physics`, `repeat` og botrundene gir de samme tallene som i v8.3. Det
+   viser at det nye ikke endrer hva figurene gjør.
+

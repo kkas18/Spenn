@@ -219,6 +219,17 @@ func _tremble() -> Vector2:
 
 func _update_eye(delta: float) -> void:
 	_closed_t = maxf(0.0, _closed_t - delta)
+	dizzy_t = maxf(0.0, dizzy_t - delta)
+	# The propeller turns with the breeze, and fast when it moves or falls.
+	var spin_k := 14.0 if phase == Phase.FALLING or not is_nan(_queued_x) else 4.5
+	_prop = fposmod(_prop + delta * spin_k * (0.4 if Prefs.reduced_motion else 1.0), TAU)
+	# Now and then, left alone, it winks at you.
+	_wink_t = maxf(0.0, _wink_t - delta)
+	_wink_in -= delta
+	if _wink_in <= 0.0:
+		_wink_in = look_dice.randf_range(7.0, 15.0)
+		if calm_for_fun() and trait_kind != Trait.SHY:
+			_wink_t = 0.5
 	_blink_in -= delta
 	if _blink_in <= 0.0:
 		_blink_t = 0.26 if trait_kind == Trait.SLEEPY else 0.13
@@ -271,6 +282,11 @@ func _update_eye(delta: float) -> void:
 		# Sinking for the team: eyes down, on the line.
 		goal = Vector2(0.0, 0.85).rotated(-body_rot)
 		quick = 0.3
+	elif seeing_stars():
+		# Seeing stars: the eye rolls round. (After the tells above: a move
+		# being shown always shows.)
+		goal = Vector2.from_angle(_clock * (4.0 if Prefs.reduced_motion else 8.0)) * 0.62
+		quick = 0.5
 	_pupil = _pupil.lerp(goal, Pal.damp(quick, delta))
 
 
@@ -302,16 +318,22 @@ func color() -> Color:
 func _base_color() -> Color:
 	if golden:
 		return Pal.GOLD.lerp(Pal.GOLD_LIGHT, 0.5 + 0.5 * sin(_clock * 7.0))
-	# The current colour theme (they change, harmoniously, wave by wave).
-	var base := Pal.kind_color(kind)
-	if variant != Var.STD:
-		base = base.lerp(VARIANT_TINT[variant], 0.75)
+	# The colour of its kind (and variant) in the world this wave is played
+	# in: one family of hues for all of them (see Pal's colour harmony).
+	var base := Pal.kind_color(kind, variant)
 	if _stance_k > 0.0 and stance != Stance.CALM:
-		base = base.lerp(STANCE_TINT[stance], 0.4 * _stance_k)
+		if stance == Stance.VETERAN:
+			# Seasoned: deeper in its own colour (it used to turn navy, whatever
+			# family it came from).
+			base = base.lerp(Color.from_hsv(base.h, minf(1.0, base.s * 1.15), base.v * 0.45), 0.4 * _stance_k)
+		else:
+			base = base.lerp(STANCE_TINT[stance], 0.4 * _stance_k)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
 		# Each individual a shade of its own: hue, saturation and value drift
 		# a little around the theme's colour, never far enough to blur kinds.
-		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), clampf(base.v + _val_shift, 0.2, 1.0))
+		# (No floor under the saturation: it used to be 0.3, which turned the
+		# Legen's pearl a pale yellow and made the pastels stronger than set.)
+		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.0, 1.0), clampf(base.v + _val_shift, 0.2, 1.0))
 	return base
 
 

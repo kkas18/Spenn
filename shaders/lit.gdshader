@@ -20,7 +20,7 @@ uniform vec2 view = vec2(0.0);
 // on the side that faces them (xy: canvas position, z: reach, w: strength).
 uniform vec4 lights[3];
 uniform vec3 light_col = vec3(1.0, 0.78, 0.42);
-// The world's light (see Pal.WORLDS): what the wall behind is washed in
+// The world's light (see Pal.STAGE): what the wall behind is washed in
 // comes round the edges of every solid, so the creatures sit in the same
 // air as the wall and stand clear of it.
 uniform vec3 sky = vec3(0.55, 0.75, 1.0);
