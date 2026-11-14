@@ -41,6 +41,11 @@ var mission_level := 0         # missions completed so far: goals grow with it
 var stats := {}                # lifetime counters (see record_run)
 var daily_date := 0
 var daily_best := 0
+## Days in a row with a run played (see note_day). Only ever counted and
+## shown, never used to press: no reminders, nothing lost but the count.
+var streak := 0
+var streak_best := 0
+var streak_day := 0            # the last day a run was played (YYYYMMDD)
 var habits := {}               # what the enemies know of the player (see Habits)
 var feats := {}                # achievements won: id -> the day (see Feats)
 var best_runs: Array = []      # the ten best runs: {"score", "wave", "secs", "acc", "day", "daily"}
@@ -109,6 +114,9 @@ func load_from_disk() -> void:
 			missions.append({"id": str(m.id), "level": maxi(0, int(m.get("level", 0))), "runs": maxi(0, int(m.get("runs", 0)))})
 	stats = _dict("meta", "stats")
 	daily_date = _int("meta", "daily_date", 0)
+	streak = maxi(0, _int("meta", "streak", 0))
+	streak_best = maxi(streak, _int("meta", "streak_best", 0))
+	streak_day = maxi(0, _int("meta", "streak_day", 0))
 	daily_best = maxi(0, _int("meta", "daily_best", 0))
 	habits = _dict("meta", "habits")
 	feats = _dict("meta", "feats")
@@ -349,6 +357,9 @@ func reset_progress() -> void:
 	total_points = 0
 	daily_best = 0
 	daily_date = 0
+	streak = 0
+	streak_best = 0
+	streak_day = 0
 	missions = []
 	mission_level = 0
 	fresh = {}
@@ -359,6 +370,29 @@ func reset_progress() -> void:
 func set_skin(i: int) -> void:
 	skin = i
 	_commit()
+
+
+## A run was started today: the day counts toward the days in a row.
+## Returns the count when this is the first run of the day and it makes two
+## days in a row or more (something to tell), 0 otherwise. A clock set back
+## changes nothing. Stored with the next save (the run's end).
+func note_day(today := -1) -> int:
+	if today < 0:
+		today = Meta.today()
+	if today <= streak_day:
+		return 0
+	streak = streak + 1 if streak_day == Meta.yesterday(today) else 1
+	streak_day = today
+	streak_best = maxi(streak_best, streak)
+	return streak if streak >= 2 else 0
+
+
+## The days in a row as they stand (0 once a day has been missed: the
+## count only shows while it is alive).
+func streak_alive(today := -1) -> int:
+	if today < 0:
+		today = Meta.today()
+	return streak if streak_day == today or streak_day == Meta.yesterday(today) else 0
 
 
 ## Today's best in the daily challenge (0 on a new day).
@@ -438,6 +472,9 @@ func flush() -> bool:
 	c.set_value("meta", "stats", stats)
 	c.set_value("meta", "daily_date", daily_date)
 	c.set_value("meta", "daily_best", daily_best)
+	c.set_value("meta", "streak", streak)
+	c.set_value("meta", "streak_best", streak_best)
+	c.set_value("meta", "streak_day", streak_day)
 	c.set_value("meta", "habits", habits)
 	c.set_value("meta", "feats", feats)
 	c.set_value("meta", "best_runs", best_runs)

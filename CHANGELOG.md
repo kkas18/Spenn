@@ -4,6 +4,29 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.5 – Kom tilbake
+
+En ærlig grunn til å komme tilbake, og en side som forklarer spillet.
+
+### Nytt
+
+- **Dager på rad.** Spillet teller dagene du har spilt på rad. Fra to dager står det ved
+  siden av rekorden på menyen, og første runde på en ny dag får et kort: «Dag 4 på rad».
+  Sju dager på rad gir prestasjonen «En hel uke», og statistikken viser flest dager på
+  rad.
+- **Slik spiller du.** En hjelpeside bak ?-knappen på menyen: skyting, pause, linjen og
+  knutene, fiendenes varsler, flyt og overbelastning, veggskudd og snorkutt, og dagens
+  utfordring.
+
+### Uendret, med vilje
+
+- **Ingen varsler, ingen påminnelser og ingen meldinger om å miste noe.** Hopper du over
+  en dag, forsvinner tallet stille, og den lengste rekka huskes.
+- **Prestasjonene** er gått gjennom mot de nye nivåene etter v8.0. De måler ferdighet og
+  er innen rekkevidde, så de er ikke endret.
+- Statistikken har ni plasser. Totale poeng står på kulesiden, og plassen i statistikken
+  viser nå flest dager på rad.
+
 ## v8.4 – Farger og figurer
 
 Hver verden har fått sin egen fargeklang, og figurene har fått mer personlighet.

@@ -17,10 +17,10 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 0 | Sikre originalen, testgrunnlag og målinger | Ferdig |
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
-| 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3) | Ferdig |
+| 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3), dager på rad (v8.5) | Ferdig |
 | 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Ferdig |
 | 5 | Lyd | Gjenstår |
-| 6 | Grensesnitt og tilgjengelighet | Delvis: draglengde, kamerabevegelse og tekststørrelse er inne (v8.3). Hjelpeside gjenstår |
+| 6 | Grensesnitt og tilgjengelighet | Delvis: draglengde, kamerabevegelse og tekststørrelse (v8.3), hjelpeside (v8.5). Kontroll av farge og lyd og flere skjermformer gjenstår |
 | 7 | Kode og motor | Gjenstår (vurdering under) |
 | 8 | Sluttkontroll og levering | Gjenstår |
 
@@ -279,6 +279,28 @@ er dette lagt til:
   bilde i et travelt felt under ild er 7,7 ms både før og etter (median av fire). En
   første versjon med mangekanter kostet merkbart mer og ble skrevet om.
 
+#### Dager på rad og prestasjonene (v8.5)
+
+En ærlig grunn til å komme tilbake: spillet teller dagene du har spilt på rad.
+
+- **Telleren** står ved siden av rekorden på menyen fra to dager på rad («3 dager på
+  rad»), og bare så lenge den lever. Når en dag er hoppet over, forsvinner den stille.
+- **Første runde på en ny dag** får et kort: «Dag 4 på rad», med lengste rekke under.
+- **Sju dager på rad** gir prestasjonen «En hel uke».
+- **Statistikken** viser flest dager på rad (på plassen til totale poeng, som står på
+  kulesiden).
+- **Ærlig:** ingen varsler, ingen påminnelser og ingen meldinger om at du mister noe.
+  Det eneste som går tapt når du hopper over en dag, er tallet, og den lengste rekka
+  huskes. En klokke som stilles tilbake, endrer ingenting.
+- Dagen regnes etter kalenderen, også over månedsskifte, skuddår og nyttår. Testen
+  `save` passer på det.
+
+**Prestasjonene** ble gått gjennom mot de nye nivåene etter v8.0. De måler ferdighet
+(veggskudd, kjeder, snorkutt, treffprosent) og ikke poeng, så de fleste er upåvirket. To
+avhenger av hvor langt du kommer, og begge er innen rekkevidde: «Bølgebryter» (bølge 5)
+nås av middels botspiller (bølge 7–8 i median), og «Fem minutter» av god botspiller (308
+s i median). De er derfor ikke endret.
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -295,9 +317,14 @@ Gjort i v8.3:
 - **Større tekst** i feltet og på resultatskjermen.
 - **Treff-stopp etter tyngde**, og haptikk der den sterkeste vibrasjonen går ferdig.
 
+Gjort i v8.5:
+
+- **Hjelpeside** («Slik spiller du», ?-knappen på menyen): skyting, pause, linjen og
+  knutene, fiendenes varsler, flyt og overbelastning, veggskudd og snorkutt, og dagens
+  utfordring. Teksten følger «Større tekst».
+
 Gjenstår:
 
-- Hjelpeside.
 - Kontroll av at ingenting signaliseres bare med farge eller bare med lyd.
 - Skjermbilder på flere skjermformer (16:9, 20:9, nettbrett, brettbar).
 
@@ -420,10 +447,6 @@ Tallene er median, med laveste og høyeste runde i parentes.
   halvannen gang så lenge som før. Om det er riktig nivå, bør avgjøres av en person som
   spiller, ikke av boter. Vil du ha det strammere, er det to tall å endre (hvor fort
   nedstigningen øker, og hvor mye overload bremses).
-- **Prestasjonene** er ikke gjennomgått mot de nye poengnivåene (oppdragene er, se
-  trinn 3).
-- **En rekke for dager på rad** er vurdert og ikke lagt inn ennå.
-- **Hjelpeside** (trinn 6).
 - **Større tekst gjelder feltet og resultatskjermen.** Menyer, innstillinger og
   toppfeltet er ikke endret.
 - **Lang draglengde når ikke full kraft fra lomma** på de fleste telefoner. Draget må

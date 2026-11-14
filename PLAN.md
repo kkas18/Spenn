@@ -2779,3 +2779,16 @@ tilgjengelighet kom på plass. Detaljene står i [OPPGRADERING.md](OPPGRADERING.
    passerer, og `physics`, `repeat` og botrundene gir de samme tallene som i v8.3. Det
    viser at det nye ikke endrer hva figurene gjør.
 
+## v8.5 – Kom tilbake
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Dager på rad** (`Prefs.streak`, `streak_best`, `streak_day`, `note_day`,
+   `streak_alive`; `Meta.yesterday`): telles når en runde startes, vises ved rekorden på
+   menyen og på et kort i dagens første runde (`Game.STREAK_CARD_AT`). Prestasjonen
+   `week` for sju dager. Ingen varsler eller straff.
+2. **Hjelpeside** (`Hud._fill_help`, `Hud.HELP`, glyfen `help`) bak en ?-knapp på menyen.
+3. **Prestasjonene** vurdert mot de nye nivåene: ingen endring nødvendig.
+4. **Tester:** `save` kontrollerer telling over månedsskifte, skuddår og nyttår, at en
+   tilbakestilt klokke ikke endrer noe, og at tallene lagres.
+

@@ -242,6 +242,28 @@ best_runs=[1, "two", {"score": 5}]
 	var ids: Array = prefs.missions.map(func(m: Dictionary) -> String: return m.id)
 	check(ids[0] != "break" and ids[1] != "wave" and ids[2] == "kills", "after %d unfinished runs another mission takes the slot (%s)" % [stale, str(ids)])
 	check(ids[0] != ids[1] and _missions_valid() and int(prefs.missions[0].runs) == 0, "... a different one in each, counted from nought")
+
+	# --- days in a row (v8.5): counted by the calendar, across months and
+	# years; a missed day starts again from one; the best is kept; a clock
+	# set back changes nothing
+	check(meta.yesterday(20260301) == 20260228 and meta.yesterday(20240301) == 20240229, "the day before the first of March, in a common year and a leap year")
+	check(meta.yesterday(20270101) == 20261231 and meta.yesterday(20261115) == 20261114, "... and before New Year's Day, and an ordinary day")
+	prefs.streak = 0
+	prefs.streak_best = 0
+	prefs.streak_day = 0
+	check(prefs.note_day(20261230) == 0 and prefs.streak == 1, "the first day played counts one (nothing to tell yet)")
+	check(prefs.note_day(20261230) == 0 and prefs.streak == 1, "a second run the same day changes nothing")
+	check(prefs.note_day(20261231) == 2, "the next day makes two in a row")
+	check(prefs.note_day(20270101) == 3 and prefs.streak_best == 3, "... and New Year's Day three")
+	check(prefs.streak_alive(20270102) == 3 and prefs.streak_alive(20270103) == 0, "the count shows while it is alive, and not once a day is missed")
+	check(prefs.note_day(20261229) == 0 and prefs.streak == 3, "a clock set back changes nothing")
+	check(prefs.note_day(20270104) == 0 and prefs.streak == 1 and prefs.streak_best == 3, "after a missed day it starts again from one, and the best is kept")
+	prefs.flush()
+	prefs.streak = -1
+	prefs.streak_best = -1
+	prefs.streak_day = -1
+	prefs.load_from_disk()
+	check(prefs.streak == 1 and prefs.streak_best == 3 and prefs.streak_day == 20270104, "the days in a row are stored")
 	finish()
 
 

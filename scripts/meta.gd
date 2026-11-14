@@ -105,3 +105,10 @@ static func skin_unlocked(i: int, total: int) -> bool:
 static func today() -> int:
 	var d := Time.get_date_dict_from_system()
 	return int(d.year) * 10000 + int(d.month) * 100 + int(d.day)
+
+
+## The day before `day` (both YYYYMMDD), across months and years.
+static func yesterday(day: int) -> int:
+	var t := Time.get_unix_time_from_datetime_dict({"year": day / 10000, "month": (day / 100) % 100, "day": day % 100, "hour": 12})
+	var d := Time.get_date_dict_from_unix_time(int(t) - 86400)
+	return int(d.year) * 10000 + int(d.month) * 100 + int(d.day)

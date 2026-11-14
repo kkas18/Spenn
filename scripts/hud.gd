@@ -56,6 +56,7 @@ var _m_lang: Lever
 var _m_stats: Token
 var _m_skins: Token
 var _m_coll: Token
+var _m_help: Token
 var _m_daily: IconBtn
 var _inner: StyleBoxFlat
 var run_secs := 0              # the run's time so far, for the pause summary
@@ -70,6 +71,8 @@ var _skins: Control
 var _skins_box: VBoxContainer
 var _coll: Control                 # the collection: enemies, achievements, best runs
 var _coll_box: VBoxContainer
+var _help: Control                 # how to play
+var _help_box: VBoxContainer
 var _coll_tab := 0
 var _coll_pick := -1               # the enemy shown in the collection's detail card
 var _coll_name: Label
@@ -111,6 +114,9 @@ func _ready() -> void:
 	var cp := _panel()
 	_coll = cp[0]
 	_coll_box = cp[1]
+	var hp := _panel()
+	_help = hp[0]
+	_help_box = hp[1]
 	_over = GameOver.new()
 	_over.hud = self
 	_over.theme = _theme
@@ -125,7 +131,7 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins, _coll]:
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins, _coll, _help]:
 		c.position = Vector2.ZERO
 		c.size = l.size
 	bar.size = Vector2(l.size.x, l.top_bar_h)
@@ -848,6 +854,8 @@ func _build_menu_bar() -> void:
 	add_child(_menu_bar)
 	_m_settings = _token("gear", func() -> void: open_settings("menu"))
 	_menu_bar.add_child(_m_settings)
+	_m_help = _token("help", func() -> void: _open_meta(_help, _help_box, _fill_help))
+	_menu_bar.add_child(_m_help)
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -948,7 +956,9 @@ func _fill_stats(box: VBoxContainer) -> void:
 	]
 	board.tiles = [
 		["stats.runs", "restart", int(st.get("runs", 0))],
-		["stats.total", "coins", Prefs.total_points],
+		# (Lifetime points are on the balls' page, which they pay for: the
+		# board has nine places, and the days in a row took this one.)
+		["stats.streak", "calendar", Prefs.streak_best],
 		["stats.kills", "burst", int(st.get("kills", 0))],
 		["gameOver.overloads", "bolt", int(st.get("overloads", 0))],
 		["skill.bank", "bank", int(st.get("bank", 0))],
@@ -958,6 +968,53 @@ func _fill_stats(box: VBoxContainer) -> void:
 		["stats.time", "clock", Loc.t("stats.hm") % [secs / 3600, (secs / 60) % 60] if secs >= 3600 else Loc.t("stats.m") % (secs / 60)],
 	]
 	box.add_child(board)
+
+
+## How to play: a few short parts, each with its glyph, in the panels'
+## quieter voice. Words only: everything it names is on screen in play.
+const HELP := [["help.shoot", "pull"], ["help.pause", "clock"], ["help.line", "shield"], ["help.read", "eye"],
+	["help.charge", "bolt"], ["help.trick", "bank"], ["help.daily", "calendar"]]
+
+
+func _fill_help(box: VBoxContainer) -> void:
+	box.add_child(_panel_title("help.title"))
+	box.add_child(_spacer(Tok.SPACE_SM))
+	for part: Array in HELP:
+		var words := Loc.t(part[0]).split("|")
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", Tok.SPACE_MD)
+		var icon := HelpGlyph.new()
+		icon.glyph = part[1]
+		icon.custom_minimum_size = Vector2(44, 44)
+		icon.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(icon)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 2)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var head := label(ts(24), Tok.TEXT_PRIMARY, _font_body_b)
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		head.text = words[0]
+		col.add_child(head)
+		var body := label(ts(20), Tok.TEXT_SECONDARY, _font_body)
+		body.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.custom_minimum_size = Vector2(420, 0)
+		body.text = words[1] if words.size() > 1 else ""
+		col.add_child(body)
+		row.add_child(col)
+		box.add_child(row)
+		box.add_child(_spacer(Tok.SPACE_XS))
+
+
+## A glyph in a brass ring, for the help page.
+class HelpGlyph extends Control:
+	var glyph := "help"
+
+	func _draw() -> void:
+		var c := size * 0.5
+		draw_circle(c, 21.0, Tok.PRIMARY_LO, true, -1.0, true)
+		draw_arc(c, 21.0, 0.0, TAU, 40, Tok.PRIMARY, 1.6, true)
+		Hud.glyph(self, glyph, c, 0.95, Tok.PRIMARY_HI)
 
 
 ## Skins: each a button with a swatch; locked ones show what they cost.
@@ -1548,6 +1605,12 @@ static func glyph(ci: CanvasItem, id: String, c: Vector2, s: float, col: Color) 
 			line.call([Vector2(4, 10), Vector2(20, 10)])
 			line.call([Vector2(8, 3.5), Vector2(8, 7.5)])
 			line.call([Vector2(16, 3.5), Vector2(16, 7.5)])
+		"help":
+			# A question mark: a hook over the middle and a dot below.
+			ci.draw_arc(c + Vector2(0, -3.2) * s, 4.0 * s, PI, PI * 2.38, 18, col, lw, true)
+			var hook := c + Vector2(0, -3.2) * s + Vector2.from_angle(PI * 2.38) * 4.0 * s
+			ci.draw_polyline(PackedVector2Array([hook, c + Vector2(0, 2.6) * s]), col, lw, true)
+			ci.draw_circle(c + Vector2(0, 7.2) * s, 1.5 * s, col, true, -1.0, true)
 
 
 ## A round glass button with a line icon; with a caption it becomes a
@@ -3246,6 +3309,14 @@ class Overlay extends Control:
 			for q in [Vector2(-9, 5), Vector2(-10, -5), Vector2(-4.5, -0.5), Vector2(0, -8), Vector2(4.5, -0.5), Vector2(10, -5), Vector2(9, 5)]:
 				crown.append(cp + q * 1.2)
 			draw_colored_polygon(crown, Color(TopBar.T_HOT, a))
+		var days := Prefs.streak_alive()
+		if days >= 2:
+			# Days in a row, beside the record: only while the count is
+			# alive, and never a word about losing it.
+			var rw2 := num.get_string_size(rec, HORIZONTAL_ALIGNMENT_LEFT, -1, 60).x
+			var x0 := w * 0.5 + rw2 * 0.5 + 20.0
+			Hud.glyph(self, "calendar", Vector2(x0 + 9.0, y + 37.0), 0.62, Color(Tok.PRIMARY, a))
+			draw_string(body, Vector2(x0 + 22.0, y + 43.0), Loc.t("streak.days") % days, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(18), Color(Tok.TEXT_SECONDARY, a))
 		_draw_missions(l, a, y + 112.0)
 		var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 		var py := l.fork_y - 84.0

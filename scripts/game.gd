@@ -101,6 +101,7 @@ const CHARGE_WAVE := 0.15       # per wave past CHARGE_FROM, a kill charges this
 const CHARGE_FROM := 4          # waves 1 to 4 charge as they always have
 # Flow: quick hits fill a meter; full, the run speeds up for a while.
 const FLOW_TIME := 3.0          # real seconds (see GUST_TIME)
+const STREAK_CARD_AT := 2.4     # s into the first run of a day: "day 3 in a row"
 # What a shot that hit, and a kill, add to the meter. (0.12 and 0.2 while
 # each hit also cost the meter 0.08 through the leaping decay; a kill
 # with one ball fills it as it did then.)
@@ -457,6 +458,18 @@ func _start_run() -> void:
 	director.reseed(run_seed)
 	seed(run_seed)
 	Target.new_run(run_seed)
+	# The first run of a day counts toward the days in a row; from two in a
+	# row, a card says so once the wave has been called (and seven make an
+	# achievement). Nothing here touches the run itself.
+	var days := Prefs.note_day()
+	if days >= 2:
+		Motion.after(STREAK_CARD_AT, func() -> void:
+			if state != State.PLAYING and state != State.STARTING:
+				return
+			var sub := Loc.t("streak.best") % Prefs.streak_best if Prefs.streak_best > days else Loc.t("streak.longest")
+			hud.card(Loc.t("streak.card") % days, sub, 1.6)
+			if days >= 7:
+				_feat("week"))
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
 	Pal.set_theme(_rng.randi() % Pal.HARMONY.size(), true)
