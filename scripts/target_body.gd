@@ -40,6 +40,10 @@ const ANG_C := 2.6             # angular damping (1/s)
 # slide speed px/s, hop px, aggression needed]. Reactions shorten and moves
 # grow with aggression; every move is telegraphed by a narrowed, watching
 # eye first, and followed by a cooldown, so it can be read and punished.
+## The least a creature watches before it moves (s): at a held aim, and at
+## a ball already in flight (see _evade).
+const REACT_MIN := 0.16
+const REACT_MIN_FLIGHT := 0.1
 const EVADE := {
 	Kind.RING: [0.7, 110.0, 330.0, 55.0, 0.0],
 	Kind.HEAVY: [0.95, 60.0, 150.0, 0.0, 0.35],
@@ -1839,8 +1843,15 @@ func _evade(dt: float) -> void:
 		react *= 0.45
 	if stance == Stance.WARY:
 		react *= 0.7
-	# They know your rhythm: the moment you usually let go, they go.
-	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03
+	# However keen, wary, bold or in command it is, it watches for at least
+	# this long before it moves: the narrowed eye is the warning, and a
+	# warning shown for four frames is no warning. (Stacked, the factors
+	# above came to 0.02 to 0.06 s late in a run: measured, a tenth of the
+	# dodges at an aim came sooner than 0.1 s.)
+	react = maxf(react, REACT_MIN_FLIGHT if incoming and not aimed else REACT_MIN)
+	# They know your rhythm: the moment you usually let go, they go (having
+	# watched that long at least).
+	var on_beat := tactic >= 3 and rhythm and aimed and not _rhythm_used and aim_hold >= hold_avg - 0.03 and _aim_t >= REACT_MIN_FLIGHT
 	if on_beat:
 		_rhythm_used = true
 	elif _aim_t < react:

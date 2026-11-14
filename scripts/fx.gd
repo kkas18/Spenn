@@ -612,6 +612,7 @@ func _young_popups() -> int:
 ## trick's name, a quip; dropped while you aim or when the field already
 ## has three lines up), 1 information (the default), 2 must be seen.
 func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := false, prio := 1) -> void:
+	size = Hud.ts(size)
 	if prio <= 0 and (aiming or _young_popups() >= 3):
 		return
 	var p := _popups[_next_popup]
@@ -679,18 +680,22 @@ func popup(text: String, at: Vector2, col := Pal.INK, size := 20, accent := fals
 
 
 func shake(amount := SHAKE_MAX) -> void:
-	if Prefs.reduced_motion:
+	if Prefs.reduced_motion or not Prefs.camera:
 		return
 	_shake_amp = minf(SHAKE_MAX, maxf(_shake_amp, amount))
 	_shake_t = SHAKE_TIME
 
 
-func hitstop() -> void:
+## The game holds its breath for a moment at a hit. `weight` scales how
+## long: a hit that does not kill is lighter (0.6), a kill is 1, the boss
+## going down heavier (1.5). They were all alike, so a chip off an armoured
+## one stopped the game as long as a kill did.
+func hitstop(weight := 1.0) -> void:
 	if _hitstop_live or get_tree().paused:
 		return
 	_hitstop_live = true
 	_apply_time()
-	await get_tree().create_timer(HITSTOP, true, false, true).timeout
+	await get_tree().create_timer(HITSTOP * weight, true, false, true).timeout
 	_hitstop_live = false
 	_apply_time()
 
@@ -704,7 +709,7 @@ func slowmo(scale: float, real_dur: float) -> void:
 
 ## Brief zoom toward the centre of the field (camera punch).
 func punch(amount: float) -> void:
-	if Prefs.reduced_motion:
+	if Prefs.reduced_motion or not Prefs.camera:
 		return
 	_punch = maxf(_punch, amount)
 
@@ -712,7 +717,7 @@ func punch(amount: float) -> void:
 ## Leans the camera in on `at` by `amount` (0.06 ≈ 6 %) for `dur` real
 ## seconds: a quick ease in, a hold, a slow ease out.
 func focus(at: Vector2, amount: float, dur := 0.9) -> void:
-	if Prefs.reduced_motion:
+	if Prefs.reduced_motion or not Prefs.camera:
 		return
 	if _focus_t >= 0.0 and amount < _focus_amt * _focus_w:
 		return

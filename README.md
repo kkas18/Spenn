@@ -17,7 +17,7 @@ Engelsk navn i appen er «Taut».
 Åpne fila på telefonen og godta installasjon fra nettleseren. Begge versjonene er signert
 med samme nøkkel og har samme versjonskode, så den ene kan installeres over den andre
 uten at rekorder og fremgang går tapt. Hvilken som er installert, står under
-Innstillinger → Apper → Spenn på telefonen: 8.2.0 (eller nyere) er den oppgraderte, 2.0.0 er
+Innstillinger → Apper → Spenn på telefonen: 8.3.0 (eller nyere) er den oppgraderte, 2.0.0 er
 originalen.
 
 **Slik spiller du:** legg fingeren på lomma i spretterten, dra nedover og slipp. Jo
@@ -46,9 +46,9 @@ tools/tests/balance.sh [sti/til/godot]    # balanse: botspillere på tre nivåer
 | Test | Hva den passer på |
 |---|---|
 | `layout` | Skjermoppsettet på ni telefonformer: spretterten får plass, og full kraft er innen rekkevidde |
-| `flow` | En hel økt: meny, skudd, pause, nedtelling, omstart, tap, resultat, tilbake til menyen |
+| `flow` | En hel økt: meny, skudd, pause, nedtelling, omstart, tap, resultat, tilbake til menyen, og at innstillingene virker med en gang |
 | `save` | Lagret fremgang tåler avbrutt skriving, skadet fil og feil verdier |
-| `timing` | Sanntid og spilltid: treff-stopp, sakte film, overload og flyt varer det de skal |
+| `timing` | Sanntid og spilltid: treff-stopp, sakte film, overload og flyt varer det de skal, og ingen fiende flytter seg før varselet har vært synlig |
 | `physics` | Lik bane ved 30–144 Hz, ingen tunnelering, snorkutt, ingenting som setter seg fast eller rister |
 | `repeat` | Samme frø og samme skudd gir samme runde, uansett hvilke oppdrag du har og hva appen har gjort før |
 | `soak` | Travelt sluttspill under ild: ingen lekkasjer |

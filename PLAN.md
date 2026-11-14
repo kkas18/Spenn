@@ -2737,3 +2737,22 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG
 4. **Tre nye kuler:** Is, Ametyst og Perlemor.
 5. **Tester:** `save` kontrollerer takene og byttet. Hele pakken passerer.
 
+## v8.3 – Rettferdig og tilpasset
+
+Fiendenes triks ble gjennomgått for rettferdighet, og innstillingene for kontroll og
+tilgjengelighet kom på plass. Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og
+[CHANGELOG.md](CHANGELOG.md).
+
+1. **Minste reaksjonstid** (`Target.REACT_MIN` 0,16 s, `REACT_MIN_FLIGHT` 0,10 s). Sent i
+   en runde ble reaksjonstiden ganget ned til 0,02–0,06 s, kortere enn det smale blikket
+   (varselet) rekker å vises. Rytme-trikset krever også at fienden har sett på deg så lenge.
+2. **Innstillinger:** draglengde (`Prefs.pull`, `Layout.pull_scale` 0,78 / 1 / 1,28),
+   kamerabevegelse for seg (`Prefs.camera`) og større tekst (`Prefs.big_text`, `Hud.ts`).
+3. **Treff-stopp etter tyngde** (`Fx.hitstop(weight)`: 0,6 for treff, 1 for knust, 1,5 for
+   sjef) og **haptikk** der en svak vibrasjon ikke kutter en sterk (`Sfx._take_haptic`).
+4. **Feiring og liv:** papirdusj bak poengsummen ved ny rekord (`GameOver._draw_paper`), og
+   menyen skifter verden hvert 12. sekund.
+5. **Balanse:** uendret innenfor spredningen (svak 165 → 197 s, middels 293 → 283 s, god
+   286 → 308 s på de samme åtte frøene).
+6. **Tester:** `timing` låser minste reaksjonstid, treff-stoppets tyngde og haptikkens
+   rekkefølge. `flow` og `layout` dekker de nye innstillingene. Hele pakken passerer.

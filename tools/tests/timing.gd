@@ -125,4 +125,70 @@ func _test() -> void:
 		if Engine.time_scale < 0.5:
 			stopped += 1
 	check(stopped >= 1 and stopped * FRAME <= game.fx.HITSTOP + FRAME * 2.0, "a hit-stop lasts about %.0f ms (%d frames)" % [game.fx.HITSTOP * 1000.0, stopped])
+	# --- a hit-stop lasts by the weight of the hit (v8.3): light for a hit
+	# that does not kill, heavy for the boss
+	await frames(20)
+	var stops := {}
+	for weight: float in [0.6, 1.0, 1.5]:
+		game.fx.hitstop(weight)
+		var held := 0
+		for f in 20:
+			await process_frame
+			if game.fx._hitstop_live:
+				held += 1
+		stops[weight] = held
+		await frames(6)
+	check(stops[0.6] < stops[1.0] and stops[1.0] < stops[1.5], "a light hit stops the game for less time than a kill, and the boss for more (%s frames)" % str(stops.values()))
+	check(stops[1.5] * FRAME <= 0.09, "... and the longest is under a tenth of a second (%.3f s)" % (stops[1.5] * FRAME))
+
+	# --- a weaker vibration never cuts a stronger one short
+	var sfx := root.get_node("Sfx")
+	sfx._haptic_until = 0
+	check(sfx._take_haptic(80, 0.9, 1000), "a strong vibration is made")
+	check(not sfx._take_haptic(9, 0.4, 1020), "a weaker one is not made while it lasts")
+	check(sfx._take_haptic(70, 0.9, 1040), "one as strong takes over")
+	check(sfx._take_haptic(9, 0.4, 1120), "and when it has ended, the weak one is made again")
+
+	# --- however keen, a creature watches before it moves (v8.3). The
+	# narrowed eye is the warning that a dodge is coming, so it has to be
+	# shown long enough to be seen. Every kind at its quickest: full
+	# aggression, timid, leading, wary, sprung, and knowing your rhythm.
+	var target: Script = load("res://scripts/target.gd")
+	var consts: Dictionary = (load("res://scripts/target_body.gd") as Script).get_script_constant_map()
+	var react_min: float = consts["REACT_MIN"]
+	var react_flight: float = consts["REACT_MIN_FLIGHT"]
+	var step: float = game.SUBSTEP
+	var keep := [target.get("tactic"), target.get("rhythm"), target.get("hold_avg"), target.get("aim_hold")]
+	var soonest := {}
+	for case: String in ["aim", "flight", "beat"]:
+		var least := INF
+		for kind: int in consts["EVADE"]:
+			var t: Node2D = target.new()
+			t.kind = kind
+			t.aggression = 1.0
+			t.temper = consts["Temper"]["TIMID"]
+			t.is_leader = true
+			t.charm = consts["Charm"]["SPRING"]
+			t.stance = consts["Stance"]["WARY"]
+			target.set("tactic", 5)
+			target.set("rhythm", case == "beat")
+			target.set("hold_avg", 0.0)
+			target.set("aim_hold", 1.0)
+			t.aimed = case != "flight"
+			t.incoming = case == "flight"
+			var watched := 0.0
+			while not t.mind_ask and watched < 3.0:
+				t._evade(step)
+				watched += step
+			least = minf(least, watched)
+			t.free()
+		soonest[case] = least
+	target.set("tactic", keep[0])
+	target.set("rhythm", keep[1])
+	target.set("hold_avg", keep[2])
+	target.set("aim_hold", keep[3])
+	check(soonest.aim >= react_min - 0.001, "no creature moves sooner than %.2f s after the aim lands on it (%.3f s)" % [react_min, soonest.aim])
+	check(soonest.flight >= react_flight - 0.001, "... or sooner than %.2f s at a ball in flight (%.3f s)" % [react_flight, soonest.flight])
+	check(soonest.beat >= react_flight - 0.001, "... or on your rhythm without having watched that long (%.3f s)" % soonest.beat)
+	check(react_min >= 0.15 and react_flight >= 0.1, "the least reactions are what a player can see (%.2f s and %.2f s)" % [react_min, react_flight])
 	finish()

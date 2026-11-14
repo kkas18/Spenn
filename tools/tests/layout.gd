@@ -45,4 +45,18 @@ func _test() -> void:
 		check(cm >= 1.3 and cm <= 3.6, "%s: a full pull is a comfortable length (%.1f cm)" % [who, cm])
 		check(l.ammo_x - 14.0 >= 0.0 and l.pouch_min_x() < rest.x, "%s: the rack is on the screen, left of the pouch" % who)
 		check(l.handle_end_y <= l.size.y, "%s: the handle ends on the screen" % who)
+		# The pull length setting. Short: full power is still within reach
+		# of a pull from the pouch. Long: most of it is, and all of it when
+		# the pull begins higher (it may begin anywhere below the line).
+		var normal: float = l.drag_range
+		layout_script.set("pull_scale", 0.78)
+		l._place()
+		check(l.drag_range < normal and rest.y + l.drag_range <= strip, "%s: a short pull is shorter and fits (%.0f px)" % [who, l.drag_range])
+		layout_script.set("pull_scale", 1.28)
+		l._place()
+		var from_pouch: float = (strip - rest.y) / l.drag_range
+		check(l.drag_range > normal and from_pouch >= 0.7, "%s: a long pull reaches %d %% of full power from the pouch" % [who, int(from_pouch * 100.0)])
+		check(l.drag_range <= strip - (l.danger_y - 40.0), "%s: ... and all of it when begun at the top of the aim zone" % who)
+		layout_script.set("pull_scale", 1.0)
+		l._place()
 	finish()

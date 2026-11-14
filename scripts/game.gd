@@ -212,6 +212,8 @@ var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
 var _sky_sent := -1.0           # the world whose light the creatures were last given (Pal.world_stamp)
+const MENU_WORLD_EVERY := 12.0  # s between the menu's changes of world
+var _menu_world_t := 0.0
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
@@ -332,6 +334,7 @@ func _ready() -> void:
 	hud.bar.wave_record.connect(_on_wave_record)
 	backdrop.energy_arrived.connect(_on_energy)
 	get_viewport().size_changed.connect(_on_resize)
+	Prefs.pull_changed.connect(_on_resize)
 	_apply_layout()
 	_boot()
 
@@ -792,6 +795,15 @@ func _process(delta: float) -> void:
 	_interpolate(_acc / SUBSTEP)
 	_state_t += delta
 	Pal.theme_tick(Motion.rd)
+	# On the menu the stage moves on to the next world now and then: the
+	# first thing seen is the room alive (a run sets its own world).
+	if state == State.MAIN_MENU and not Prefs.reduced_motion:
+		_menu_world_t += Motion.rd
+		if _menu_world_t >= MENU_WORLD_EVERY:
+			_menu_world_t = 0.0
+			Pal.next_theme()
+	else:
+		_menu_world_t = 0.0
 	_update_tilt(delta)
 	_update_ammo(delta)
 	_take_queued_aim()
@@ -1447,7 +1459,7 @@ func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, d
 	if killed:
 		gained += _kill_bonus(t, gained)
 	_add_score(gained, at)
-	fx.hitstop()
+	fx.hitstop(1.0 if killed else 0.6)
 	fx.flash(contact, t.radius * 0.7)
 	fx.sparks(contact, col, 8)
 	fx.ring(contact, col.lightened(0.15), t.radius)
@@ -1673,7 +1685,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		gained += _kill_bonus(t, gained)
 	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
-	fx.hitstop()
+	fx.hitstop((1.5 if kind == Target.Kind.BOSS else 1.0) if killed else 0.6)
 	fx.flash(contact, t.radius * (0.9 if killed else 0.55), col.lightened(0.4))
 	if killed:
 		fx.shock(t.pos, 9.0 if kind != Target.Kind.BOSS else 18.0, 170.0 if kind != Target.Kind.BOSS else 320.0)

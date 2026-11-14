@@ -4,6 +4,54 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.3 – Rettferdig og tilpasset
+
+Fiendene spiller rent, og du kan stille spillet etter hånden og øynene dine.
+
+### Nytt
+
+- **Draglengde.** Ny innstilling: kort, normal eller lang. Med kort får du full kraft på
+  et kortere drag, som går raskere og sikter grovere. Lang sikter finere, men på de
+  fleste telefoner må draget da begynne litt over lomma for å nå full kraft.
+  Innstillingen sier fra om det.
+- **Kamerabevegelse kan slås av for seg.** Risting, rykk og innzooming forsvinner, og
+  alle andre effekter blir som før. «Redusert bevegelse» demper fortsatt alt.
+- **Større tekst.** Poeng, kort og varsler i feltet og teksten på resultatskjermen blir
+  en femtedel større.
+- **Ny rekord feires på resultatskjermen.** Når stempelet slår ned, kastes papirstrimler
+  opp fra begge sider og daler ned bak poengsummen. De går bak tall og knapper og dekker
+  aldri noe.
+- **Menyen lever.** Bakteppet på hovedmenyen skifter rolig mellom de fem verdenene.
+
+### Rettet
+
+- **Fiendene kunne unnvike før varselet rakk å vises.** En fiende smalner blikket før
+  den flytter seg, og det er det varselet du skal kunne lese. Sent i en runde ble
+  reaksjonstiden ganget ned av flere ting samtidig, helt ned til 0,02–0,06 s. I en målt
+  runde kom hver tiende unnvikelse under 0,1 s etter at siktet la seg på fienden. Nå ser
+  en fiende alltid på deg i minst 0,16 s før den flytter seg, og minst 0,10 s på en kule
+  som alt er i lufta.
+- **Treff-stoppet var likt for alle treff.** Et treff som ikke knuser, stopper nå spillet
+  i 24 ms, et som knuser i 40 ms som før, og en knust sjef i 60 ms. Store treff kjennes
+  større, og små treff bremser ikke rytmen.
+- **En svak vibrasjon kunne kutte en sterk.** Den lange vibrasjonen når en sjef går ned
+  eller et liv går tapt, ble avbrutt av det korte tikket fra neste treff. Nå får den
+  sterkeste gå ferdig. (Rettet i koden. Ikke kjent på en telefon.)
+
+### Balanse
+
+Grensen for reaksjonstid gjør ikke spillet målbart lettere. Botspillere på de samme åtte
+frøene, median overlevelse (laveste og høyeste runde i parentes):
+
+| Spiller | v8.2 | v8.3 |
+|---|---|---|
+| Svak | 165 s (137–302) | 197 s (133–245) |
+| Middels | 293 s (228–333) | 283 s (265–400) |
+| God | 286 s (203–552) | 308 s (157–486) |
+
+Forskjellene er mindre enn spredningen mellom runder, og treffprosenten er den samme
+(68–73 %). Vanskelighetsgraden er derfor ikke justert.
+
 ## v8.2 – Én runde til
 
 Det som skal få deg til å ta en runde til: mål som alltid er i sikte, og belønninger som

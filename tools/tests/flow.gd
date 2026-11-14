@@ -221,10 +221,32 @@ func _test() -> void:
 	var grown := get_node_count() - _nodes
 	check(grown <= 8, "three runs leave no nodes behind (grew by %d)" % grown)
 
+	# --- the settings added in v8.3 take hold at once and are stored
+	var normal: float = game.layout.drag_range
+	prefs.set_pull(0)
+	await frames(2)
+	check(game.layout.drag_range < normal * 0.85, "a short pull length shortens the pull at once (%.0f of %.0f px)" % [game.layout.drag_range, normal])
+	prefs.set_pull(2)
+	await frames(2)
+	check(game.layout.drag_range > normal * 1.15, "a long pull length lengthens it (%.0f px)" % game.layout.drag_range)
+	prefs.set_pull(1)
+	await frames(2)
+	check(is_equal_approx(game.layout.drag_range, normal), "normal is what it was")
+	prefs.toggle_camera()
+	game.fx.shake(3.0)
+	game.fx.punch(0.03)
+	check(game.fx._shake_t <= 0.0 and game.fx._punch <= 0.0, "with camera movement off, a shake and a punch are not made")
+	prefs.toggle_camera()
+	game.fx.shake(3.0)
+	check(game.fx._shake_t > 0.0, "... and with it on, they are")
+
 	# --- the progress written so far is on disk, whole
+	prefs.set_pull(2)
 	prefs.flush()
 	var f := ConfigFile.new()
 	check(f.load(prefs.path) == OK and f.has_section("seal"), "the save on disk is complete")
+	check(int(f.get_value("settings", "pull", -1)) == 2 and f.get_value("settings", "camera", false) == true, "the pull length and camera settings are in it")
+	prefs.set_pull(1)
 	finish()
 
 

@@ -19,6 +19,14 @@ var haptics := true
 var reduced_motion := false
 var aim_guide := true
 var tilt := true               # tilt parallax and gloss follow the phone
+var pull := 1                  # how far a full pull is: 0 short, 1 normal, 2 long (see PULL_SCALE)
+var camera := true             # the camera's own moves (shake, lean, punch); off keeps every other effect
+var big_text := false          # words in the field and on the results are set a fifth larger (see Hud.ts)
+## A full pull as a share of the normal one. Short is quicker and coarser;
+## long is finer, and on most phones needs the pull to begin a little
+## above the pouch to reach full power.
+const PULL_SCALE := [0.78, 1.0, 1.28]
+signal pull_changed
 var record := 0
 var intro_seen := false
 var seen := {}                 # enemy kinds already introduced
@@ -79,6 +87,10 @@ func load_from_disk() -> void:
 	reduced_motion = _bool("settings", "reduced_motion", false)
 	aim_guide = _bool("settings", "aim_guide", true)
 	tilt = _bool("settings", "tilt", true)
+	pull = clampi(_int("settings", "pull", 1), 0, PULL_SCALE.size() - 1)
+	Layout.pull_scale = PULL_SCALE[pull]
+	camera = _bool("settings", "camera", true)
+	big_text = _bool("settings", "big_text", false)
 	record = maxi(0, _int("stats", "record", 0))
 	intro_seen = _bool("stats", "intro_seen", false)
 	seen = _dict("stats", "seen")
@@ -204,6 +216,23 @@ func toggle_reduced_motion() -> void:
 
 func toggle_tilt() -> void:
 	tilt = not tilt
+	_commit()
+
+
+func set_pull(v: int) -> void:
+	pull = clampi(v, 0, PULL_SCALE.size() - 1)
+	Layout.pull_scale = PULL_SCALE[pull]
+	_commit()
+	pull_changed.emit()
+
+
+func toggle_camera() -> void:
+	camera = not camera
+	_commit()
+
+
+func toggle_big_text() -> void:
+	big_text = not big_text
 	_commit()
 
 
@@ -392,6 +421,9 @@ func flush() -> bool:
 	c.set_value("settings", "reduced_motion", reduced_motion)
 	c.set_value("settings", "aim_guide", aim_guide)
 	c.set_value("settings", "tilt", tilt)
+	c.set_value("settings", "pull", pull)
+	c.set_value("settings", "camera", camera)
+	c.set_value("settings", "big_text", big_text)
 	c.set_value("stats", "record", record)
 	c.set_value("stats", "intro_seen", intro_seen)
 	c.set_value("stats", "seen", seen)

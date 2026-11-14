@@ -1,7 +1,7 @@
 extends "res://tools/tests/harness.gd"
 ## A tour of the game in pictures: menu, aiming, a calm and a busy field,
-## a hit, pause, settings, the countdown and the results. Needs a renderer
-## and a window of the test screen's shape:
+## a hit, pause, settings, the countdown, the results and a record. Needs
+## a renderer and a window of the test screen's shape:
 ##
 ##   xvfb-run -s "-screen 0 720x1560x24" godot --path . --resolution 720x1560 \
 ##       --fixed-fps 60 -s res://tools/tests/shots.gd
@@ -125,6 +125,21 @@ func _test() -> void:
 	await wait_until(func() -> bool: return in_state("GAME_OVER"), 400)
 	await frames(110)
 	_snap("11_results")
+	# Again, to a record: the stamp, and the paper thrown as it lands.
+	game.hud.restart_pressed.emit()
+	if not await wait_until(func() -> bool: return in_state("PLAYING"), 300):
+		check(false, "a run starts again from the results")
+		return
+	await frames(60)
+	game.score = maxi(prefs.record, 900) + 47350
+	game.lives = 1
+	await wait_until(func() -> bool: return not hittable().is_empty(), 300)
+	game._breach(hittable()[0])
+	await wait_until(func() -> bool: return in_state("GAME_OVER"), 400)
+	await wait_until(func() -> bool: return game.hud._over._record_done, 400)
+	for step: Array in [[8, "12_record_stamp"], [36, "12a_record_paper"], [70, "12b_record_settling"]]:
+		await frames(int(step[0]))
+		_snap(step[1])
 	finish()
 
 

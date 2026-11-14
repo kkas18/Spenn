@@ -751,9 +751,12 @@ func _build_settings() -> void:
 			Sfx.play("countdown")],
 		null,
 		[SetRow.Kind.SWITCH, "settings.aimGuide", func() -> int: return int(Prefs.aim_guide), func(_v: int) -> void: Prefs.toggle_aim_guide()],
+		[SetRow.Kind.STEPS, "settings.pull", func() -> int: return Prefs.pull + 1, func(v: int) -> void: Prefs.set_pull(v - 1)],
 		[SetRow.Kind.SWITCH, "settings.tilt", func() -> int: return int(Prefs.tilt), func(_v: int) -> void: Prefs.toggle_tilt()],
 		null,
+		[SetRow.Kind.SWITCH, "settings.bigText", func() -> int: return int(Prefs.big_text), func(_v: int) -> void: Prefs.toggle_big_text()],
 		[SetRow.Kind.SWITCH, "settings.reducedMotion", func() -> int: return int(Prefs.reduced_motion), func(_v: int) -> void: Prefs.toggle_reduced_motion()],
+		[SetRow.Kind.SWITCH, "settings.camera", func() -> int: return int(Prefs.camera), func(_v: int) -> void: Prefs.toggle_camera()],
 		[SetRow.Kind.SWITCH, "settings.haptics", func() -> int: return int(Prefs.haptics), func(_v: int) -> void:
 			Prefs.toggle_haptics()
 			Sfx.haptic_pattern("soft")],
@@ -806,7 +809,14 @@ func _build_settings() -> void:
 		r.key = g[1]
 		r.getter = g[2]
 		r.glyph = {"settings.music": "note", "settings.effects": "speaker", "settings.aimGuide": "aim", "settings.tilt": "tilt",
-			"settings.reducedMotion": "motion", "settings.haptics": "vibrate", "settings.language": "globe", "settings.reset": "restart"}.get(g[1], "")
+			"settings.reducedMotion": "motion", "settings.haptics": "vibrate", "settings.language": "globe", "settings.reset": "restart",
+			"settings.pull": "pull", "settings.camera": "camera", "settings.bigText": "text"}.get(g[1], "")
+		if g[1] == "settings.pull":
+			# Three named lengths, never "off": short, normal, long.
+			r.lo = 1
+			r.words = "settings.pull"
+			r.note = func() -> String:
+				return Loc.t("settings.pullLong") if Prefs.pull == 2 else ""
 		r.first = first
 		r.theme_type_variation = &"RowButton"
 		var setter: Callable = g[3]
@@ -1310,6 +1320,13 @@ func _swatch(c: Array, open: bool) -> Texture2D:
 
 # ---------------------------------------------------------------- widgets
 
+## A text size for words set in the field or on the results (popups, the
+## enemy's card, a wave's lines): larger with the "Larger text" setting.
+## The instruments in the top bar and the menus keep their sizes.
+static func ts(size: int) -> int:
+	return int(round(size * 1.22)) if Prefs.big_text else size
+
+
 ## A filled pill (width ≥ height) with softened edges.
 static func pill(ci: CanvasItem, r: Rect2, col: Color) -> void:
 	var rad := minf(r.size.x, r.size.y) * 0.5
@@ -1416,6 +1433,23 @@ static func glyph(ci: CanvasItem, id: String, c: Vector2, s: float, col: Color) 
 			line.call([Vector2(4, 9.5), Vector2(8, 9.5), Vector2(13, 5), Vector2(13, 19), Vector2(8, 14.5), Vector2(4, 14.5), Vector2(4, 9.5)])
 			ci.draw_arc(o + Vector2(13, 12) * s, 4.5 * s, -0.8, 0.8, 10, col, lw, true)
 			ci.draw_arc(o + Vector2(13, 12) * s, 8.0 * s, -0.8, 0.8, 12, col, lw, true)
+		"text":
+			# A small and a large letter side by side.
+			line.call([Vector2(3.5, 19), Vector2(7, 10), Vector2(10.5, 19)])
+			ci.draw_line(o + Vector2(5, 15.5) * s, o + Vector2(9, 15.5) * s, col, lw * 0.8, true)
+			line.call([Vector2(11, 19), Vector2(16, 5), Vector2(21, 19)])
+			ci.draw_line(o + Vector2(13, 14) * s, o + Vector2(19, 14) * s, col, lw * 0.8, true)
+		"pull":
+			# A pull: a bar at rest and an arrow drawn down from it.
+			ci.draw_line(o + Vector2(6, 5) * s, o + Vector2(18, 5) * s, col, lw, true)
+			ci.draw_line(o + Vector2(12, 8) * s, o + Vector2(12, 19) * s, col, lw, true)
+			line.call([Vector2(7.5, 14.5), Vector2(12, 19.5), Vector2(16.5, 14.5)])
+		"camera":
+			# A frame knocked a little askew, and where it was.
+			ci.draw_rect(Rect2(o + Vector2(4, 6) * s, Vector2(16, 12) * s), Color(col, 0.45), false, lw * 0.8)
+			ci.draw_set_transform(c, 0.16)
+			ci.draw_rect(Rect2(Vector2(-8, -6) * s, Vector2(16, 12) * s), col, false, lw)
+			ci.draw_set_transform(Vector2.ZERO)
 		"aim":
 			for k in 5:
 				var tt := k / 4.0
@@ -1939,6 +1973,8 @@ class SetRow extends UIButton:
 	var kind := Kind.SWITCH
 	var key := ""
 	var glyph := ""
+	var lo := 0                    # STEPS: the lowest value (0: the row can be off; 1: one of three is always chosen)
+	var words := "settings.level"  # STEPS: the value's name is this key + "." + the value
 	var getter: Callable
 	var note: Callable
 	var first := false
@@ -1983,13 +2019,14 @@ class SetRow extends UIButton:
 			Kind.SWITCH:
 				picked.emit(1 - v)
 			Kind.STEPS:
-				var nv := (v + 1) % 4
+				var nv := (v + 1) % 4 if lo == 0 else v % 3 + 1
 				if x >= r.position.x - 18.0:
 					var i := clampi(int((x - r.position.x + BAR_GAP * 0.5) / (BAR_W + BAR_GAP)), 0, 2)
 					nv = i + 1
-					if nv == v:
+					if nv == v and lo == 0:
 						nv = i
-				picked.emit(nv)
+				if nv != v:
+					picked.emit(nv)
 			Kind.LANG:
 				var nv := 1 - v
 				if x >= r.position.x:
@@ -2071,7 +2108,7 @@ class SetRow extends UIButton:
 				# The same brass lever as the language switch: Off | On.
 				Hud.lever(self, r, lerpf(-0.62, 0.62, clampf(_shown, -0.15, 1.15)), [Loc.t("settings.off"), Loc.t("settings.on")], f)
 			Kind.STEPS:
-				var word := Loc.t("settings.level.%d" % v)
+				var word := Loc.t("%s.%d" % [words, v])
 				var ww := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, 21).x
 				var wb := cy + (f.get_ascent(21) - f.get_descent(21)) * 0.5
 				draw_string(f, Vector2(r.position.x - 18.0 - ww, wb), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Tok.PRIMARY_HI if v > 0 else Tok.TEXT_FAINT)
@@ -2943,14 +2980,14 @@ class Overlay extends Control:
 		draw_string(disp, Vector2(-tw * 0.5 + 4.0, 4.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.35 * a))
 		draw_string(disp, Vector2(-tw * 0.5, 0.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, a))
 		draw_set_transform(Vector2.ZERO)
-		draw_string(caps, Vector2(0, y - 104.0), Loc.t("hud.waveLabel"), HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 2, Color(Tok.PRIMARY, a))
+		draw_string(caps, Vector2(0, y - 104.0), Loc.t("hud.waveLabel"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 2), Color(Tok.PRIMARY, a))
 		var span := w * 0.3 * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.1) / 0.6, 0.0, 1.0))
 		for yy in [y - 96.0 - 6.0, y + 30.0]:
 			draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.5 * a), 1.0, true)
 		if wave_sub != "":
 			# The wave's mood, in its own colour, under the rule.
 			var sa := a * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.25) / 0.4, 0.0, 1.0))
-			draw_string(caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL + 1, Color(wave_col, sa))
+			draw_string(caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 1), Color(wave_col, sa))
 		if wave_pace != "":
 			# Against the record run at this point: gold and an up arrow when
 			# ahead, quiet and a down arrow when behind (never colour alone).
@@ -2962,8 +2999,8 @@ class Overlay extends Control:
 			var ax := w * 0.5 - pw * 0.5 - 16.0
 			var up := -1.0 if wave_ahead else 1.0
 			draw_colored_polygon(PackedVector2Array([Vector2(ax - 7.0, py - 6.0 - 4.0 * up), Vector2(ax + 7.0, py - 6.0 - 4.0 * up), Vector2(ax, py - 6.0 + 6.0 * up)]), Color(pc, pa))
-			draw_string(body, Vector2(w * 0.5 - pw * 0.5 + 1.5, py + 1.5), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0, 0, 0, 0.35 * pa))
-			draw_string(body, Vector2(w * 0.5 - pw * 0.5, py), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(pc, pa))
+			draw_string(body, Vector2(w * 0.5 - pw * 0.5 + 1.5, py + 1.5), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(0, 0, 0, 0.35 * pa))
+			draw_string(body, Vector2(w * 0.5 - pw * 0.5, py), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(pc, pa))
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:
@@ -2986,7 +3023,7 @@ class Overlay extends Control:
 			var lv := int(hud.perk_levels.get(id, 1))
 			if lv > 1:
 				Pal.disc(self, p + Vector2(11, 10), 6.0, Tok.PRIMARY)
-				draw_string(hud.caps_font(), Vector2(p.x + 8.0, p.y + 14.0), str(lv), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Tok.ON_PRIMARY)
+				draw_string(hud.caps_font(), Vector2(p.x + 8.0, p.y + 14.0), str(lv), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(9), Tok.ON_PRIMARY)
 
 	## Tapped the tray: a small plate hangs under it naming each perk and its
 	## level, for a few seconds.
@@ -3019,7 +3056,7 @@ class Overlay extends Control:
 		for i in lines.size():
 			var y := r.position.y + 12.0 + i * 30.0 + 15.0
 			Perks.draw_icon(self, hud.perk_order[i], Vector2(r.position.x + 22.0, y), a, 0.36)
-			draw_string(body, Vector2(r.position.x + 44.0, y + 7.0), lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(Tok.TEXT_PRIMARY, a))
+			draw_string(body, Vector2(r.position.x + 44.0, y + 7.0), lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(19), Color(Tok.TEXT_PRIMARY, a))
 
 	var _names_box: StyleBoxFlat
 
@@ -3050,8 +3087,8 @@ class Overlay extends Control:
 				(b[0] as StyleBoxFlat).border_color.a = b[1]
 				(b[0] as StyleBoxFlat).shadow_color.a = 0.45 * b[1]
 			draw_style_box(_toast_box, Rect2(-size * 0.5, size))
-			draw_string(caps, Vector2(-size.x * 0.5 + 92.0, -16.0), Loc.t("perk.new"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(Tok.PRIMARY, text_a))
-			draw_string(disp, Vector2(-size.x * 0.5 + 92.0, 12.0), Loc.t("perk." + toast_id), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(Tok.TEXT_PRIMARY, text_a))
+			draw_string(caps, Vector2(-size.x * 0.5 + 92.0, -16.0), Loc.t("perk.new"), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(11), Color(Tok.PRIMARY, text_a))
+			draw_string(disp, Vector2(-size.x * 0.5 + 92.0, 12.0), Loc.t("perk." + toast_id), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(24), Color(Tok.TEXT_PRIMARY, text_a))
 			var desc := Loc.t("perk." + toast_id + ".d")
 			var dfs := 11
 			while dfs > 8 and caps.get_string_size(desc, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs).x > size.x - 108.0:
@@ -3087,7 +3124,7 @@ class Overlay extends Control:
 			for g in 3:
 				var grow := 3.0 + g * 3.0 + beat * 3.0
 				draw_rect(Rect2(x0 - grow, y - grow, fw + grow * 2.0, 4.0 + grow * 2.0), Color(Pal.FLOW, (0.1 - g * 0.03) * a))
-			draw_string(caps, Vector2(0, y - 10.0), Loc.t("flow.badge"), HORIZONTAL_ALIGNMENT_CENTER, l.size.x, 11, Color(Pal.FLOW, (0.7 + 0.3 * beat) * a))
+			draw_string(caps, Vector2(0, y - 10.0), Loc.t("flow.badge"), HORIZONTAL_ALIGNMENT_CENTER, l.size.x, Hud.ts(11), Color(Pal.FLOW, (0.7 + 0.3 * beat) * a))
 		draw_rect(Rect2(x0, y, fw, 4.0), Color(Pal.FLOW, (0.55 + 0.45 * (1.0 if hud.flow_hot else hud.flow)) * a))
 
 	var _glass_box: StyleBoxFlat
@@ -3126,7 +3163,7 @@ class Overlay extends Control:
 			draw_circle(pp + Vector2(1.5, 2.5), 6.0, Color(0, 0, 0, 0.4 * a), true, -1.0, true)
 			draw_circle(pp, 6.0, Color(Tok.PRIMARY_LO, a), true, -1.0, true)
 			draw_circle(pp + Vector2(-0.8, -0.8), 4.2, Color(Tok.PRIMARY, a), true, -1.0, true)
-		draw_string(body, Vector2(pa.x - 2.0, ly - 14.0), Loc.t("menu.missions"), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(Tok.TEXT_SECONDARY, a))
+		draw_string(body, Vector2(pa.x - 2.0, ly - 14.0), Loc.t("menu.missions"), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(19), Color(Tok.TEXT_SECONDARY, a))
 		if _card_box == null:
 			_card_box = StyleBoxFlat.new()
 			_card_box.set_corner_radius_all(16)
@@ -3170,7 +3207,7 @@ class Overlay extends Control:
 				fs -= 2
 			draw_string(num, Vector2(-cw * 0.5 + 2.0, 77.0), big, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, Color(0, 0, 0, 0.35 * ca))
 			draw_string(num, Vector2(-cw * 0.5, 74.0), big, HORIZONTAL_ALIGNMENT_CENTER, cw, fs, Color(Tok.PRIMARY_HI, ca))
-			draw_multiline_string(body, Vector2(-cw * 0.5 + 8.0, 104.0), txt, HORIZONTAL_ALIGNMENT_CENTER, cw - 16.0, 19, 3, Color(Tok.TEXT_PRIMARY, 0.9 * ca))
+			draw_multiline_string(body, Vector2(-cw * 0.5 + 8.0, 104.0), txt, HORIZONTAL_ALIGNMENT_CENTER, cw - 16.0, Hud.ts(19), 3, Color(Tok.TEXT_PRIMARY, 0.9 * ca))
 			draw_set_transform(Vector2.ZERO)
 
 	func _step_cards(rd: float) -> void:
@@ -3197,7 +3234,7 @@ class Overlay extends Control:
 		var body := hud.body_font()
 		var num := hud.num_font()
 		var y := hud.menu_record_y()
-		draw_string(body, Vector2(0, y), Loc.t("menu.dailyBest" if hud.daily else "menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, 22, Color(Tok.TEXT_SECONDARY, a))
+		draw_string(body, Vector2(0, y), Loc.t("menu.dailyBest" if hud.daily else "menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(22), Color(Tok.TEXT_SECONDARY, a))
 		var rec := Hud._group(Prefs.daily_record() if hud.daily else Prefs.record)
 		draw_string(num, Vector2(2, y + 61.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.SHADOW, Tok.SHADOW.a * a))
 		draw_string(num, Vector2(0, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.PRIMARY_HI, a))
@@ -3212,7 +3249,7 @@ class Overlay extends Control:
 		_draw_missions(l, a, y + 112.0)
 		var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 		var py := l.fork_y - 84.0
-		draw_string(body, Vector2(0, py), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(Tok.PRIMARY, p))
+		draw_string(body, Vector2(0, py), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(24), Color(Tok.PRIMARY, p))
 		var cx := w * 0.5
 		var cy := py + 16.0 + 3.0 * sin(_clock * 2.4)
 		draw_polyline(PackedVector2Array([Vector2(cx - 9, cy), Vector2(cx, cy + 8), Vector2(cx + 9, cy)]), Color(Tok.PRIMARY, p), 2.5, true)
@@ -3267,10 +3304,10 @@ class Overlay extends Control:
 			# The wall is lit now: a soft dark band carries the words, as it
 			# does the wave's card, so the small line reads on any world.
 			_soft_band(iy + 34.0, 9, 0.5 * k, w)
-			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(Tok.PRIMARY_HI, k))
+			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(12), Color(Tok.PRIMARY_HI, k))
 			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Tok.TEXT_PRIMARY, k))
-			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, 14, 3, Color(Tok.TEXT_PRIMARY.lerp(Tok.TEXT_SECONDARY, 0.45), k))
+			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, Hud.ts(14), 3, Color(Tok.TEXT_PRIMARY.lerp(Tok.TEXT_SECONDARY, 0.45), k))
 		var total := Motion.NORMAL + card_hold + Motion.SLOW
 		if card_t < total and card_title != "":
 			var k := 1.0
@@ -3294,7 +3331,7 @@ class Overlay extends Control:
 				ts = int(floor(ts * (w - 56.0) / tw))
 			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(Tok.TEXT_PRIMARY, k))
-			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Tok.TYPE_LABEL, Color(Tok.TEXT_SECONDARY, k))
+			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL), Color(Tok.TEXT_SECONDARY, k))
 		if count_n > 0:
 			# Countdown digit: pops in (emphasized) and fades as the next nears.
 			var k := Motion.ease_value(Motion.Ease.EMPHASIZED, count_t / Motion.NORMAL)
@@ -3344,6 +3381,10 @@ class GameOver extends Control:
 
 	const COUNT_FROM := 0.15
 	const COUNT_D := 0.8
+	const PAPER := 72              # slips thrown when the stamp lands on a record
+	const PAPER_TIME := 3.4        # s they take to flutter down and fade
+	const PAPER_DRAG := 2.2        # 1/s: how soon the throw gives way to the fall
+	const PAPER_FALL := 170.0      # px/s the slips settle to
 
 	func _ready() -> void:
 		visible = false
@@ -3484,6 +3525,36 @@ class GameOver extends Control:
 			visible = false
 			_t = -1.0
 
+	## A record's paper: thrown up from both sides as the stamp lands, then
+	## fluttering down. It is drawn before everything else on the screen, so
+	## it passes behind the score, the figures and the buttons and never
+	## covers them. Each slip's flight follows from its number and the time
+	## alone: nothing is kept between frames, and nothing touches the game's
+	## dice.
+	func _draw_paper(w: float, cy: float) -> void:
+		var rt := _t - COUNT_FROM - Motion.dur(COUNT_D)
+		if rt <= 0.0 or rt >= PAPER_TIME:
+			return
+		var fade := clampf((PAPER_TIME - rt) / 0.8, 0.0, 1.0) * 0.92
+		# Linear drag: the throw dies off and the fall takes over.
+		var reach := (1.0 - exp(-PAPER_DRAG * rt)) / PAPER_DRAG
+		var sway := 16.0 * minf(1.0, rt)
+		for i in PAPER:
+			var h1 := fposmod(sin(i * 12.9898) * 43758.5453, 1.0)
+			var h2 := fposmod(sin(i * 78.233) * 12543.123, 1.0)
+			var h3 := fposmod(sin(i * 39.425) * 9821.37, 1.0)
+			var side := -1.0 if i % 2 == 0 else 1.0
+			var ang := lerpf(0.6, 1.4, h1)            # rad above the horizontal
+			var v0 := Vector2(-side * cos(ang), -sin(ang)) * lerpf(700.0, 1650.0, h2)
+			var p := Vector2(w * 0.5 + side * (w * 0.5 + 12.0), cy + 60.0)
+			p += Vector2(v0.x, v0.y - PAPER_FALL) * reach
+			p += Vector2(sin(rt * lerpf(2.0, 4.0, h3) + h1 * TAU) * sway, PAPER_FALL * rt)
+			var turn := h3 * TAU + rt * lerpf(-6.0, 6.0, h2)
+			var flip := absf(cos(rt * lerpf(4.0, 9.0, h3) + h2 * TAU)) * 0.8 + 0.2
+			draw_set_transform(p, turn, Vector2(1.0, flip))
+			draw_rect(Rect2(-6.5, -4.0, 13.0, 8.0), Color(Fx.CONFETTI[i % Fx.CONFETTI.size()], fade))
+		draw_set_transform(Vector2.ZERO)
+
 	func _process(delta: float) -> void:
 		if _t < 0.0:
 			return
@@ -3509,6 +3580,8 @@ class GameOver extends Control:
 		var ka := Motion.ease_value(Motion.Ease.ENTER, _t / Motion.NORMAL)
 		var disp0 := hud.display_font()
 		var title := Hud.sentence(Loc.t("menu.daily" if _daily else "gameOver.title"))
+		if _record and _record_done and not Prefs.reduced_motion:
+			_draw_paper(w, cy)
 		# On a record the stamp takes the title's place, so the title steps
 		# aside as it lands and nothing ever covers the score.
 		var ta := ka
@@ -3566,7 +3639,7 @@ class GameOver extends Control:
 			if _prev > 0 and ga > 0.0:
 				var line := Loc.t("record.prev") % Hud._group(_prev)
 				var lw := body.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
-				draw_string(body, Vector2(0, ky), line, HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color(Tok.TEXT_SECONDARY, ga))
+				draw_string(body, Vector2(0, ky), line, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(19), Color(Tok.TEXT_SECONDARY, ga))
 				var sx := w * 0.5 - lw * 0.5
 				draw_line(Vector2(sx - 4.0, ky - 7.0), Vector2(sx + (lw + 8.0) * ga - 4.0, ky - 7.0), Color(TopBar.T_WARM, ga), 1.6, true)
 			ky += 30.0
@@ -3594,21 +3667,21 @@ class GameOver extends Control:
 				for q in [Vector2(-9, 5), Vector2(-10, -5), Vector2(-4.5, -0.5), Vector2(0, -8), Vector2(4.5, -0.5), Vector2(10, -5), Vector2(9, 5)]:
 					crown.append(cp + q)
 				draw_colored_polygon(crown, Color(Tok.PRIMARY_HI, ga))
-				draw_string(body, Vector2(0, ky + 80.0), Loc.t("gameOver.nearSub") % Hud._group(gap), HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color(Tok.TEXT_SECONDARY, ga))
+				draw_string(body, Vector2(0, ky + 80.0), Loc.t("gameOver.nearSub") % Hud._group(gap), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(19), Color(Tok.TEXT_SECONDARY, ga))
 			ky += 96.0
 		elif _prev > 0 and gap > 0:
 			if ga > 0.0:
 				var line := Loc.t("gameOver.gap") % Hud._group(gap)
 				var gs := lerpf(1.12, 1.0, ga)
 				draw_set_transform(Vector2(w * 0.5, ky), 0.0, Vector2(gs, gs))
-				draw_string(body, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(0, 0, 0, 0.35 * ga))
-				draw_string(body, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(Tok.PRIMARY_HI, ga))
+				draw_string(body, Vector2(-w * 0.5 + 1.5, 1.5), line, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(24), Color(0, 0, 0, 0.35 * ga))
+				draw_string(body, Vector2(-w * 0.5, 0), line, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(24), Color(Tok.PRIMARY_HI, ga))
 				draw_set_transform(Vector2.ZERO)
 			ky += 30.0
 		var kb := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.3) / Motion.NORMAL)
 		if kb > 0.0 and not _record and not (gap > 0 and _score >= _prev * 0.85):
 			var best_line := "%s  %s" % [Hud.sentence(Loc.t("menu.dailyBest" if _daily else "gameOver.bestScore")), Hud._group(maxi(_prev, _score))]
-			draw_string(body, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, 21, Color(Tok.TEXT_SECONDARY, kb))
+			draw_string(body, Vector2(0, ky + (1.0 - kb) * 6.0), best_line, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(21), Color(Tok.TEXT_SECONDARY, kb))
 			ky += 14.0
 		# The run in three engraved tiles: time, accuracy, overloads.
 		var tile_w := minf(176.0, (w - 80.0) / 3.0)
@@ -3635,12 +3708,12 @@ class GameOver extends Control:
 			draw_circle(ic, 14.0, Color(Color("0E1015"), kt), true, -1.0, true)
 			Hud.glyph(self, tiles[i][0], ic, 0.75, Color(Tok.PRIMARY_HI, kt))
 			draw_string(num, Vector2(tr.position.x, tr.position.y + 74.0), tiles[i][1], HORIZONTAL_ALIGNMENT_CENTER, tile_w, 30, Color(Tok.TEXT_PRIMARY, kt))
-			draw_string(body, Vector2(tr.position.x, tr.position.y + 98.0), Hud.sentence(Loc.t(tiles[i][2])), HORIZONTAL_ALIGNMENT_CENTER, tile_w, 18, Color(Tok.TEXT_SECONDARY, kt))
+			draw_string(body, Vector2(tr.position.x, tr.position.y + 98.0), Hud.sentence(Loc.t(tiles[i][2])), HORIZONTAL_ALIGNMENT_CENTER, tile_w, Hud.ts(18), Color(Tok.TEXT_SECONDARY, kt))
 		ky += 166.0
 		var kk := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.55) / Motion.NORMAL)
 		var feats := _feats()
 		if kk > 0.0 and feats != "":
-			draw_string(body, Vector2(0, ky + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, 20, Color(Tok.PRIMARY_HI, 0.85 * kk))
+			draw_string(body, Vector2(0, ky + (1.0 - kk) * 6.0), feats, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(20), Color(Tok.PRIMARY_HI, 0.85 * kk))
 			ky += 30.0
 		# Missions finished in this run, each with a gold tick.
 		var km := Motion.ease_value(Motion.Ease.ENTER, (_t - 0.65) / Motion.NORMAL)
@@ -3651,7 +3724,7 @@ class GameOver extends Control:
 				var yy := ky + i * 28.0 + (1.0 - km) * 6.0
 				var x0 := w * 0.5 - (lw + 30.0) * 0.5
 				draw_polyline(PackedVector2Array([Vector2(x0, yy - 7), Vector2(x0 + 6, yy - 1), Vector2(x0 + 17, yy - 13)]), Color(Tok.PRIMARY_HI, km), 3.0, true)
-				draw_string(body, Vector2(x0 + 30.0, yy), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(Tok.TEXT_PRIMARY, km))
+				draw_string(body, Vector2(x0 + 30.0, yy), line, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(Tok.TEXT_PRIMARY, km))
 		ky += _done.size() * 28.0
 		# Looking forward: the mission this run came closest to, and the
 		# next ball with a bar that fills by what this run earned.
@@ -3659,14 +3732,14 @@ class GameOver extends Control:
 		var mission := _mission_goal()
 		if mission != "":
 			if kq > 0.0:
-				draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), mission, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, 19, Color(Tok.TEXT_SECONDARY, kq))
+				draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), mission, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, Hud.ts(19), Color(Tok.TEXT_SECONDARY, kq))
 			ky += 30.0
 		var ball := _ball_goal()
 		if ball != "" and kq > 0.0:
 			var to := int(_goals.points_to)
 			var from := int(_goals.get("points_from", to))
 			var won := GameOver._next_ball(from) != GameOver._next_ball(to)
-			draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), ball, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, 19, Color(Tok.PRIMARY_HI if won else Tok.TEXT_SECONDARY, kq))
+			draw_string(body, Vector2(24.0, ky + (1.0 - kq) * 6.0), ball, HORIZONTAL_ALIGNMENT_CENTER, w - 48.0, Hud.ts(19), Color(Tok.PRIMARY_HI if won else Tok.TEXT_SECONDARY, kq))
 			var now := GameOver._next_ball(to)
 			if now >= 0:
 				# From the last ball's price to the next one's.

@@ -412,8 +412,24 @@ func _voice() -> int:
 
 ## Short vibration; amplitude 0..1 (ignored on devices without amplitude control).
 func haptic(ms: int, amplitude := 0.5) -> void:
-	if OS.has_feature("mobile") and Prefs.haptics:
+	if OS.has_feature("mobile") and Prefs.haptics and _take_haptic(ms, amplitude, Time.get_ticks_msec()):
 		Input.vibrate_handheld(ms, amplitude * 0.8)
+
+
+var _haptic_until := 0         # when the vibration now playing ends (ticks, ms)
+var _haptic_amp := 0.0         # ... and how strong it is
+
+
+## Whether a vibration of `ms` at `amplitude`, asked for at `now` (ticks,
+## ms), is made. A new vibration replaces the one playing, so a weaker one
+## is not made while a stronger one lasts: the long rumble of a boss going
+## down (or of a life lost) used to be ended by the tick of the next hit.
+func _take_haptic(ms: int, amplitude: float, now: int) -> bool:
+	if now < _haptic_until and amplitude < _haptic_amp:
+		return false
+	_haptic_until = now + ms
+	_haptic_amp = amplitude
+	return true
 
 
 ## Named haptic vocabulary, used consistently across the game:

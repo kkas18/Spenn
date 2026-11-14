@@ -17,15 +17,17 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 0 | Sikre originalen, testgrunnlag og målinger | Ferdig |
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
-| 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2) | Ferdig (fiendenes rettferdighet og en ny balansemåling gjenstår) |
-| 4 | Lyd | Gjenstår |
-| 5 | Grensesnitt og tilgjengelighet (draglengde, styrke på effekter, tekststørrelse, hjelp) | Gjenstår |
-| 6 | Kode og motor | Gjenstår (vurdering under) |
-| 7 | Sluttkontroll og levering | Gjenstår |
+| 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3) | Ferdig |
+| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Neste |
+| 5 | Lyd | Gjenstår |
+| 6 | Grensesnitt og tilgjengelighet | Delvis: draglengde, kamerabevegelse og tekststørrelse er inne (v8.3). Hjelpeside gjenstår |
+| 7 | Kode og motor | Gjenstår (vurdering under) |
+| 8 | Sluttkontroll og levering | Gjenstår |
 
-Rekkefølgen ble endret etter v8.0: du ba om et visuelt løft og et spill man vil spille om
-og om igjen. Det visuelle (trinn 2) og det som får deg til å ta én runde til (trinn 3) er
-derfor flyttet foran lyd, innstillinger og kode.
+Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
+et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
+å ta én runde til (trinn 3) ble flyttet foran lyd, innstillinger og kode. Etter v8.2 ba
+du om fargeharmoni og kulere, morsommere fiender. Det er trinn 4 og kommer nå.
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -57,21 +59,23 @@ er delt i det som **måtte** rettes (feil som påvirker alle som spiller) og det
 | 17 | **Dagens utfordring var ikke lik på alle telefoner.** Fiendenes valg og partikkeleffektene trakk fra samme terninger, så antall gnister og bildefrekvens endret hva fiendene gjorde | Kodegjennomgang da flere effekter skulle legges til. `repeat` spiller nå det andre spillet med færre effekter | 2 ✔ (v8.1) |
 | 18 | **Lange titler ble kuttet i skjermkanten** (for eksempel «Prestasjon · uten riper») | Skjermbilde | 2 ✔ (v8.1) |
 | 19 | **Oppdragene kunne låse seg for godt.** Kravene vokste uten tak og ujevnt. Etter ca. ti fullførte oppdrag var flere umulige («bryt 11 formasjoner», «nå bølge 13»), ruten ble aldri ledig, og belønningene stoppet | Tolv botrunder med telling av det oppdragene måler, sammenholdt med kravene per nivå | 3 ✔ (v8.2) |
+| 20 | **Fiendene unnvek før varselet rakk å vises.** Det smale blikket er varselet om at en fiende skal flytte seg. Sent i en runde ble reaksjonstiden ganget ned til 0,02–0,06 s. I en målt runde kom 11 % av unnvikelsene under 0,1 s etter at siktet la seg på fienden, og 33 % av unnvikelsene for en kule i lufta | Logging av tiden fra sikte til unnvikelse gjennom en hel botrunde. Ny test i `timing`, som feiler når grensen tas bort | 3 ✔ (v8.3) |
+| 21 | **En svak vibrasjon kuttet en sterk.** Den lange vibrasjonen når en sjef går ned eller et liv går tapt, ble erstattet av tikket fra neste treff | Kodegjennomgang (Android spiller bare én vibrasjon om gangen). Ny test i `timing`. Ikke kjent på en telefon | 3 ✔ (v8.3) |
 
 ### Valgfritt (forbedringer)
 
 | Område | Observasjon | Trinn |
 |---|---|---|
-| Ytelse | Skripttiden per bilde er høy i travle felt, og tegning av fiendene er største post | 1 (delvis ✔), 6 |
+| Ytelse | Skripttiden per bilde er høy i travle felt, og tegning av fiendene er største post | 1 (delvis ✔), 7 |
 | Sikte | Siktelinjens prikker er svake og vanskelige å se over lyse kropper | 1 (delvis ✔), 2 |
-| Kontroll | Ingen innstilling for draglengde (følsomhet) | 2 / 5 |
+| Kontroll | Ingen innstilling for draglengde (følsomhet) | ✔ (v8.3) |
 | Balanse | Dyktighet ga nesten ingen forskjell i overlevelse i originalen (median 182–196 s på alle nivåer) | 1 (delvis ✔), 3 |
-| Tilbakemelding | Treff-stopp er lik for alle treff (40 ms), uansett hvor stort treffet er | 2 |
-| Grensesnitt | Liten tekst i feltet (16–18 px), ingen tekststørrelse-innstilling, ingen egen hjelpeside | 5 |
-| Tilgjengelighet | Kamerabevegelse kan bare slås av sammen med alt annet («redusert bevegelse») | 5 |
-| Lyd | Effektene er filtrert for å gi plass til musikk som ikke lenger spilles under runden | 4 |
-| Kode | `game.gd` (3 300 linjer) og `hud.gd` (3 600 linjer) er store filer | 6 |
-| Motor | Godot 4.3. Nyere versjoner finnes | 6 |
+| Tilbakemelding | Treff-stopp er lik for alle treff (40 ms), uansett hvor stort treffet er | ✔ (v8.3) |
+| Grensesnitt | Liten tekst i feltet (16–18 px), ingen tekststørrelse-innstilling, ingen egen hjelpeside | Tekststørrelse ✔ (v8.3). Hjelpeside: 6 |
+| Tilgjengelighet | Kamerabevegelse kan bare slås av sammen med alt annet («redusert bevegelse») | ✔ (v8.3) |
+| Lyd | Effektene er filtrert for å gi plass til musikk som ikke lenger spilles under runden | 5 |
+| Kode | `game.gd` (3 300 linjer) og `hud.gd` (3 600 linjer) er store filer | 7 |
+| Motor | Godot 4.3. Nyere versjoner finnes | 7 |
 
 ## Planen
 
@@ -120,7 +124,7 @@ grensesnittet. Det som er endret, er lyset.
   står klart mot den, tekst i feltet står på et mørkt bånd, og lysglimtene i veggen har
   et tak.
 
-### Trinn 3 – Én runde til (v8.2, ferdig)
+### Trinn 3 – Én runde til (v8.2 og v8.3, ferdig)
 
 Du ba om et spill man spiller om og om igjen. Tre ting er gjort:
 
@@ -151,28 +155,83 @@ Veien tilbake i spill ble målt og funnet kort nok (1,5 s fra tap til knappene v
 Alt dette er ærlige virkemidler: tydelige mål, rask omstart og belønning for fremgang.
 Spillet har ingen kjøp, reklame, varsler eller tidsbegrensede tilbud, og får det ikke.
 
-**Gjenstår i dette trinnet:** fiendenes triks gjennomgått for rettferdighet (hvert triks
-skal varsles), og en ny balansemåling med samme frø før og etter.
+#### Rettferdige fiender (v8.3)
 
-### Trinn 4 – Lyd
+Et spill man vil spille igjen, må tape rettferdig. Hvert triks fiendene har, ble gått
+gjennom med to spørsmål: vises det før det skjer, og bruker det noe du ikke kan se?
+
+| Triks | Slik varsles det | Vurdering |
+|---|---|---|
+| Unnvikelse (til siden, på tvers, bak en nabo) | Blikket smalner mens fienden ser på siktet ditt. Så peker øyet dit den skal i 0,08–0,14 s, og så går den | **Rettet (funn 20).** Blikket kunne vare 0,02 s. Nå minst 0,16 s |
+| Klatring | Kroppen spenner seg og snora knirker før den vinsjer seg opp | I orden |
+| Bløff | Et rykk og et smil. Den blir stående | I orden |
+| Sammenkrøpet venting | Den skjelver sammenkrøpet i opptil 1,6 s og spretter unna når kula slippes | I orden. Skjelvingen er varselet |
+| Rytme | Den går i det øyeblikket du pleier å slippe | I orden. Den bruker hvor lenge du har holdt før, ikke fingeren din nå. Krever fra v8.3 også at den har sett på deg i 0,10 s |
+| Kommandørens ordre | Messingtråder fra Kommandøren til dem som får ordre | Uendret med vilje. Ordren kommer mens du sikter, så du ser den før du slipper. En forsinkelse ville lagt den nærmere slippet og gjort den vanskeligere å lese. Svaret er å ta Kommandøren først |
+| Leserens steg | Etterbilde der den sto. Etterpå er den sliten i 1,1 s | Uendret med vilje. Dette er evnen dens, og en rask kule nummer to tar den |
+| Snik | En annen fiende myser og siger ned mens du holder siktet lenge (over 0,6 s) | I orden |
+| Bytte plass | To naboer bytter plass under siktet. Plassen fylles, så ingen slipper unna | I orden |
+| Tom lomme | De to nærmeste linjen stuper 0,25 s etter at de har vist det | I orden |
+| Spille død | Den kikker med ett øye midt i. Treffer du den da, er den avslørt (+50) | I orden |
+| Dytt | Armen lader opp. Treffer du den da, stoppes dyttet (+60) | I orden |
+| Lokkedue og synker | Lokkeduen danser i skuddlinjen. Piler under den som synker | I orden |
+
+De lure triksene (snik, bytte, tom lomme, spille død, dytt, ordre og lesing) navngis på
+skjermen første gang de brukes i en runde. Fiendene leser siktet ditt, kuler i lufta og
+om lomma er tom. Alt det ser du også. De leser aldri fingeren din før du slipper.
+
+De lærer også vanene dine: hvor lenge du pleier å holde, hvilken side du foretrekker, og
+om du skyter dit de flykter. Det huskes mellom runder og glemmes delvis ved hver ny
+runde, og spillet sier fra når de har lært noe («De har lært rytmen din»). Fiendene blir
+skarpere mot en som spiller godt, og mer klønete mot en som sliter. Det er tilpasning og
+ikke juks: de får aldri evner som ikke vises.
+
+Balansen ble målt på nytt med de samme åtte frøene før og etter (se målingene). Den er
+uendret innenfor spredningen.
+
+### Trinn 4 – Farger og figurer (v8.4, neste)
+
+Du ba om fargeharmoni i det visuelle og om kulere fiender som er morsommere og mer
+gøyale.
+
+- **Fargeharmoni.** Fiendenes farger er i dag fem håndplukkede sett som ikke er laget
+  sammen med verdenene fra v8.1. De bygges opp på nytt slik at hver verden og figurene i
+  den følger én fargeregel, med jevn lyshet og metning, og målt kontrast mot veggen.
+  Gull er fortsatt kulas farge og korall farens, og typene skilles fortsatt på form og
+  lyshet, aldri bare på farge.
+- **Figurene.** Mer personlighet som synes: tilbehør, komiske reaksjoner på det som
+  skjer (nesten-treff, en nabo som knuses, å være sist igjen), småpåfunn når de henger i
+  ro, og morsommere måter å gå ned på. Alt tegnes i kode som før, og ingenting av det
+  skal skjule det du trenger å se.
+
+### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
   tas tilbake enkeltvis.
 
-### Trinn 5 – Grensesnitt og tilgjengelighet
+### Trinn 6 – Grensesnitt og tilgjengelighet
 
-- Innstilling for draglengde (kort, normal, lang) og for styrke på effekter og kamera.
-- Tekststørrelse og hjelpeside.
-- Treff-stopp etter hvor stort treffet er, og gjennomgang av haptikk.
+Gjort i v8.3:
+
+- **Draglengde** (kort, normal, lang). Spillet har én bevegelse (dra og slipp) og ingen
+  knapper under runden, så det er ingenting å tilordne på nytt. Draglengden er
+  følsomheten.
+- **Kamerabevegelse** kan slås av for seg, uten at andre effekter forsvinner.
+- **Større tekst** i feltet og på resultatskjermen.
+- **Treff-stopp etter tyngde**, og haptikk der den sterkeste vibrasjonen går ferdig.
+
+Gjenstår:
+
+- Hjelpeside.
 - Kontroll av at ingenting signaliseres bare med farge eller bare med lyd.
 - Skjermbilder på flere skjermformer (16:9, 20:9, nettbrett, brettbar).
 
-### Trinn 6 – Kode og motor
+### Trinn 7 – Kode og motor
 
 - Fjerne dobbel kode der det gir lavere risiko.
 - Vurdere motoroppgradering (se beslutninger).
 
-### Trinn 7 – Sluttkontroll
+### Trinn 8 – Sluttkontroll
 
 - Full testrunde, tabell før og etter, endringslogg og kjente feil.
 
@@ -219,7 +278,20 @@ Tallene er median, med laveste og høyeste runde i parentes.
   minutter. Med 8 runder per nivå er medianen for middels og god spiller usikker med
   omtrent ±40 s.
 - Tallene ble målt før v8.0.1. Fra v8.0.1 gir samme frø samme runde, så senere
-  endringer kan sammenlignes frø for frø i stedet for bare på medianen.
+  endringer kan måles på de samme frøene.
+
+**Minste reaksjonstid (v8.3), de samme åtte frøene før og etter:**
+
+| Spiller | v8.2 | v8.3 |
+|---|---|---|
+| Svak | 165 s (137–302), bølge 3–4, treff 68 % | 197 s (133–245), bølge 4, treff 71 % |
+| Middels | 293 s (228–333), bølge 8, treff 73 % | 283 s (265–400), bølge 7–8, treff 72 % |
+| God | 286 s (203–552), bølge 8–9, treff 68 % | 308 s (157–486), bølge 9, treff 68 % |
+
+- **Uendret innenfor spredningen.** Svak og god spiller varer litt lenger, middels litt
+  kortere, og treffprosenten er den samme. Vanskelighetsgraden er derfor ikke justert.
+- Samme frø gir samme start, men en endring i fiendenes oppførsel endrer alt som skjer
+  etterpå. Rundene kan derfor ikke sammenlignes én og én, bare som gruppe.
 
 ## Beslutninger
 
@@ -228,7 +300,7 @@ Tallene er median, med laveste og høyeste runde i parentes.
   Retningen jeg har valgt, er å beholde materialene og figurene og endre lyset. Vil du
   ha det lysere, mørkere eller med andre farger, er hver verden åtte farger i
   `scripts/pal.gd`.
-- **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 4
+- **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 5
   gjelder effektene.
 - **Ingen pauseknapp.** Fjernet etter ønske tidligere. Pause er dobbelttrykk eller
   Tilbake-knappen, og de tre første rundene sier det.
@@ -241,7 +313,7 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Motor: blir på Godot 4.3 inntil videre.** En oppgradering endrer tegning og oppførsel
   i 18 800 linjer egen kode og gir ingen dokumentert gevinst for dette spillet i dag.
   Det som kan gjøre den aktuell, er krav fra Google Play (støtte for 16 KB minnesider på
-  nyere Android) hvis spillet skal publiseres der. Vurderes i trinn 6.
+  nyere Android) hvis spillet skal publiseres der. Vurderes i trinn 7.
 
 ## Kjente feil og det som gjenstår
 
@@ -262,16 +334,19 @@ Tallene er median, med laveste og høyeste runde i parentes.
   er på grensen for en mellomklasse-telefon sent i en runde. Det nye bakteppet og
   partiklene i v8.1 regnes av grafikkbrikken og motoren, ikke av spillkoden, men er ikke
   målt på en telefon. Neste poster er tegning av effekter (ca. 3 ms under ild) og
-  toppfeltet (ca. 2,5 ms), som begge tegnes på nytt hvert bilde. Tas i trinn 6.
+  toppfeltet (ca. 2,5 ms), som begge tegnes på nytt hvert bilde. Tas i trinn 7.
 - **Balansen sent i runden er ny** og bare prøvd av botspillere. Gode spillere varer nå
   halvannen gang så lenge som før. Om det er riktig nivå, bør avgjøres av en person som
   spiller, ikke av boter. Vil du ha det strammere, er det to tall å endre (hvor fort
-  nedstigningen øker, og hvor mye overload bremses). Tas i trinn 3.
+  nedstigningen øker, og hvor mye overload bremses).
 - **Prestasjonene** er ikke gjennomgått mot de nye poengnivåene (oppdragene er, se
   trinn 3).
 - **En rekke for dager på rad** er vurdert og ikke lagt inn ennå.
-- **Innstillinger** for draglengde, tekststørrelse og styrke på effekter og
-  kamerabevegelse, og en hjelpeside (trinn 5).
+- **Hjelpeside** (trinn 6).
+- **Større tekst gjelder feltet og resultatskjermen.** Menyer, innstillinger og
+  toppfeltet er ikke endret.
+- **Lang draglengde når ikke full kraft fra lomma** på de fleste telefoner. Draget må
+  da begynne litt høyere. Innstillingen sier fra om det.
 - **Det jeg ikke kan prøve herfra:** spillet er ikke kjørt på en fysisk telefon i dette
   arbeidet. Berøring, haptikk, lydnivå i høyttaler og faktisk bildefrekvens er bare
   kontrollert gjennom kode, tester og målinger på PC.
