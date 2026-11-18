@@ -5,15 +5,23 @@ extends "res://tools/tests/harness.gd"
 ##     never gold (the ball's) nor coral (danger's);
 ##   - the wall keeps to the cool side of the wheel;
 ##   - every creature stands clear of the wall behind it;
-##   - no two kinds come too close in colour;
+##   - kinds of the same shape stand well apart in colour, and no two kinds
+##     come too close (a kind is told by its shape and face first);
 ##   - a kind keeps its lightness from world to world, so it reads the same
 ##     in every world and in greyscale.
 
 const CORAL_HUE := 39.0
 const GOLD_HUE := 84.0
 const MIN_CONTRAST := 2.0       # the darkest creature against the middle of the wall
-const MIN_DE := 0.05            # OKLab distance between any two kinds
+const MIN_DE_SAME := 0.06       # OKLab distance between two kinds of the same shape
+const MIN_DE := 0.035           # ... and between any two kinds (told apart by shape first)
 const KIND_N := 16
+## Kinds that share a silhouette (the rest each have their own): they must
+## stand apart by colour too. Rings: Vakt, Tungvekt, Vokter, Snelle, Legen.
+## Hexagons: Splitter, Spinneren, Speilet. Round: Pipp, Pakkis, Kommandøren,
+## Leseren.
+const SHAPE := {0: "ring", 1: "ring", 5: "ring", 7: "ring", 9: "ring", 2: "hex", 6: "hex", 10: "hex",
+	11: "round", 12: "round", 13: "round", 14: "round"}
 
 
 func _test() -> void:
@@ -44,9 +52,13 @@ func _test() -> void:
 				nearest_warm = minf(nearest_warm, minf(pal.hue_gap(lch.z, CORAL_HUE), pal.hue_gap(lch.z, GOLD_HUE)))
 				if lch.z < float(pal.get("HUE_LO")) - 2.0 or lch.z > float(pal.get("HUE_HI")) + 2.0:
 					out_of_family += 1
+		var worst_same := INF
 		for a in KIND_N:
 			for b in range(a + 1, KIND_N):
-				worst_de = minf(worst_de, (labs[a] - labs[b]).length())
+				var de: float = (labs[a] - labs[b]).length()
+				worst_de = minf(worst_de, de)
+				if SHAPE.has(a) and SHAPE.get(a) == SHAPE.get(b):
+					worst_same = minf(worst_same, de)
 		lightness.append(light_row)
 		var warm_wall := 0
 		for key: String in ["top", "low", "haze", "aura_a", "aura_b", "ground"]:
@@ -57,6 +69,7 @@ func _test() -> void:
 		check(nearest_warm >= 45.0, "%s: no creature comes near gold or coral (nearest %.0f degrees)" % [name, nearest_warm])
 		check(warm_wall == 0, "%s: the wall keeps to the cool side" % name)
 		check(worst_contrast >= MIN_CONTRAST, "%s: every creature stands clear of the wall (weakest %.2f : 1)" % [name, worst_contrast])
+		check(worst_same >= MIN_DE_SAME, "%s: kinds of the same shape stand well apart in colour (closest %.3f)" % [name, worst_same])
 		check(worst_de >= MIN_DE, "%s: no two kinds come too close in colour (closest %.3f)" % [name, worst_de])
 	var drift := 0.0
 	for k in KIND_N:

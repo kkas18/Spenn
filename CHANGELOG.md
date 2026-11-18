@@ -4,6 +4,53 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.6 – Myke farger, ekte figurer
+
+Mykere og mer behagelige farger, og fiender som hver har sin egen karakter. Inspirasjonen
+er sjangeren: runde, tydelige figurer med store ansikter som viser hva de føler. Figurene
+og utseendet er Spenns egne og ikke hentet fra noe annet spill.
+
+### Nytt
+
+- **Mykere farger.** Veggene er lysere og har omtrent halvparten så sterk farge som før.
+  Figurene er lysere pastellfarger med mindre metning, og midten av ringene er en lys
+  plate i stedet for et mørkt hull. Hver verden beholder sin egen fargeklang fra v8.4.
+- **En mørk kontur rundt hver figur.** Konturen følger formen når figuren bøyer seg og
+  klemmes, så figurene står tydelig mot den lysere veggen. Den tegnes på skjermkortet og
+  koster nesten ingenting.
+- **Ekte ansikter.** Alle figurtypene har to øyne med pupiller, bryn og en munn som
+  passer karakteren (Skyggen har fortsatt ett øye). Hver type har sitt kjennetegn:
+  - **Vakt:** nervøse bryn og store fortenner. Klaprer tenner når du sikter på den.
+  - **Tungvekt:** ett tykt bryn, underbitt og hoggtenner, med skjeggstubb.
+  - **Splitter:** to ulike øyne og en sydd munn. Det ene øyet vandrer for seg selv.
+  - **Pendel:** blide øyne og en nynnende munn. Små noter stiger når den er rolig.
+  - **Dykker:** buede bryn, trutmunn og svømmebrillene på pannen. Blåser bobler.
+  - **Vokter:** rett bryn og hvalrossbart.
+  - **Spinneren:** sinte bryn og et glis fullt av sagtenner.
+  - **Snelle:** late øyelokk og et strå i munnviken.
+  - **Skygge:** ett øye, et lurt smil og solbrillene på hodet.
+  - **Legen:** runde messingbriller og et vennlig smil.
+  - **Speilet:** lange vipper, rosenrøde kinn og trutmunn.
+  - **Pipp:** store øyne, et lite nebb og røde kinn.
+  - **Pakkis:** buskete bryn og glugg i tanna.
+  - **Kommandøren:** sinte bryn under hjelmen og en munn som bjeffer ordre.
+  - **Leseren:** ett løftet bryn, monokkel og en snerpete munn.
+  - **Luringen:** skjeve blikk og et skjevt glis.
+- **Én linje om hver figur i samlingen**, for eksempel «Bølla: ett bryn, underbitt og
+  kort lunte.»
+- **Tekst som står rett på veggen leses bedre.** Rekorden og oppdragene på menyen,
+  kortene, bølgen og poengene som spretter opp, har fått en myk mørk glorie, så de leses
+  like godt på de lysere veggene.
+
+### Uendret, med vilje
+
+- **Spillet er det samme:** samme fiender, fart, varsler og poeng. Botspilleren får
+  nøyaktig samme resultat som i v8.5 med samme frø.
+- **Varslene er like tydelige.** Øynene smalner før et stup, og pupillene ser dit figuren
+  skal før den glir til siden. Nå vises det i begge øynene.
+- **Figurene skilles fortsatt på form først.** Typer med samme form (ringene, sekskantene
+  og de runde) ligger godt fra hverandre i farge.
+
 ## Kontroller etter v8.5 (bare dokumentasjon)
 
 - **Ingenting signaliseres bare med farge eller bare med lyd.** Alle signaler er gått

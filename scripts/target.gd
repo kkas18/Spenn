@@ -9,11 +9,12 @@ var _ink := Ink.new()              # the face's drawing, sent as one triangle ar
 var _face_tick := 0
 var _face_phase := 0
 var _eo := Vector2.ZERO            # the eye being drawn: its centre in body space
+var _fc_col := Color.WHITE         # this face drawing's body colour (color() once a drawing)
 static var _made := 0
 
 
 func _ready() -> void:
-	_face_phase = _made % 2
+	_face_phase = _made % 12
 	_made += 1
 	_pts.resize(N)
 	_prev.resize(N)
@@ -169,11 +170,15 @@ func _process(delta: float) -> void:
 	_body.transform = _xf
 	_face.transform = _fxf
 	_body.queue_redraw()
-	# The face follows the body every frame through its transform; its
-	# drawing (blinks, glances, moods) is refreshed at half rate, alternate
-	# frames for alternate enemies, unless something sudden is showing.
+	# The face follows the body every frame through its transform. Its
+	# drawing (blinks, glances, moods) is refreshed every frame while it is
+	# in the thick of it (aimed at, showing a warning or a move, struck,
+	# falling), so a tell is never late; the rest of the crowd at a rate the
+	# phone can afford (FACE_EVERY), staggered from one enemy to the next.
 	_face_tick += 1
-	if (_face_tick + _face_phase) % 2 == 0 or flash_t > 0.0 or startle_t > 0.0 or phase != Phase.HANGING:
+	var busy := flash_t > 0.0 or startle_t > 0.0 or phase != Phase.HANGING or aimed or incoming \
+		or squint or tele_t > 0.0 or not is_nan(_queued_x)
+	if busy or (_face_tick + _face_phase) % FACE_EVERY[Device.tier] == 0:
 		_face.queue_redraw()
 
 
@@ -181,6 +186,10 @@ func _setup_canvas() -> void:
 	if _lit == null:
 		_lit = ShaderMaterial.new()
 		_lit.shader = preload("res://shaders/lit.gdshader")
+		# A drawn contour round every creature (v8.6): on the softer walls the
+		# shapes stand clear by their outline, not by glare.
+		_lit.set_shader_parameter("outline", OUTLINE_PX)
+		_lit.set_shader_parameter("outline_dark", OUTLINE_DARK)
 	_body = Node2D.new()
 	_body.material = _lit
 	add_child(_body)
@@ -266,6 +275,7 @@ func _face_ink() -> void:
 				f.disc(p - Vector2(0.4, 0.4), 2.4, Tok.PRIMARY_HI)
 	f.draw_set_transform_matrix(Transform2D.IDENTITY)
 	var col := color()
+	_fc_col = col
 	col.a *= 1.0 - 0.9 * hidden_amt
 	_details(col)
 	_eye()
@@ -526,9 +536,7 @@ func _details(col: Color) -> void:
 			f.disc(p + Vector2(sin(k * 6.0) * 2.0 * sx, 0), 3.5 + k * 4.0, Color(Pal.INK.lightened(0.2), minf(1.0, (anger - 0.35) * 1.4) * 0.85 * (1.0 - k) * col.a))
 
 	if kind == Kind.PIPP:
-		# A tiny beak under the eye and a tuft of down on top.
-		var bk := Color("F2A65A", col.a)
-		f.draw_colored_polygon(PackedVector2Array([Vector2(-4.5, radius * 0.42), Vector2(4.5, radius * 0.42), Vector2(0, radius * 0.42 + 6.5)]), bk)
+		# A tuft of down on top (its beak is its mouth: see _mouth).
 		for i in 3:
 			var x := (i - 1) * 4.0
 			f.draw_line(Vector2(x, -radius + 1.0), Vector2(x * 1.8, -radius - 7.0 - (2.0 if i == 1 else 0.0)), Color(col.lightened(0.3), col.a), 2.0, true)
@@ -656,8 +664,6 @@ func _details(col: Color) -> void:
 			for k in 3:
 				var d := Vector2.from_angle(k * TAU / 3.0 + PI * 0.5)
 				f.draw_line(d * 10.0, d * (hole + 1.0), Color(col.darkened(0.4), col.a), 2.4, true)
-			f.disc(Vector2.ZERO, 11.5, Color(col.darkened(0.35), col.a))
-			f.disc(Vector2.ZERO, 9.5, Color(col.darkened(0.6), col.a))
 			var hp0 := Vector2.from_angle(-PI * 0.2) * (radius + 1.0)
 			f.draw_line(hp0, hp0 + Vector2(6, -3), Color(Pal.METAL_LIGHT, col.a), 2.4, true)
 			f.disc(hp0 + Vector2(6, -3), 2.6, Color(col.darkened(0.3), col.a))
@@ -676,137 +682,475 @@ func _details(col: Color) -> void:
 					f.draw_polyline(pts, cc, 2.0, true)
 
 
-## The mouth carries the mood: a small smile at rest, a worried line when
-## you aim at it, an "o" when startled, a smirk when smug, a tongue when it
-## taunts, a frown in rage and a grimace when struck. Drawn in eye space.
+## The mouth, at the origin (drawn in its own space, under the eyes). It
+## carries the mood first: out cold, woozy, clenched, startled, taunting,
+## raging, worried or smug, and at rest the character's own (see CAST). Some
+## marks stay through every mood: the Tungvekt's fangs, the Vokter's
+## moustache, the Pipp's beak, the Snelle's straw.
 func _mouth(er: float) -> void:
 	var f := _ink
-	var y := er * 1.25
-	var w := er * 0.85
-	# Pale on the dark recess of a ring body, dark on a filled one, and a
-	# little heavier than a hairline so it reads as a mouth on a phone.
-	var ink := Color(Pal.EYE, 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
-	if _hole() <= 0.0:
-		ink = Color(Pal.PUPIL.lerp(color(), 0.2), 0.9 * modulate.a * (1.0 - 0.8 * hidden_amt))
-	var dark := Color(Pal.PUPIL, 0.95 * modulate.a)
+	var style: String = CAST[kind][4]
+	var w := er * 1.7 * _mouth_w
+	var a := modulate.a * (1.0 - 0.8 * hidden_amt)
+	var ink := _ink_col(0.95)
+	var dark := Color(Pal.PUPIL, 0.95 * a)
+	var tongue := Color(Color("E8798F"), a)
+	var tooth := Color(Color("FBF8F1"), a)
 	var pts := PackedVector2Array()
-	w *= _mouth_w
+	if style == "beak":
+		_beak(f, w, a)
+		return
 	if phase == Phase.FALLING:
 		# Out cold: a slack wavy line, the tongue lolling out of one corner.
-		for i in 9:
-			var t := lerpf(-1.0, 1.0, i / 8.0)
-			pts.append(Vector2(t * w * 0.5, y + sin(t * 5.0) * 1.4))
-		f.draw_polyline(pts, ink, 1.9, true)
-		var tp := Vector2(w * 0.3, y + 1.0)
-		f.disc(tp + Vector2(0.0, w * 0.2), w * 0.17, Color("E86A8A", modulate.a))
-		f.draw_line(tp + Vector2(0.0, w * 0.06), tp + Vector2(0.0, w * 0.3), Color(Color("B84A6A"), modulate.a), 1.0, true)
+		for i in 7:
+			var t := lerpf(-1.0, 1.0, i / 6.0)
+			pts.append(Vector2(t * w * 0.42, sin(t * 5.0) * 1.4))
+		f.draw_polyline(pts, ink, 2.0, true)
+		f.disc(Vector2(w * 0.24, w * 0.18), w * 0.14, tongue)
 	elif seeing_stars():
 		# Woozy: a wobbling line.
-		for i in 9:
-			var t := lerpf(-1.0, 1.0, i / 8.0)
-			pts.append(Vector2(t * w * 0.45, y + 1.0 + sin(t * 6.0 + _clock * 9.0) * 1.3))
-		f.draw_polyline(pts, ink, 1.8, true)
+		for i in 7:
+			var t := lerpf(-1.0, 1.0, i / 6.0)
+			pts.append(Vector2(t * w * 0.38, 1.0 + sin(t * 6.0 + _clock * 9.0) * 1.3))
+		f.draw_polyline(pts, ink, 2.0, true)
 	elif _closed_t > 0.0:
-		# Clenched: a short tight line, pinched at the corners.
-		f.draw_line(Vector2(-w * 0.42, y), Vector2(w * 0.42, y), ink, 2.1, true)
-		f.draw_line(Vector2(-w * 0.42, y - 1.2), Vector2(-w * 0.42, y + 1.2), ink, 1.6, true)
-		f.draw_line(Vector2(w * 0.42, y - 1.2), Vector2(w * 0.42, y + 1.2), ink, 1.6, true)
+		# Clenched: teeth gritted behind a tight grimace.
+		var r := Rect2(-w * 0.36, -w * 0.1, w * 0.72, w * 0.2)
+		f.draw_rect(r.grow(1.2), ink)
+		f.draw_rect(r, tooth)
+		for k in 3:
+			var x := lerpf(r.position.x, r.end.x, (k + 1) / 4.0)
+			f.draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), ink, 1.0, true)
 	elif startle_t > 0.0 or panicked():
-		f.disc(Vector2(0, y + 1.0), er * 0.26, dark)
-		f.draw_arc(Vector2(0, y + 1.0), er * 0.26, 0.0, TAU, 14, ink, 1.8, true)
+		# An "O" of fright.
+		f.disc(Vector2(0, 1.0), w * 0.2 + 1.4, ink)
+		f.disc(Vector2(0, 1.0), w * 0.2, dark)
+		f.disc(Vector2(0, 1.0 + w * 0.09), w * 0.1, tongue)
 	elif _taunt >= 0.0:
-		# Open grin with the tongue out.
+		# A wide-open laugh with the tongue out.
 		var grin := PackedVector2Array()
-		for i in 9:
-			var a := PI * i / 8.0
-			grin.append(Vector2(cos(a) * w * 0.55, y - 1.0 + sin(a) * w * 0.45))
+		for i in 11:
+			var q := PI * i / 10.0
+			grin.append(Vector2(cos(q) * w * 0.46, -1.0 + sin(q) * w * 0.38))
 		f.draw_colored_polygon(grin, dark)
-		f.disc(Vector2(w * 0.12, y + w * 0.32), w * 0.24, Color("E86A8A", modulate.a))
-		f.draw_line(Vector2(-w * 0.55, y - 1.0), Vector2(w * 0.55, y - 1.0), ink, 2.0, true)
+		f.draw_polyline(grin, ink, 1.4, true)
+		f.disc(Vector2(w * 0.1, w * 0.26), w * 0.2, tongue)
+		f.draw_line(Vector2(-w * 0.46, -1.0), Vector2(w * 0.46, -1.0), ink, 2.0, true)
 	elif enraged:
+		# A snarl: the corners pulled down.
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
-			pts.append(Vector2(t * w * 0.5, y + 2.0 - (1.0 - t * t) * 3.0))
-		f.draw_polyline(pts, ink, 2.3, true)
-	elif squint or aimed or tele_t > 0.0:
-		# Worried: a small downturned curve.
+			pts.append(Vector2(t * w * 0.42, 2.0 - (1.0 - t * t) * 3.4))
+		f.draw_polyline(pts, ink, 2.6, true)
+	elif squint or aimed or tele_t > 0.0 or hurry:
+		# Worried: a wobbly downturned line (teeth chattering, for a Vakt).
+		var shake := sin(_clock * 40.0) * 0.6 if style == "buck" else 0.0
 		for i in 7:
 			var t := lerpf(-1.0, 1.0, i / 6.0)
-			pts.append(Vector2(t * w * 0.36, y + 1.6 - (1.0 - t * t) * 1.6))
-		f.draw_polyline(pts, ink, 1.8, true)
+			pts.append(Vector2(t * w * 0.3, 1.6 - (1.0 - t * t) * 1.8 + (shake if i % 2 == 0 else -shake)))
+		f.draw_polyline(pts, ink, 2.0, true)
 	elif smug > 0.35 or (_wink_t > 0.0 and calm_for_fun()):
 		# Smirk: flat on one side, curled up on the other.
 		var sm := maxf(smug, 0.8)
 		for i in 7:
 			var t := i / 6.0
-			pts.append(Vector2(lerpf(-w * 0.45, w * 0.55, t), y + 0.5 - pow(t, 3.0) * 3.2 * sm))
-		f.draw_polyline(pts, ink, 2.2, true)
+			pts.append(Vector2(lerpf(-w * 0.38, w * 0.46, t), 0.5 - pow(t, 3.0) * 3.4 * sm))
+		f.draw_polyline(pts, ink, 2.3, true)
 	else:
-		# At rest, each its own: from a pout to a broad smile, drawn wide
-		# and fine so it reads as a mouth, not a speck.
-		for i in 9:
-			var t := lerpf(-1.0, 1.0, i / 8.0)
-			pts.append(Vector2(t * w * 0.55, y + (1.0 - t * t) * 2.6 * _smile))
-		f.draw_polyline(pts, ink, 1.8, true)
+		_rest_mouth(f, style, w, ink, dark, tooth, tongue)
+	# Marks that stay whatever the mood.
+	match style:
+		"fangs":
+			if phase != Phase.FALLING and startle_t <= 0.0:
+				for sx: float in [-1.0, 1.0]:
+					var b := Vector2(sx * w * 0.3, 1.5)
+					f.draw_colored_polygon(PackedVector2Array([b + Vector2(-2.2, 0.8), b + Vector2(0.0, -4.6), b + Vector2(2.2, 0.8)]), tooth)
+					f.draw_polyline(PackedVector2Array([b + Vector2(-2.2, 0.8), b + Vector2(0.0, -4.6), b + Vector2(2.2, 0.8)]), ink, 1.0, true)
+		"stache":
+			_moustache(f, w, ink, a)
+		"whistle":
+			if phase != Phase.FALLING and startle_t <= 0.0 and _taunt < 0.0:
+				# A grass stalk in the corner of its mouth, bobbing as it chews.
+				var b := Vector2(w * 0.32, 0.5)
+				var tip := b + Vector2(w * 0.5, -w * 0.28 + sin(_clock * 2.2) * 1.5)
+				f.draw_line(b, tip, Color(Color("C9B36A"), a), 1.8, true)
+				f.draw_line(tip, tip + Vector2(2.5, -2.5), Color(Color("A8C46A"), a), 1.4, true)
 
 
+## The character's mouth at rest (see CAST).
+func _rest_mouth(f: Ink, style: String, w: float, ink: Color, dark: Color, tooth: Color, tongue: Color) -> void:
+	var pts := PackedVector2Array()
+	match style:
+		"buck":
+			# A gormless little smile and two big front teeth.
+			for i in 7:
+				var t := lerpf(-1.0, 1.0, i / 6.0)
+				pts.append(Vector2(t * w * 0.34, (1.0 - t * t) * 2.2 * maxf(0.3, _smile)))
+			f.draw_polyline(pts, ink, 1.9, true)
+			var y0 := 2.2 * maxf(0.3, _smile) - 0.6
+			for sx: float in [-1.0, 1.0]:
+				var r := Rect2(Vector2(0.2 if sx > 0.0 else -w * 0.13 - 0.2, y0), Vector2(w * 0.13, w * 0.16))
+				f.draw_rect(r.grow(1.0), ink)
+				f.draw_rect(r, tooth)
+		"stitch":
+			# Sewn shut, crooked: a zigzag seam with cross stitches.
+			for i in 7:
+				var t := lerpf(-1.0, 1.0, i / 6.0)
+				pts.append(Vector2(t * w * 0.4, (1.4 if i % 2 == 0 else -1.4) + t * 1.2))
+			f.draw_polyline(pts, ink, 1.6, true)
+			for k in 4:
+				var x := lerpf(-w * 0.3, w * 0.3, k / 3.0)
+				f.draw_line(Vector2(x, -2.8 + x * 0.03), Vector2(x, 2.8 + x * 0.03), ink, 1.1, true)
+		"hum":
+			# Humming: a small round mouth.
+			f.disc(Vector2(0, 1.0), w * 0.12 + 1.2, ink)
+			f.disc(Vector2(0, 1.0), w * 0.12, dark)
+		"pucker":
+			# Lips pursed, as if about to blow a bubble.
+			f.disc(Vector2(w * 0.05, 1.0), w * 0.15 + 1.3, ink)
+			f.disc(Vector2(w * 0.05, 1.0), w * 0.15, tongue.darkened(0.15))
+			f.disc(Vector2(w * 0.05, 1.0), w * 0.06, dark)
+		"stache":
+			# Under the moustache, only a stern line.
+			f.draw_line(Vector2(-w * 0.18, 2.4), Vector2(w * 0.18, 2.4), ink, 1.6, true)
+		"jaws":
+			# A wide grin full of saw teeth.
+			var top := PackedVector2Array()
+			for i in 11:
+				var t := lerpf(-1.0, 1.0, i / 10.0)
+				top.append(Vector2(t * w * 0.48, -1.5 + (1.0 - t * t) * 1.0))
+			var bottom := PackedVector2Array()
+			for i in 11:
+				var t := lerpf(1.0, -1.0, i / 10.0)
+				bottom.append(Vector2(t * w * 0.48, -1.5 + (1.0 - t * t) * 6.5))
+			var poly := top.duplicate()
+			poly.append_array(bottom)
+			f.draw_colored_polygon(poly, dark)
+			for i in 6:
+				var x := lerpf(-w * 0.4, w * 0.4, i / 5.0)
+				var y := -1.5 + (1.0 - pow(x / (w * 0.48), 2.0)) * 1.0
+				f.draw_colored_polygon(PackedVector2Array([Vector2(x - 2.4, y), Vector2(x + 2.4, y), Vector2(x, y + 3.6)]), tooth)
+			f.draw_polyline(poly, ink, 1.4, true)
+		"whistle":
+			# Laid back: a lopsided easy smile.
+			for i in 8:
+				var t := lerpf(-1.0, 1.0, i / 7.0)
+				pts.append(Vector2(t * w * 0.32, (1.0 - t * t) * 1.6 - t * 1.0))
+			f.draw_polyline(pts, ink, 1.9, true)
+		"sly":
+			for i in 7:
+				var t := i / 6.0
+				pts.append(Vector2(lerpf(-w * 0.3, w * 0.36, t), 0.5 - pow(t, 2.5) * 3.0))
+			f.draw_polyline(pts, ink, 2.0, true)
+		"kind":
+			# A gentle, closed smile.
+			for i in 7:
+				var t := lerpf(-1.0, 1.0, i / 6.0)
+				pts.append(Vector2(t * w * 0.3, (1.0 - t * t) * 2.6))
+			f.draw_polyline(pts, ink, 1.8, true)
+		"pout":
+			# A pout: two little lobes of lip, rosy.
+			var lip := Color(Color("E97FA0"), ink.a)
+			f.disc(Vector2(-w * 0.07, 0.6), w * 0.1, lip)
+			f.disc(Vector2(w * 0.07, 0.6), w * 0.1, lip)
+			f.disc(Vector2(0.0, 2.2), w * 0.12, lip)
+			f.draw_line(Vector2(-w * 0.15, 1.4), Vector2(w * 0.15, 1.4), Color(ink, ink.a * 0.7), 1.0, true)
+		"gap":
+			# A cheeky grin with a tooth missing.
+			var grin := PackedVector2Array()
+			for i in 11:
+				var q := PI * i / 10.0
+				grin.append(Vector2(cos(q) * w * 0.42, -0.5 + sin(q) * w * 0.26))
+			f.draw_colored_polygon(grin, dark)
+			var row := Rect2(-w * 0.36, -0.5, w * 0.72, w * 0.1)
+			f.draw_rect(row, tooth)
+			f.draw_rect(Rect2(w * 0.02, -0.5, w * 0.1, w * 0.1), dark)
+			f.draw_polyline(grin, ink, 1.5, true)
+			f.draw_line(Vector2(-w * 0.42, -0.5), Vector2(w * 0.42, -0.5), ink, 1.6, true)
+		"bark":
+			# Barking orders: the mouth open as an order goes out, otherwise
+			# a stern straight line.
+			if order_flash > 0.0:
+				var o := Rect2(-w * 0.22, -w * 0.08, w * 0.44, w * 0.26 * minf(1.0, order_flash / 0.3) + 2.0)
+				f.draw_rect(o.grow(1.3), ink)
+				f.draw_rect(o, dark)
+				f.draw_rect(Rect2(o.position, Vector2(o.size.x, 2.0)), tooth)
+			else:
+				f.draw_line(Vector2(-w * 0.26, 1.0), Vector2(w * 0.26, 0.6), ink, 2.2, true)
+		"prim":
+			# Pursed and pleased with itself.
+			for i in 7:
+				var t := lerpf(-1.0, 1.0, i / 6.0)
+				pts.append(Vector2(t * w * 0.18, 1.0 - (1.0 - t * t) * 0.8))
+			f.draw_polyline(pts, ink, 1.9, true)
+			f.draw_line(Vector2(w * 0.18, 1.0), Vector2(w * 0.24, -0.4), ink, 1.6, true)
+		"smirk":
+			# Up to something: a crooked grin and one tooth showing.
+			for i in 8:
+				var t := i / 7.0
+				pts.append(Vector2(lerpf(-w * 0.34, w * 0.38, t), 1.2 - pow(t, 2.0) * 3.2))
+			f.draw_polyline(pts, ink, 2.1, true)
+			f.draw_rect(Rect2(w * 0.08, -0.4, w * 0.1, w * 0.12), Color(Color("FBF8F1"), ink.a))
+		_:
+			for i in 7:
+				var t := lerpf(-1.0, 1.0, i / 6.0)
+				pts.append(Vector2(t * w * 0.34, (1.0 - t * t) * 2.6 * _smile))
+			f.draw_polyline(pts, ink, 1.8, true)
+
+
+## The Pipp's beak: closed, or open in fright and in a taunt.
+func _beak(f: Ink, w: float, a: float) -> void:
+	var open := 0.0
+	if startle_t > 0.0 or panicked() or _taunt >= 0.0:
+		open = 1.0
+	elif phase == Phase.FALLING or _closed_t > 0.0:
+		open = 0.0
+	var bk := Color(Color("F2A65A"), a)
+	var edge := Color(Color("B86A2A"), a)
+	var bw := maxf(4.5, w * 0.24)
+	var upper := PackedVector2Array([Vector2(-bw, -1.0), Vector2(bw, -1.0), Vector2(0.0, 4.0 - open * 1.5)])
+	f.draw_colored_polygon(upper, bk)
+	f.draw_polyline(PackedVector2Array([upper[0], upper[2], upper[1]]), edge, 1.0, true)
+	if open > 0.0:
+		var lower := PackedVector2Array([Vector2(-bw * 0.8, 3.5), Vector2(bw * 0.8, 3.5), Vector2(0.0, 8.0)])
+		f.draw_colored_polygon(lower, bk.darkened(0.1))
+		f.draw_polyline(PackedVector2Array([lower[0], lower[2], lower[1]]), edge, 1.0, true)
+
+
+## The Vokter's walrus moustache: two full lobes drooping over the mouth.
+func _moustache(f: Ink, w: float, ink: Color, a: float) -> void:
+	var hair := Color(_fc_col.darkened(0.55), a)
+	for sx: float in [-1.0, 1.0]:
+		# Along the top from the middle out to the tip, then back along the
+		# full, drooping underside.
+		var lobe := PackedVector2Array()
+		for i in 7:
+			var t := i / 6.0
+			lobe.append(Vector2(sx * lerpf(w * 0.03, w * 0.6, t), -2.2 + t * 2.4 - sin(PI * t) * 0.9))
+		for i in range(5, 0, -1):
+			var t := i / 6.0
+			lobe.append(Vector2(sx * lerpf(w * 0.03, w * 0.6, t), 0.2 + t * 0.2 + sin(PI * t) * w * 0.24))
+		f.draw_colored_polygon(lobe, hair)
+		lobe.append(lobe[0])
+		f.draw_polyline(lobe, ink, 1.0, true)
+
+
+## A pair of eyes' brows, one over each: the mood's when one is showing,
+## otherwise the character's own (see CAST).
+func _brows(f: Ink, ec: Vector2, er: float, gap: float) -> void:
+	var style: String = CAST[kind][3]
+	if enraged or (mood == Mood.GRUMPY and startle_t <= 0.0):
+		style = "angry"
+	elif startle_t > 0.0 or panicked():
+		style = "up"
+	elif seeing_stars() or ((aimed or hurry or morale > 0.6) and smug < 0.3 and _taunt < 0.0):
+		style = "worried"
+	elif smug > 0.2:
+		style = "raised"
+	elif mood == Mood.CUTE:
+		style = "soft"
+	if style == "none":
+		return
+	var ink := _ink_col(0.9)
+	var y0 := ec.y - er * 1.42
+	if style == "mono":
+		# One thick brow across both eyes, dipping in the middle.
+		var pts := PackedVector2Array()
+		for i in 5:
+			var t := lerpf(-1.0, 1.0, i / 4.0)
+			pts.append(Vector2(ec.x + t * (gap + er * 1.05), y0 + (1.0 - absf(t)) * er * 0.3 - absf(t) * er * 0.1))
+		f.draw_polyline(pts, ink, 3.6, true)
+		return
+	# [inner end height, outer end height, arch, width]: heights in eye radii,
+	# minus is up.
+	var shape := {
+		"worried": [-0.38, 0.12, 0.06, 2.1], "angry": [0.34, -0.22, 0.0, 2.9], "soft": [-0.12, -0.04, 0.22, 1.6],
+		"arched": [-0.02, 0.06, 0.42, 1.9], "level": [0.0, 0.0, 0.0, 3.0], "lazy": [0.16, 0.3, 0.08, 2.2],
+		"bushy": [-0.06, 0.02, 0.18, 3.6], "up": [-0.55, -0.42, 0.2, 2.0], "raised": [0.04, 0.04, 0.05, 2.0],
+		"shifty": [0.2, -0.12, 0.05, 2.1],
+	}
+	var sp: Array = shape.get(style, shape["soft"])
+	for sx: float in [-1.0, 1.0]:
+		var inner: float = sp[0]
+		var outer: float = sp[1]
+		var arch: float = sp[2]
+		if style == "raised" and sx > 0.0:
+			inner = -0.48
+			outer = -0.55
+			arch = 0.25
+		elif style == "shifty" and sx > 0.0:
+			# Both brows lean the same way: a sidelong look.
+			var tmp := inner
+			inner = outer
+			outer = tmp
+		var cx := ec.x + sx * gap
+		var pts := PackedVector2Array()
+		for i in 4:
+			var t := i / 3.0
+			var x := cx + lerpf(-0.95, 1.0, t) * er * sx * -1.0
+			var y := y0 + lerpf(inner, outer, 1.0 - t) * er - sin(PI * t) * er * arch
+			pts.append(Vector2(x, y))
+		f.draw_polyline(pts, ink, float(sp[3]), true)
+		if style == "bushy":
+			f.draw_polyline(pts, Color(ink, ink.a * 0.5), float(sp[3]) + 1.6, true)
+
+
+## The character's own marks around the face (see CAST): the Legen's
+## glasses, the Speilet's lashes and blush, the Tungvekt's stubble, a pair's
+## cheeks when it is sweet.
+func _signature(f: Ink, fc: Vector2, er: float) -> void:
+	var cast: Array = CAST[kind]
+	var a := modulate.a * (1.0 - 0.8 * hidden_amt)
+	var ink := _ink_col(0.9)
+	var pair := int(cast[0]) == 2
+	var gap: float = er * float(cast[2])
+	var ey := fc.y - er * 0.35
+	if phase == Phase.FALLING:
+		return
+	match kind:
+		Kind.MEDIC:
+			# Round brass spectacles over both eyes.
+			var rim := Color(Tok.PRIMARY, 0.95 * a)
+			for sx: float in [-1.0, 1.0]:
+				f.draw_arc(Vector2(fc.x + sx * gap, ey), er + 3.6, 0.0, TAU, 24, rim, 1.2, true)
+			f.draw_line(Vector2(fc.x - gap + er + 3.4, ey - 1.5), Vector2(fc.x + gap - er - 3.4, ey - 1.5), rim, 1.2, true)
+		Kind.MIRROR:
+			# Long lashes and a blush: very pleased with itself.
+			for sx: float in [-1.0, 1.0]:
+				var c := Vector2(fc.x + sx * gap, ey)
+				for k in 3:
+					var q := -PI * 0.5 + sx * (0.35 + 0.3 * k)
+					var d := Vector2.from_angle(q)
+					f.draw_line(c + d * (er + 1.2), c + d * (er + 5.0) + Vector2(sx * 1.2, -0.6), ink, 1.4, true)
+				f.disc(c + Vector2(sx * er * 0.9, er * 1.35), er * 0.38, Color(Color("F2A0B8"), 0.4 * a))
+		Kind.HEAVY:
+			# Stubble on the jaw.
+			for k in 7:
+				var x := fc.x + lerpf(-er * 1.4, er * 1.4, k / 6.0)
+				var y := fc.y + er * 1.45 + sin(k * 1.7) * 1.2 + absf(x - fc.x) * 0.12
+				f.disc(Vector2(x, y), 0.8, Color(ink, ink.a * 0.55))
+		Kind.PIPP, Kind.PAKKIS:
+			# Rosy cheeks.
+			for sx: float in [-1.0, 1.0]:
+				f.disc(Vector2(fc.x + sx * (gap + er * 0.7), ey + er * 1.15), er * 0.36, Color(Color("F29CB0"), 0.45 * a))
+	if calm_for_fun() and not Prefs.reduced_motion:
+		var mouth := fc + Vector2(0.0, er * 1.05)
+		if kind == Kind.ROD:
+			# Humming as it swings: a note drifts up now and then.
+			var k := fposmod(_clock * 0.55 + _hue_shift * 21.0, 1.0)
+			if k < 0.6:
+				var q := k / 0.6
+				var np := mouth + Vector2(er * 1.6 + q * 8.0 + sin(q * 7.0) * 2.0, -q * 22.0)
+				var na := sin(PI * q) * a
+				f.disc(np, 2.2, Color(ink, ink.a * na))
+				f.draw_line(np + Vector2(1.9, 0.0), np + Vector2(1.9, -7.0), Color(ink, ink.a * na), 1.2, true)
+				f.draw_line(np + Vector2(1.9, -7.0), np + Vector2(5.0, -5.5), Color(ink, ink.a * na), 1.2, true)
+		elif kind == Kind.DROP:
+			# Lips pursed: a bubble swells, lets go and floats up.
+			var k := fposmod(_clock * 0.4 + _hue_shift * 13.0, 1.0)
+			if k < 0.7:
+				var q := k / 0.7
+				var bp := mouth + Vector2(er * 0.25 + sin(q * 9.0) * 1.5, -q * 26.0 + 1.0)
+				var br := lerpf(1.2, 3.4, minf(1.0, q * 3.0))
+				var ba := (1.0 - q) * a
+				f.draw_arc(bp, br, 0.0, TAU, 14, Color(Pal.EYE, 0.8 * ba), 1.1, true)
+				f.disc(bp - Vector2(br, br) * 0.35, br * 0.25, Color(1, 1, 1, 0.7 * ba))
+	if pair and mood == Mood.CUTE and kind != Kind.PIPP and kind != Kind.PAKKIS:
+		for sx: float in [-1.0, 1.0]:
+			f.disc(Vector2(fc.x + sx * (gap + er * 0.6), ey + er * 1.1), er * 0.34, Color(Pal.SHADE, 0.4 * a))
+
+
+## The face: one eye or a pair, the brows, the mouth and the character's own
+## marks (see CAST). Drawn in body space.
 func _eye() -> void:
 	var f := _ink
-	_eye_parts()
-	if kind != Kind.ROD:
-		var er := _eye_r()
-		var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
-		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
-		f.draw_set_transform_matrix(Transform2D(0.0, eo))
-		_mouth(er)
+	var cast: Array = CAST[kind]
+	var fc := _face_c()
+	var er := _eye_r()
+	if int(cast[0]) == 2:
+		var gap: float = er * float(cast[2])
+		var ey := fc.y - er * 0.35
+		for sx: float in [-1.0, 1.0]:
+			_eye_one(f, Vector2(fc.x + sx * gap, ey), er * _eye_mul(sx), sx)
+		f.draw_set_transform_matrix(Transform2D.IDENTITY)
+		_brows(f, Vector2(fc.x, ey), er, gap)
+	else:
+		_eye_one(f, fc + Vector2(0.0, -er * 0.35), er, 0.0)
+	f.draw_set_transform_matrix(Transform2D(0.0, fc + Vector2(0.0, er * (1.05 if int(cast[0]) == 2 else 0.95))))
+	_mouth(er)
 	f.draw_set_transform_matrix(Transform2D.IDENTITY)
+	_signature(f, fc, er)
 
-
-## Eye radius for this kind, and this one's own eye size.
+## Eye radius for this kind, and this one's own eye size. A pair shares the
+## face (see _face_r); a single eye takes more of it.
 func _eye_r() -> float:
-	# About 0.4 of the body, so the face reads at arm's length; ring bodies
-	# keep it inside their hole.
-	var er := clampf(radius * 0.4, 9.5, 14.0)
-	var h := _hole()
-	if h > 0.0:
-		er = minf(er, h * 0.62)
-	if kind == Kind.DROP:
-		er = 9.0
-	elif kind == Kind.BOSS:
+	var cast: Array = CAST[kind]
+	var er: float
+	if kind == Kind.BOSS:
 		er = 13.0
+	elif int(cast[0]) == 2:
+		er = clampf(_face_r() * 0.37 * float(cast[1]), 5.2, 11.5)
+	else:
+		er = clampf(radius * 0.4, 9.5, 14.0)
 	return er * _eye_scale
 
 
-## The colour right around the eye, which the lids are made of: the dark
-## recess of a ring body, or the body itself for filled ones.
+## Where the face sits (body space): the middle, but in the thick part of the
+## Skygge's crescent, a little low in the Dykker's drop and the Luring's pear.
+func _face_c() -> Vector2:
+	match kind:
+		Kind.SHADE:
+			return Vector2(-radius * 0.6, 0.0)
+		Kind.DROP:
+			return Vector2(0.0, radius * 0.08)
+		Kind.SNEAK:
+			return Vector2(0.0, radius * 0.18)
+	return Vector2.ZERO
+
+
+## How much room the face has (a radius): a ring's face plate, most of a
+## filled body.
+func _face_r() -> float:
+	var h := _hole()
+	if h > 0.0:
+		return h
+	match kind:
+		Kind.ROD:
+			return radius * 1.05
+		Kind.PIPP:
+			return radius * 0.85
+	return radius * 0.78
+
+
+## The Splitter is of two minds: one eye bigger than the other.
+func _eye_mul(sx: float) -> float:
+	if kind == Kind.SPLIT:
+		return 1.14 if sx < 0.0 else 0.84
+	return 1.0
+
+## The colour right around the eye, which the lids are made of: the face
+## plate of a ring body, or the body itself for filled ones.
 func _skin() -> Color:
-	var c := color()
+	var c := _fc_col
 	if _hole() > 0.0:
-		return c.darkened(0.68)
+		return plate_color().darkened(0.1)
 	return c.darkened(0.12)
 
 
-## Eye (socket, white, pupil, glint, lids and brows) and, after it, the
-## mouth, in the eye's own space. The eye itself always stays round; lids
-## in the colour around it close over it, edged with a fine dark line that
-## curves like a real lid. Blinks, squints, smugness and sleepiness are all
-## just how far the lids have come, so every expression stays clean.
-func _eye_parts() -> void:
-	var f := _ink
-	# The Skygge's eye sits in the thick part of the crescent.
-	var eo := Vector2(-radius * 0.6, 0.0) if kind == Kind.SHADE else Vector2.ZERO
-	var er := _eye_r()
-	var mouthed := kind != Kind.ROD
-	if mouthed:
-		# Eye sits a little high so there is room for a mouth below.
-		eo.y -= er * (0.35 if kind != Kind.DROP else 0.1)
-	if kind == Kind.BOSS:
-		# The Spinneren looks at you with two.
-		for sx: float in [-1.0, 1.0]:
-			_eye_one(f, eo + Vector2(sx * er * 1.2, 0.0), er, sx)
-		return
-	_eye_one(f, eo, er, 0.0)
+## A ring body's face plate (its membrane): a light tint of its own colour,
+## so the face reads on it in dark lines (v8.6; it used to be a dark recess).
+func plate_color() -> Color:
+	var c := _fc_col
+	return Color(c.lerp(Color(1.0, 0.97, 0.92), 0.62), c.a)
 
+
+## The ink a face is drawn in: a deep shade of its own colour.
+func _ink_col(a := 1.0) -> Color:
+	return Color(Pal.PUPIL.lerp(_fc_col, 0.22), a * modulate.a * (1.0 - 0.8 * hidden_amt))
+
+## (The eyes' layout is in _eye.)
+func _eye_parts() -> void:
+	pass
 
 ## One eye at `eo` (body space) of radius `er`; `side` is -1/1 for one of a
 ## pair (the Spinneren's), 0 for a single eye.
@@ -817,15 +1161,13 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	var wide := maxf(1.0, _open)
 	var pr := er * 0.48 / wide * _pupil_scale
 	er *= lerpf(1.0, wide, 0.5)
-	if kind == Kind.ROD or kind == Kind.DROP or kind == Kind.BOSS or kind == Kind.SHADE:
-		# Filled bodies: a dark socket keeps the eye readable.
-		f.disc(Vector2.ZERO, er + 2.0, Color(0, 0, 0, 0.22))
 	var lash := Color(Pal.PUPIL, 0.9)
+	var ink := _ink_col(0.95)
 	if phase == Phase.FALLING:
 		# Knocked out: a small cross for an eye.
-		var xr := er * 0.6
-		f.draw_line(Vector2(-xr, -xr), Vector2(xr, xr), Pal.EYE, 2.2, true)
-		f.draw_line(Vector2(-xr, xr), Vector2(xr, -xr), Pal.EYE, 2.2, true)
+		var xr := er * 0.62
+		f.draw_line(Vector2(-xr, -xr), Vector2(xr, xr), ink, 2.4, true)
+		f.draw_line(Vector2(-xr, xr), Vector2(xr, -xr), ink, 2.4, true)
 		return
 	# How far the lids are closed (0 open .. 1 shut).
 	var upper := 1.0 - clampf(_open, 0.0, 1.0)
@@ -853,24 +1195,25 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 		lower = 0.22
 	if _closed_t > 0.0 and not seeing_stars():
 		upper = 1.0
-	if (_wink_t > 0.0 or (_taunt >= 0.0 and _taunt < TAUNT_TIME * 0.7)) and side >= 0.0 and calm_for_fun():
+	if ((_wink_t > 0.0 and side >= 0.0) or (_taunt >= 0.0 and _taunt < TAUNT_TIME * 0.7)) and calm_for_fun():
 		# A wink, or the glee of a taunt: the eye shut in a happy upturned
 		# curve. (Only when nothing is aimed at it: see calm_for_fun.)
-		_lid_curve(f, er, 0.15, -1.0, Color(Pal.EYE, 0.95), 2.2)
+		_lid_curve(f, er, 0.15, -1.0, ink, 2.3)
 		if _wink_t > 0.0:
 			var sp := Vector2(er * 1.05, -er * 0.9)
 			var s := sin(PI * clampf(_wink_t / 0.5, 0.0, 1.0)) * 3.5
-			f.draw_line(sp - Vector2(s, 0), sp + Vector2(s, 0), Color(1, 1, 1, 0.9), 1.3, true)
-			f.draw_line(sp - Vector2(0, s), sp + Vector2(0, s), Color(1, 1, 1, 0.9), 1.3, true)
+			f.draw_line(sp - Vector2(s, 0), sp + Vector2(s, 0), Color(Pal.GOLD_LIGHT, 0.95), 1.4, true)
+			f.draw_line(sp - Vector2(0, s), sp + Vector2(0, s), Color(Pal.GOLD_LIGHT, 0.95), 1.4, true)
 		return
 	if upper + lower > 0.92:
 		# Shut: a single soft curve, the lashes of a closed lid.
-		_lid_curve(f, er, 0.08, 1.0, Color(Pal.EYE, 0.9), 2.0)
+		_lid_curve(f, er, 0.08, 1.0, ink, 2.1)
 		return
 	# Fear dilates the pupil (panic, the last of a wave, a nervous team);
 	# a sudden fright shrinks it to a pinpoint instead.
 	if startle_t <= 0.0 and (panicked() or hurry or morale > 0.55):
 		pr = minf(pr * 1.4, er * 0.72)
+	f.disc(Vector2.ZERO, er + 1.5, ink)
 	f.disc(Vector2.ZERO, er, Pal.EYE)
 	var look := _pupil
 	if trait_kind == Trait.SHY and not aimed and not incoming:
@@ -879,25 +1222,30 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 	if kind == Kind.SNEAK and innocent > 0.05:
 		# Caught: it looks anywhere but at you (up and away, whistling).
 		look = look.lerp(Vector2(0.62, -0.62), innocent)
+	if kind == Kind.SPLIT and side > 0.0 and calm_for_fun() and not Prefs.reduced_motion:
+		# Of two minds: its other eye wanders off on its own.
+		look = Vector2(sin(_clock * 0.9), cos(_clock * 0.7)) * 0.7
 	var pupil := look * (er - pr - 1.2)
 	f.disc(pupil, pr, Pal.PUPIL)
-	f.disc(pupil - Vector2(pr, pr) * 0.35, pr * 0.28, Color(Pal.EYE, 0.7))
+	var glint_p := pupil - Vector2(pr, pr) * 0.35
+	var gs := maxf(0.6, pr * 0.28)
+	f.draw_rect(Rect2(glint_p - Vector2(gs, gs), Vector2(gs, gs) * 2.0), Color(Pal.EYE, 0.75))
 	var skin := _skin()
 	if upper > 0.02:
 		_lid(f, er, upper, true, skin, lash)
 	if lower > 0.02:
 		_lid(f, er, lower, false, skin, lash)
-	if mood == Mood.CUTE:
+	if mood == Mood.CUTE and side == 0.0:
 		var cheek := minf(er * 1.3, radius * 0.6)
 		var cr := minf(er * 0.3, radius * 0.18)
 		for sx: float in [-1.0, 1.0]:
 			f.disc(_in_hole(Vector2(sx * cheek, er * 0.95), cr + 1.0), cr, Color(Pal.SHADE, 0.35))
 		f.disc(pupil + Vector2(pr * 0.4, pr * 0.35), pr * 0.16, Color(Pal.EYE, 0.8))
-	if trait_kind == Trait.SHY and aimed and soft:
+	if trait_kind == Trait.SHY and aimed and soft and side == 0.0:
 		# A faint blush when it is looked at down the sights.
 		for sx: float in [-1.0, 1.0]:
 			f.disc(_in_hole(Vector2(sx * er * 1.25, er * 0.95), er * 0.32 + 1.0), er * 0.32, Color(Pal.SHADE, 0.28))
-	if kind == Kind.SEER:
+	if kind == Kind.SEER and side >= 0.0:
 		# The monocle: a brass rim round the eye on a fine chain; it flashes
 		# the instant the Seer reads your shot.
 		var rim := Color(Tok.PRIMARY, 0.95)
@@ -917,10 +1265,10 @@ func _eye_one(f: Ink, eo: Vector2, er: float, side: float) -> void:
 			var a := -PI * 0.5 + (k - 1) * 0.42
 			var d := Vector2.from_angle(a)
 			f.draw_line(d * (er + 0.5), d * (er + 4.5) + Vector2((k - 1) * 0.8, 0), Color(Pal.PUPIL, 0.85), 1.6, true)
-	if kind == Kind.ROD:
+	if side != 0.0:
 		return
 	# Brows: fine arcs, set by mood (and by personality at rest).
-	var bc := Color(Pal.EYE if kind != Kind.BOSS else Pal.PUPIL, 0.75)
+	var bc := _ink_col(0.85)
 	var worried := (aimed or panicked() or hurry or morale > 0.6) and not enraged and smug < 0.3 and _taunt < 0.0
 	if enraged or mood == Mood.GRUMPY:
 		# A frown: the brows dip toward the middle (lower still when angrier).
@@ -967,11 +1315,11 @@ func _lid(f: Ink, er: float, amount: float, top: bool, skin: Color, lash: Color)
 		span -= TAU
 	if not top and span < 0.0:
 		span += TAU
-	for i in 13:
-		pts.append(Vector2.from_angle(a0 + span * i / 12.0) * r)
+	for i in 8:
+		pts.append(Vector2.from_angle(a0 + span * i / 7.0) * r)
 	var edge_pts := PackedVector2Array()
-	for i in 9:
-		var t := lerpf(-1.0, 1.0, i / 8.0)
+	for i in 6:
+		var t := lerpf(-1.0, 1.0, i / 5.0)
 		edge_pts.append(Vector2(t * hw, edge + sag * (1.0 - t * t)))
 	# The edge's end points coincide with the arc's: leave them out, or the
 	# polygon has duplicate corners and will not triangulate.

@@ -599,8 +599,10 @@ func _mesh_colors(col: Color) -> void:
 		_m_col.resize(n)
 	_m_col.fill(col)
 	if _m_mem > 0:
-		var mem := col.darkened(0.55)
-		mem.a = col.a * (0.88 if soft else 1.0)
+		# The face plate: a light tint of its own colour (v8.6; it used to be
+		# a dark recess), so the face reads on it in dark lines.
+		var mem := col.lerp(Color(1.0, 0.97, 0.92), 0.62)
+		mem.a = col.a
 		for i in _m_mem:
 			_m_col[i] = mem
 	if _m_dim.x >= 0:

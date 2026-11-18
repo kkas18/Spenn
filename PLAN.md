@@ -2792,3 +2792,23 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG
 4. **Tester:** `save` kontrollerer telling over månedsskifte, skuddår og nyttår, at en
    tilbakestilt klokke ikke endrer noe, og at tallene lagres.
 
+
+## v8.6 – Myke farger, ekte figurer
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Farger** (`Pal.STAGE`, `Pal.KIND_LCH`): lysere vegg med omtrent halvparten så sterk
+   farge, lysere og mykere figurer. Midten av ringene er en lys plate
+   (`TargetLook._mesh_colors`).
+2. **Kontur** (`lit.gdshader`: `outline`, `outline_dark`; `Target.OUTLINE_PX`,
+   `OUTLINE_DARK`): en mørk kant regnet ut fra normalens lengde. Den følger
+   deformasjonen og koster ingen skripttid.
+3. **Ansikter** (`Target.CAST`, `_eye`, `_eye_one`, `_brows`, `_mouth`, `_rest_mouth`,
+   `_signature`, `_beak`, `_moustache`): to øyne, bryn, munn og et kjennetegn per type.
+   Fargen hentes én gang per tegning (`_fc_col`). Rolige ansikter tegnes på nytt hvert
+   2.–4. bilde etter enhetsnivå (`FACE_EVERY`), travle hvert bilde.
+4. **Samlingen** (`Hud._coll_persona`; `persona.0`–`persona.15` i `Loc`).
+5. **Tekst på veggen** (`Hud.halo_string`, `Hud.halo_lines`; mørk kant på poengene i
+   `Fx`; tettere `_soft_band`).
+6. **Tester:** `colours` krever nå 0,06 mellom typer med samme form (`SHAPE`) og 0,035
+   mellom alle typer. Hele pakken passerer, og botrundene gir de samme tallene som i v8.5.

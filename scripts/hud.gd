@@ -76,6 +76,7 @@ var _help_box: VBoxContainer
 var _coll_tab := 0
 var _coll_pick := -1               # the enemy shown in the collection's detail card
 var _coll_name: Label
+var _coll_persona: Label           # who it is (v8.6): its character in a line
 var _coll_desc: Label
 
 
@@ -1147,11 +1148,15 @@ func _fill_codex(page: VBoxContainer) -> void:
 		grid.add_child(t)
 	page.add_child(grid)
 	_coll_name = label(28, Tok.TEXT_PRIMARY, _font_display)
+	_coll_persona = label(20, Tok.PRIMARY_HI, _font_body_b)
+	_coll_persona.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_coll_persona.custom_minimum_size = Vector2(COLL_PAGE.x, 0)
 	_coll_desc = label(21, Tok.TEXT_SECONDARY, _font_body)
 	_coll_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_coll_desc.custom_minimum_size = Vector2(COLL_PAGE.x, 0)
 	page.add_child(_spacer(Tok.SPACE_XS))
 	page.add_child(_coll_name)
+	page.add_child(_coll_persona)
 	page.add_child(_coll_desc)
 	_codex_detail()
 
@@ -1161,10 +1166,14 @@ func _codex_detail() -> void:
 		return
 	if _coll_pick < 0:
 		_coll_name.text = sentence(Loc.t("coll.unknown"))
+		_coll_persona.text = ""
 		_coll_desc.text = Loc.t("coll.unknown.sub")
 		return
 	var parts := Loc.t("enemy.%d" % _coll_pick).split("|")
 	_coll_name.text = sentence(parts[0])
+	# A variant (14x: the Dykker's, 10x: the Vakt's) has its kind's character.
+	var base := _coll_pick if _coll_pick < 100 else (_coll_pick - 100) / 10
+	_coll_persona.text = Loc.t("persona.%d" % base)
 	_coll_desc.text = parts[1] if parts.size() > 1 else ""
 
 
@@ -1382,6 +1391,27 @@ func _swatch(c: Array, open: bool) -> Texture2D:
 ## The instruments in the top bar and the menus keep their sizes.
 static func ts(size: int) -> int:
 	return int(round(size * 1.22)) if Prefs.big_text else size
+
+
+## Words set straight on the wall stand on a soft dark halo: a wide faint
+## ring and a close denser one. The walls are lighter and softer since
+## v8.6, and a small grey line that read on the old dark walls sank into
+## them. `halo` scales how dark it is; it fades with the text.
+static func halo_string(ci: CanvasItem, f: Font, pos: Vector2, text: String, align: HorizontalAlignment, width: float, size: int, col: Color, halo := 0.6) -> void:
+	var a := col.a * halo
+	var o := maxi(2, roundi(size * 0.15))
+	ci.draw_string_outline(f, pos, text, align, width, size, o * 2 + 2, Color(Tok.BACKGROUND, 0.3 * a))
+	ci.draw_string_outline(f, pos, text, align, width, size, o, Color(Tok.BACKGROUND, a))
+	ci.draw_string(f, pos, text, align, width, size, col)
+
+
+## The same halo under a wrapped paragraph.
+static func halo_lines(ci: CanvasItem, f: Font, pos: Vector2, text: String, align: HorizontalAlignment, width: float, size: int, max_lines: int, col: Color, halo := 0.6) -> void:
+	var a := col.a * halo
+	var o := maxi(2, roundi(size * 0.15))
+	ci.draw_multiline_string_outline(f, pos, text, align, width, size, max_lines, o * 2 + 2, Color(Tok.BACKGROUND, 0.3 * a))
+	ci.draw_multiline_string_outline(f, pos, text, align, width, size, max_lines, o, Color(Tok.BACKGROUND, a))
+	ci.draw_multiline_string(f, pos, text, align, width, size, max_lines, col)
 
 
 ## A filled pill (width ≥ height) with softened edges.
@@ -3043,14 +3073,14 @@ class Overlay extends Control:
 		draw_string(disp, Vector2(-tw * 0.5 + 4.0, 4.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.35 * a))
 		draw_string(disp, Vector2(-tw * 0.5, 0.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(Tok.TEXT_PRIMARY, a))
 		draw_set_transform(Vector2.ZERO)
-		draw_string(caps, Vector2(0, y - 104.0), Loc.t("hud.waveLabel"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 2), Color(Tok.PRIMARY, a))
+		Hud.halo_string(self, caps, Vector2(0, y - 104.0), Loc.t("hud.waveLabel"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 2), Color(Tok.PRIMARY, a))
 		var span := w * 0.3 * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.1) / 0.6, 0.0, 1.0))
 		for yy in [y - 96.0 - 6.0, y + 30.0]:
 			draw_line(Vector2(w * 0.5 - span, yy), Vector2(w * 0.5 + span, yy), Color(Tok.PRIMARY, 0.5 * a), 1.0, true)
 		if wave_sub != "":
 			# The wave's mood, in its own colour, under the rule.
 			var sa := a * Motion.ease_value(Motion.Ease.ENTER, clampf((wave_t - 0.25) / 0.4, 0.0, 1.0))
-			draw_string(caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 1), Color(wave_col, sa))
+			Hud.halo_string(self, caps, Vector2(0, y + 58.0), wave_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL + 1), Color(wave_col, sa))
 		if wave_pace != "":
 			# Against the record run at this point: gold and an up arrow when
 			# ahead, quiet and a down arrow when behind (never colour alone).
@@ -3061,9 +3091,10 @@ class Overlay extends Control:
 			var pc := Tok.PRIMARY_HI if wave_ahead else Tok.TEXT_SECONDARY
 			var ax := w * 0.5 - pw * 0.5 - 16.0
 			var up := -1.0 if wave_ahead else 1.0
-			draw_colored_polygon(PackedVector2Array([Vector2(ax - 7.0, py - 6.0 - 4.0 * up), Vector2(ax + 7.0, py - 6.0 - 4.0 * up), Vector2(ax, py - 6.0 + 6.0 * up)]), Color(pc, pa))
-			draw_string(body, Vector2(w * 0.5 - pw * 0.5 + 1.5, py + 1.5), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(0, 0, 0, 0.35 * pa))
-			draw_string(body, Vector2(w * 0.5 - pw * 0.5, py), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(pc, pa))
+			var tri := PackedVector2Array([Vector2(ax - 7.0, py - 6.0 - 4.0 * up), Vector2(ax + 7.0, py - 6.0 - 4.0 * up), Vector2(ax, py - 6.0 + 6.0 * up)])
+			draw_polyline(tri + PackedVector2Array([tri[0]]), Color(Tok.BACKGROUND, 0.6 * pa), 5.0, true)
+			draw_colored_polygon(tri, Color(pc, pa))
+			Hud.halo_string(self, body, Vector2(w * 0.5 - pw * 0.5, py), wave_pace, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(20), Color(pc, pa))
 
 	## Where tray slot `i` sits: a row of small discs at the top left.
 	func _slot(l: Layout, i: int) -> Vector2:
@@ -3226,7 +3257,7 @@ class Overlay extends Control:
 			draw_circle(pp + Vector2(1.5, 2.5), 6.0, Color(0, 0, 0, 0.4 * a), true, -1.0, true)
 			draw_circle(pp, 6.0, Color(Tok.PRIMARY_LO, a), true, -1.0, true)
 			draw_circle(pp + Vector2(-0.8, -0.8), 4.2, Color(Tok.PRIMARY, a), true, -1.0, true)
-		draw_string(body, Vector2(pa.x - 2.0, ly - 14.0), Loc.t("menu.missions"), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(19), Color(Tok.TEXT_SECONDARY, a))
+		Hud.halo_string(self, body, Vector2(pa.x - 2.0, ly - 14.0), Loc.t("menu.missions"), HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(19), Color(Tok.TEXT_SECONDARY, a))
 		if _card_box == null:
 			_card_box = StyleBoxFlat.new()
 			_card_box.set_corner_radius_all(16)
@@ -3297,10 +3328,10 @@ class Overlay extends Control:
 		var body := hud.body_font()
 		var num := hud.num_font()
 		var y := hud.menu_record_y()
-		draw_string(body, Vector2(0, y), Loc.t("menu.dailyBest" if hud.daily else "menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(22), Color(Tok.TEXT_SECONDARY, a))
+		Hud.halo_string(self, body, Vector2(0, y), Loc.t("menu.dailyBest" if hud.daily else "menu.best"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(22), Color(Tok.TEXT_SECONDARY, a))
 		var rec := Hud._group(Prefs.daily_record() if hud.daily else Prefs.record)
 		draw_string(num, Vector2(2, y + 61.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.SHADOW, Tok.SHADOW.a * a))
-		draw_string(num, Vector2(0, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.PRIMARY_HI, a))
+		Hud.halo_string(self, num, Vector2(0, y + 58.0), rec, HORIZONTAL_ALIGNMENT_CENTER, w, 60, Color(Tok.PRIMARY_HI, a), 0.35)
 		if not hud.daily and Prefs.fresh.get("best", false):
 			# Set last run: a small crown on the record.
 			var rw := num.get_string_size(rec, HORIZONTAL_ALIGNMENT_LEFT, -1, 60).x
@@ -3316,7 +3347,7 @@ class Overlay extends Control:
 			var rw2 := num.get_string_size(rec, HORIZONTAL_ALIGNMENT_LEFT, -1, 60).x
 			var x0 := w * 0.5 + rw2 * 0.5 + 20.0
 			Hud.glyph(self, "calendar", Vector2(x0 + 9.0, y + 37.0), 0.62, Color(Tok.PRIMARY, a))
-			draw_string(body, Vector2(x0 + 22.0, y + 43.0), Loc.t("streak.days") % days, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(18), Color(Tok.TEXT_SECONDARY, a))
+			Hud.halo_string(self, body, Vector2(x0 + 22.0, y + 43.0), Loc.t("streak.days") % days, HORIZONTAL_ALIGNMENT_LEFT, -1, Hud.ts(18), Color(Tok.TEXT_SECONDARY, a))
 		_draw_missions(l, a, y + 112.0)
 		var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 		var py := l.fork_y - 84.0
@@ -3348,7 +3379,7 @@ class Overlay extends Control:
 	func _soft_band(mid: float, steps: int, alpha: float, w: float) -> void:
 		for i in steps:
 			var f := float(i) / maxf(1.0, steps - 1.0)
-			var a := alpha * (1.0 - f * f) * 0.5
+			var a := alpha * (1.0 - f * f) * 0.7
 			draw_rect(Rect2(0, mid - (i + 1) * 8.0, w, 8.0), Color(Tok.BACKGROUND, a))
 			draw_rect(Rect2(0, mid + i * 8.0, w, 8.0), Color(Tok.BACKGROUND, a))
 
@@ -3375,10 +3406,10 @@ class Overlay extends Control:
 			# The wall is lit now: a soft dark band carries the words, as it
 			# does the wave's card, so the small line reads on any world.
 			_soft_band(iy + 34.0, 9, 0.5 * k, w)
-			draw_string(caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(12), Color(Tok.PRIMARY_HI, k))
+			Hud.halo_string(self, caps, Vector2(0, iy), Loc.t("enemy.new"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(12), Color(Tok.PRIMARY_HI, k))
 			draw_string(disp, Vector2(2, iy + 42.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, iy + 40.0), intro_name, HORIZONTAL_ALIGNMENT_CENTER, w, 36, Color(Tok.TEXT_PRIMARY, k))
-			draw_multiline_string(caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, Hud.ts(14), 3, Color(Tok.TEXT_PRIMARY.lerp(Tok.TEXT_SECONDARY, 0.45), k))
+			Hud.halo_lines(self, caps, Vector2(48, iy + 70.0), intro_desc, HORIZONTAL_ALIGNMENT_CENTER, w - 96.0, Hud.ts(14), 3, Color(Tok.TEXT_PRIMARY.lerp(Tok.TEXT_SECONDARY, 0.45), k))
 		var total := Motion.NORMAL + card_hold + Motion.SLOW
 		if card_t < total and card_title != "":
 			var k := 1.0
@@ -3402,7 +3433,7 @@ class Overlay extends Control:
 				ts = int(floor(ts * (w - 56.0) / tw))
 			draw_string(disp, Vector2(3, cy + 3), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(0, 0, 0, 0.35 * k))
 			draw_string(disp, Vector2(0, cy), card_title, HORIZONTAL_ALIGNMENT_CENTER, w, ts, Color(Tok.TEXT_PRIMARY, k))
-			draw_string(caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL), Color(Tok.TEXT_SECONDARY, k))
+			Hud.halo_string(self, caps, Vector2(0, cy + 36.0), card_sub, HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(Tok.TYPE_LABEL), Color(Tok.TEXT_SECONDARY, k))
 		if count_n > 0:
 			# Countdown digit: pops in (emphasized) and fades as the next nears.
 			var k := Motion.ease_value(Motion.Ease.EMPHASIZED, count_t / Motion.NORMAL)

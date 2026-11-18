@@ -24,6 +24,11 @@ uniform vec3 light_col = vec3(1.0, 0.78, 0.42);
 // comes round the edges of every solid, so the creatures sit in the same
 // air as the wall and stand clear of it.
 uniform vec3 sky = vec3(0.55, 0.75, 1.0);
+// A drawn contour round every solid, in a deep shade of its own colour,
+// `outline` px wide (0: none). It follows the silhouette exactly, a jelly's
+// wobble included, since it is read from the surface's own normal.
+uniform float outline = 0.0;
+uniform float outline_dark = 0.3;
 varying vec2 world;
 
 // Warm light from the balls on a surface with normal `n` at `world`.
@@ -126,6 +131,11 @@ void fragment() {
 		}
 		vec3 g = ball_light(n);
 		col += c.rgb * g * 0.85 + g * 0.08;
+		if (outline > 0.0) {
+			float aw = max(fwidth(r), 1e-4);
+			float t = smoothstep(1.0 - aw * (outline + 0.9), 1.0 - aw * outline, r);
+			col = mix(col, c.rgb * outline_dark, t);
+		}
 		COLOR = vec4(col, c.a * edge(r));
 	}
 }

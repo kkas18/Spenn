@@ -91,22 +91,24 @@ const COOL_HI := 339.0          # of the wheel, gold's and coral's
 #   ground       the floor around the slingshot
 #   rim          the light the creatures catch on their edges
 const STAGE := {
-	"top": [0.20, 0.060, 6.0], "low": [0.34, 0.100, 0.0], "lamp": [0.87, 0.105, 0.0],
-	"aura_a": [0.58, 0.140, -22.0], "aura_b": [0.48, 0.170, 22.0], "haze": [0.66, 0.170, -6.0],
-	"ground": [0.185, 0.035, 4.0], "rim": [0.87, 0.120, 0.0],
+	"top": [0.30, 0.040, 6.0], "low": [0.44, 0.055, 0.0], "lamp": [0.90, 0.060, 0.0],
+	"aura_a": [0.64, 0.070, -22.0], "aura_b": [0.58, 0.080, 22.0], "haze": [0.74, 0.080, -6.0],
+	"ground": [0.25, 0.025, 4.0], "rim": [0.90, 0.070, 0.0],
 }
 # A kind's place in its family: degrees from the creature hue (minus: toward
-# the dark end, plus: toward the bright one), lightness, chroma. The kinds
-# sit apart in lightness, so they read in greyscale too; silhouettes carry
-# identity first.
+# the dark end, plus: toward the bright one), lightness, chroma. Since v8.6
+# the creatures are soft and light against a muted wall, each drawn with a
+# dark contour, and their faces carry their character: a kind is told by
+# its shape and its face first, its colour second. Kinds of the same shape
+# (the rings; the hexagons; the round ones) sit well apart in colour.
 # Order: RING, HEAVY, SPLIT, ROD, DROP, SHIELD (steel), BOSS, REEL, SHADE,
 # MEDIC (pearl), MIRROR (silver: it shows the stage), PIPP, PAKKIS, CAPTAIN,
 # SEER, SNEAK
 const KIND_LCH := [
-	[-6.0, 0.67, 0.150], [-24.0, 0.55, 0.115], [12.0, 0.78, 0.125], [27.0, 0.63, 0.170],
-	[6.0, 0.84, 0.090], [-6.0, 0.72, 0.045], [29.0, 0.50, 0.170], [-16.0, 0.80, 0.115],
-	[26.0, 0.72, 0.120], [0.0, 0.93, 0.010], [0.0, 0.82, 0.030], [29.0, 0.88, 0.075],
-	[-29.0, 0.88, 0.075], [-12.0, 0.49, 0.090], [12.0, 0.56, 0.150], [-28.0, 0.64, 0.075],
+	[-6.0, 0.74, 0.115], [-24.0, 0.64, 0.095], [14.0, 0.84, 0.090], [27.0, 0.70, 0.130],
+	[4.0, 0.80, 0.095], [-6.0, 0.78, 0.040], [29.0, 0.60, 0.125], [-16.0, 0.88, 0.085],
+	[24.0, 0.76, 0.105], [0.0, 0.95, 0.010], [0.0, 0.86, 0.025], [29.0, 0.92, 0.065],
+	[-29.0, 0.84, 0.080], [-12.0, 0.58, 0.075], [10.0, 0.65, 0.120], [-28.0, 0.70, 0.065],
 ]
 const KIND_MEDIC := 9
 const KIND_MIRROR := 10

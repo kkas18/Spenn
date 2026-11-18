@@ -1193,7 +1193,11 @@ func _draw() -> void:
 		var pos: Vector2 = p.pos - Vector2(0, rise)
 		var w := font.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size).x
 		draw_set_transform(pos, 0.0, Vector2(s, s))
-		draw_string(font, Vector2(-w * 0.5, 0) + Vector2(2, 2), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, Color(0, 0, 0, 0.35 * alpha))
+		# A dark rim with its drop shadow under the figure: the walls are
+		# lighter since v8.6, and a pale "+36" no longer read on them alone.
+		var rim := maxi(2, roundi(p.size * 0.14))
+		draw_string_outline(font, Vector2(-w * 0.5, 0) + Vector2(1.5, 2.0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, rim, Color(0, 0, 0, 0.3 * alpha))
+		draw_string_outline(font, Vector2(-w * 0.5, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, rim, Color(Pal.BG, 0.62 * alpha))
 		draw_string(font, Vector2(-w * 0.5, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, p.size, Color(p.col, alpha))
 		if p.accent:
 			var half := (w * 0.5 + 6.0) * ease(minf(1.0, k * 5.0), 0.4)

@@ -18,7 +18,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
 | 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3), dager på rad (v8.5) | Ferdig |
-| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4) | Ferdig |
+| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4), myke farger og figurer med egen karakter (v8.6) | Ferdig |
 | 5 | Lyd | Gjenstår |
 | 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
 | 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
@@ -27,7 +27,9 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
 et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
 å ta én runde til (trinn 3) ble flyttet foran lyd, innstillinger og kode. Etter v8.2 ba
-du om fargeharmoni og kulere, morsommere fiender. Det ble trinn 4 (v8.4).
+du om fargeharmoni og kulere, morsommere fiender. Det ble trinn 4 (v8.4). Etter v8.5 ba
+du om mykere farger og fiender med hver sin karakter. Det ble v8.6, som en fortsettelse
+av trinn 4.
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -301,6 +303,129 @@ avhenger av hvor langt du kommer, og begge er innen rekkevidde: «Bølgebryter»
 nås av middels botspiller (bølge 7–8 i median), og «Fem minutter» av god botspiller (308
 s i median). De er derfor ikke endret.
 
+### Trinn 4b – Myke farger og ekte figurer (v8.6, ferdig)
+
+Du ba om mykere og mer komfortable farger, og om mye morsommere fiender som hver har sin
+egen karakter. De skulle minne om Angry Birds, men være helt egne figurer.
+
+**Grensen jeg har holdt:** ingen figurer, former, farger eller ansikter er hentet fra
+Angry Birds. Det som er tatt fra sjangeren, er det generelle: runde, tydelige figurer,
+store ansikter som viser hva de føler, kraftige bryn og én tydelig personlighet per type.
+Figurene er de samme 16 typene som før, og hver har fått et ansikt som passer det den gjør
+i spillet.
+
+#### Mykere farger
+
+**Veggen** er lysere og har omtrent halvparten så sterk farge i alle fem verdener. Hver
+verden beholder fargeklangen fra v8.4. Tallene er lyshet og fargestyrke (kroma) i OKLCH,
+fra `Pal.STAGE`:
+
+| Del av veggen | Lyshet før → etter | Fargestyrke før → etter |
+|---|---|---|
+| Toppen | 0,20 → 0,30 | 0,060 → 0,040 |
+| Bunnen | 0,34 → 0,44 | 0,100 → 0,055 |
+| Lyset over linjen | 0,66 → 0,74 | 0,170 → 0,080 |
+| Lampen | 0,87 → 0,90 | 0,105 → 0,060 |
+
+- **Figurene** er lysere og har mindre fargestyrke, nærmere pastell. Vakten går for
+  eksempel fra lyshet 0,67 og kroma 0,150 til 0,74 og 0,115.
+- **Midten av ringene** er en lys plate (figurens farge blandet med krem) i stedet for et
+  mørkt hull, så ansiktet står på lys bunn.
+- **En mørk kontur** rundt alle faste figurer. Den regnes i lysshaderen
+  (`lit.gdshader`) ut fra avstanden til kanten, som shaderen allerede har. Derfor følger
+  den formen når figuren bøyer seg og klemmes, og den koster ingen skripttid.
+
+Målt på fargene spillet bygger, med samme test (`colours`) på v8.5 og v8.6. ΔE er avstand
+i OKLab, og 0,05 er omtrent det øyet skiller lett.
+
+| Verden | Svakeste kontrast mot veggen | Minste forskjell mellom typer med samme form (ΔE) | Minste forskjell mellom to typer (ΔE) |
+|---|---|---|---|
+| Blåtime | 2,51 → 2,51 | 0,073 → 0,085 | 0,054 → 0,043 |
+| Dyphav | 2,23 → 2,30 | 0,068 → 0,085 | 0,054 → 0,043 |
+| Nordlys | 2,22 → 2,32 | 0,066 → 0,085 | 0,054 → 0,043 |
+| Skumring | 2,53 → 2,52 | 0,070 → 0,085 | 0,054 → 0,043 |
+| Morgen | 2,46 → 2,48 | 0,066 → 0,084 | 0,054 → 0,043 |
+
+- **Figurene står like klart mot veggen som før**, selv om veggen er lysere, fordi
+  figurene også er lysere. Den mørke konturen kommer i tillegg og er ikke regnet med.
+- **Typer med samme form ligger lenger fra hverandre** (ringene, sekskantene og de runde).
+  Det er de som ellers kunne forveksles.
+- **Typer med ulik form kan ligge nærmere hverandre** i farge, fordi fargene er mykere.
+  **Testen er derfor endret:** før krevde den 0,05 mellom alle typer. Nå krever den 0,06
+  mellom typer med samme form (strengere) og 0,035 mellom de andre (mykere). Typene
+  skilles på form og ansikt først og på farge etterpå.
+- Ingen figur kommer nærmere gull eller korall enn før (nærmeste er 52–125° unna,
+  uendret).
+
+#### Figurer med egen karakter
+
+Hver type har to øyne med pupiller (Skyggen har ett), bryn, en munn og et kjennetegn.
+
+| Type | Karakter | Ansiktet |
+|---|---|---|
+| Vakt | Nervøs nybegynner | Bekymrede bryn og store fortenner. Klaprer tenner når du sikter på den |
+| Tungvekt | Bølla | Ett tykt bryn, underbitt, hoggtenner og skjeggstubb |
+| Splitter | I tvil om alt | To ulike øyne og en sydd munn. Det ene øyet vandrer når den er rolig |
+| Pendel | Glad i livet | Milde bryn og en nynnende munn. Små noter stiger når den er rolig |
+| Dykker | Våghals | Buede bryn, trutmunn og svømmebrillene på pannen. Blåser bobler når den er rolig |
+| Vokter | Streng vakt | Rett bryn og hvalrossbart |
+| Spinneren | Sjefen | Sinte bryn og et glis fullt av sagtenner |
+| Snelle | Avslappet fisker | Late øyelokk og et strå i munnviken |
+| Skygge | Alltid kul | Ett øye, et lurt smil og solbrillene på hodet |
+| Legen | Snill doktor | Runde messingbriller og et vennlig smil |
+| Speilet | Diva | Lange vipper, rosenrøde kinn og trutmunn |
+| Pipp | Liten herme-kylling | Store øyne, et lite nebb og røde kinn |
+| Pakkis | Lurendreier | Buskete bryn, glugg i tanna og røde kinn |
+| Kommandøren | Bjeffer ordre | Sinte bryn under hjelmen og en munn som bjeffer når den gir ordre |
+| Leseren | Vet alt best | Ett løftet bryn, monokkel og en snerpete munn |
+| Luringen | Sniker | Skjeve blikk og et skjevt glis |
+
+- **Alle ansiktene bygges av de samme delene** og styres av én tabell (`CAST` i
+  `target_body.gd`): antall øyne, størrelse, avstand, bryn og munn per type. Å endre en
+  figurs ansikt er å endre én linje.
+- **Stemningene fra v8.4 gjelder nå hele ansiktet:** redd (munnen blir en «O»), sint
+  (snerr og senkede bryn), ler med tunga ute, ertende smil, svimmel med stjerner, slått
+  ut med kryss i øynene, blunk og glede.
+- **Vaner med bevegelse** (noter, bobler, øyet som vandrer) er av når «Mindre bevegelse»
+  er på.
+- **Varslene er de samme:** øynene smalner før et stup, og pupillene ser dit figuren skal
+  før den glir til siden. Nå vises det i begge øynene.
+- **Samlingen** har fått én linje om hver figurs karakter, på norsk og engelsk.
+
+#### Tekst på veggen
+
+Med lysere vegger ble små grå tekster vanskelige å lese: rekorden og oppdragene på
+menyen, undertekstene på kortene og linjen om rekorden når en bølge starter. Tekst som
+står rett på veggen, har nå en myk mørk glorie (en bred, svak kontur og en tett, mørkere
+kontur). Poengene som spretter opp, har fått en mørk kant, og det mørke båndet bak kortene
+er tettere.
+
+#### Kostnad
+
+- **Et ansikt koster mer å tegne:** omtrent 82 → 134 µs per tegning (median av seks
+  kjøringer for hver versjon på utviklingsmaskinen). Kroppen er uendret (26 µs).
+- **For å holde det nede** hentes fargen én gang per tegning, og lokk og bryn har færre
+  punkter. Rolige ansikter tegnes dessuten sjeldnere: hvert 2. bilde på høyeste
+  effektnivå, hvert 3. på mellomnivået og hvert 4. på laveste. Før var det hvert 2. bilde
+  på alle nivåer. Et ansikt som er siktet på, viser et varsel eller et trekk, er truffet
+  eller faller, tegnes hvert bilde, så et varsel aldri kommer for sent.
+- **Hele bildet** i et travelt felt (skripttid uten tegning på skjermkortet, median av to
+  kjøringer for hver versjon): 6,9 → 7,5 ms. Ansiktene alene: 1,1–1,2 → 1,1–1,7 ms per
+  bilde.
+- **På mellomnivået**, som spillet bytter til av seg selv hvis bildefrekvensen synker,
+  koster ansiktene omtrent det samme per bilde som i v8.5 (134 µs hvert 3. bilde mot 82 µs
+  hvert 2.). På laveste nivå koster de mindre.
+
+#### Kontroll
+
+- **Hele testpakken passerer.** Botrundene på faste frø gir nøyaktig de samme tallene som
+  i v8.5 (frø 1: 270 s og 149 844 poeng, frø 2: 265 s og 172 355 poeng). Fargene og
+  ansiktene endrer altså ikke hva som skjer i en runde.
+- **Skjermbilder:** alle 16 typene, rolige og i fire stemninger, i Blåtime og Morgen, og
+  det samme travle feltet i alle fem verdener før og etter. Hatter, briller, stjerner,
+  svette og blunk sitter riktig på de nye ansiktene. I tillegg menyen, samlingen og
+  kortene, der teksten nå leses på den lysere veggen.
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -459,6 +584,13 @@ Tallene er median, med laveste og høyeste runde i parentes.
   (scene, figurer, lampe og lyset over linjen), og hver type en plass i familien i
   `Pal.KIND_LCH`. Vil du ha en verden varmere, kaldere eller med andre figurfarger, er
   det ett tall å endre, og lyshet og kontrast følger med.
+- **Egne figurer, ikke en kopi (v8.6).** Du ba om fiender som minner om Angry Birds.
+  Jeg har tatt det sjangeren har felles: runde figurer, store ansikter, kraftige bryn og
+  én personlighet per type. Ingen figurer, former, farger eller ansikter er hentet fra det
+  spillet. Det holder Spenn som sitt eget spill og unngår problemer med opphavsrett.
+- **Rolige ansikter tegnes sjeldnere, travle hvert bilde (v8.6).** Rikere ansikter koster
+  mer å tegne. I stedet for å kutte i ansiktene tegnes de rolige på nytt sjeldnere på
+  lavere effektnivå, mens alt som er et varsel, tegnes hvert bilde.
 - **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 5
   gjelder effektene.
 - **Ingen pauseknapp.** Fjernet etter ønske tidligere. Pause er dobbelttrykk eller
@@ -488,6 +620,9 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Det nye uttrykket er ikke sett på en telefon.** Farger, lysstyrke og effekter er
   vurdert på skjermbilder fra PC og målt i tall. Skjermer er forskjellige, og bevegelse
   kan ikke bedømmes på stillbilder.
+- **Ansiktene er små på de minste figurene.** På Pendelen, Dykkeren og små Vakter er
+  øynene 5–6 piksler i radius i spillets oppløsning, så bryn og munn er bare noen få
+  piksler på en liten telefon. Uttrykket leses mest på øynene.
 - **Tilbehøret er lite på de minste figurene.** En spire eller propell på en liten Vakt
   er 10–15 piksler i spillets oppløsning. Det synes, men bare så vidt på en liten
   telefon.
@@ -496,8 +631,8 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 **Gjenstår**
 
-- **Ytelse på telefon er ikke målt.** Skripttiden er 6,8 ms per bilde i et travelt felt
-  på utviklingsmaskinen (fordelt per del i trinn 7). På en mellomklasse-telefon kan det
+- **Ytelse på telefon er ikke målt.** Skripttiden er 7,5 ms per bilde i et travelt felt
+  på utviklingsmaskinen etter v8.6 (6,8 ms i v8.5, fordelt per del i trinn 7). På en mellomklasse-telefon kan det
   være to til tre ganger så mye. Spillet senker selv effektnivået hvis bildefrekvensen
   synker, men om det holder 60 bilder i sekundet sent i en runde, må prøves på en telefon.
 - **Google Play krever en nyere motor** (16 KB minnesider, se beslutninger). For APK-en

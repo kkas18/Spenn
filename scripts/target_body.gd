@@ -153,6 +153,35 @@ var posed := false             # shown in the collection, not in a run (see pose
 # from look_dice, never from the run's dice.
 enum Hat { NONE, SPROUT, BEANIE, BOW, PROPELLER }
 const HAT_SHARE := 0.34         # of the Vakter that wear something of their own
+const OUTLINE_PX := 2.2         # the creatures' drawn contour (see shaders/lit.gdshader)
+## Frames between redraws of a calm face, by the phone's tier (low, mid,
+## high; see Device): a face in the thick of it is redrawn every frame.
+const FACE_EVERY := [4, 3, 2]
+## The cast (v8.6): every kind its own character, read in its face.
+##   [eyes (1 or 2), eye size (share of the face), eyes apart (in eye radii),
+##    brows at rest, mouth at rest]
+## Brows: worried, mono, soft, arched, level, lazy, bushy, angry, raised,
+## shifty, none. Mouths: buck, fangs, stitch, hum, pucker, stache, jaws,
+## whistle, sly, kind, pout, beak, gap, bark, prim, smirk (see target.gd).
+const CAST := {
+	Kind.RING: [2, 1.0, 1.15, "worried", "buck"],     # Vakta: a jumpy rookie, all teeth and nerves
+	Kind.HEAVY: [2, 0.95, 1.1, "mono", "fangs"],      # Tungvekt: the bruiser, one brow and an underbite
+	Kind.SPLIT: [2, 1.0, 1.25, "none", "stitch"],     # Splitter: of two minds, odd eyes, sewn-up grin
+	Kind.ROD: [2, 0.85, 1.25, "soft", "hum"],         # Pendel: happy-go-lucky, humming as it swings
+	Kind.DROP: [2, 0.95, 1.15, "arched", "pucker"],   # Dykker: the daredevil diver, goggles up
+	Kind.SHIELD: [2, 0.95, 1.1, "level", "stache"],   # Vokter: the stern guard with a walrus moustache
+	Kind.BOSS: [2, 1.0, 1.2, "angry", "jaws"],        # Spinneren: the boss, a grin full of saw teeth
+	Kind.REEL: [2, 0.95, 1.1, "lazy", "whistle"],     # Snelle: the laid-back angler, a stalk in its mouth
+	Kind.SHADE: [1, 1.0, 0.0, "arched", "sly"],       # Skygge: one eye, shades on its head, cool
+	Kind.MEDIC: [2, 1.0, 1.15, "soft", "kind"],       # Legen: the kind doctor in round spectacles
+	Kind.MIRROR: [2, 1.0, 1.15, "arched", "pout"],    # Speilet: the diva, lashes and a pout
+	Kind.PIPP: [2, 1.1, 1.05, "soft", "beak"],        # Pipp: the chick, big eyes and a little beak
+	Kind.PAKKIS: [2, 1.0, 1.15, "bushy", "gap"],      # Pakkis: the trickster, a gap-toothed grin
+	Kind.CAPTAIN: [2, 0.9, 1.1, "angry", "bark"],     # Kommandøren: barks orders from under the helmet
+	Kind.SEER: [2, 1.0, 1.15, "raised", "prim"],      # Leseren: the know-all, monocle and raised brow
+	Kind.SNEAK: [2, 0.9, 1.0, "shifty", "smirk"],     # Luringen: the sneak, sidelong looks, crooked grin
+}
+const OUTLINE_DARK := 0.32      # ... in this deep a shade of their own colour
 const DIZZY_TIME := 1.5         # s of seeing stars after a hit it survives
 const WINCE := 0.3              # s of the wince before the stars
 var hat := Hat.NONE

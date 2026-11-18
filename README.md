@@ -17,7 +17,7 @@ Engelsk navn i appen er «Taut».
 Åpne fila på telefonen og godta installasjon fra nettleseren. Begge versjonene er signert
 med samme nøkkel og har samme versjonskode, så den ene kan installeres over den andre
 uten at rekorder og fremgang går tapt. Hvilken som er installert, står under
-Innstillinger → Apper → Spenn på telefonen: 8.5.0 (eller nyere) er den oppgraderte, 2.0.0 er
+Innstillinger → Apper → Spenn på telefonen: 8.6.0 (eller nyere) er den oppgraderte, 2.0.0 er
 originalen.
 
 **Slik spiller du:** legg fingeren på lomma i spretterten, dra nedover og slipp. Jo
@@ -46,7 +46,7 @@ tools/tests/balance.sh [sti/til/godot]    # balanse: botspillere på tre nivåer
 | Test | Hva den passer på |
 |---|---|
 | `layout` | Skjermoppsettet på ni telefonformer: spretterten får plass, og full kraft er innen rekkevidde |
-| `colours` | Fargeharmonien i alle fem verdener: figurene står klart mot veggen, ingen kommer nær gull eller korall, to typer er aldri for like, og en type har samme lyshet i alle verdener |
+| `colours` | Fargeharmonien i alle fem verdener: figurene står klart mot veggen, ingen kommer nær gull eller korall, typer med samme form ligger godt fra hverandre i farge (og ingen to typer er for like), og en type har samme lyshet i alle verdener |
 | `flow` | En hel økt: meny, skudd, pause, nedtelling, omstart, tap, resultat, tilbake til menyen, og at innstillingene virker med en gang |
 | `save` | Lagret fremgang tåler avbrutt skriving, skadet fil og feil verdier, og dager på rad telles riktig over måneds- og årsskifte |
 | `timing` | Sanntid og spilltid: treff-stopp, sakte film, overload og flyt varer det de skal, og ingen fiende flytter seg før varselet har vært synlig |
