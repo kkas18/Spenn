@@ -2831,3 +2831,22 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4c) og [CHANGELOG.md
 4. **Erting:** `Target.mock` og `_mock_now` (le og dulte), `Game._near_miss` (den skuddet
    kom nærmest) og `_mock_miss` (koret etter et bom). Skallfiendene vugger i `taunt`.
 5. **Tester:** hele pakken passerer. Balansen er målt tre ganger med `balance.sh`.
+
+## v8.8 – Dybde
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4d) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Rader** (`Target.Rank`, `RANK_DEPTH`, `RANK_SCALE`, `_apply_rank`, `set_rank`): én
+   terning ved spawn velger bakerst (28 %), midten (42 %) eller fremst (30 %).
+   Størrelsen ligger i `radius`, så treffsonen følger. Bakerste rad henger fra den bakre
+   skinnen (`REAR_DROP`) med tilsvarende kortere tau. Vokteren, Spinneren og rekkene
+   henger i midten.
+2. **Parallakse** (`set_parallax`, `RANK_PAR`, `RANK_AIM`; `Game._update_depth`,
+   `AIM_PAR_PX`): nodens `position` forskyver bare tegningen, mens fysikken bruker `pos`.
+   Veggen (`Backdrop.aim`), den bakre skinnen (`Rail.rear_off`) og støvkornene
+   (`NearLayer`, `scripts/near.gd`) følger hver sin faktor.
+3. **Utseende:** disen tar veggens farge (`Pal.world("low")`, lest én gang per bilde),
+   lampens lys (`color`), tynnere tau bak (`rope_scale`). Størrelsessvingen fra helningen
+   er 4 % (`depth_scale`).
+4. **Tester:** hele pakken passerer. `repeat` bruker nå oppdrag som ikke kan nås på 100 s.
+   Balansen er målt to ganger, og ytelsen i et fast felt.

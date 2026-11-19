@@ -267,10 +267,19 @@ var wants_heal := false        # Legen asks the game for someone to mend
 var _heal_t := 3.0
 var boss_stage := 0            # Spinneren: 0, 1, 2
 var field_w := 720.0           # play field width (set by the game)
-# Depth in the room, -1 (back, near the wall) .. 1 (front). Purely visual:
-# front ones draw a touch larger and brighter, back ones smaller and dimmer,
-# and their shadows on the wall sit closer and sharper. The hit area never
-# changes.
+# Depth in the room, -1 (back, near the wall) .. 1 (front). Since v8.8 each
+# hangs in one of three planes: the back row on a rail of its own nearer
+# the wall, a touch smaller and sunk in the room's haze; the middle; the
+# front row, a touch larger and brighter, its shadow on the wall falling
+# further out and softer. The size is real: the hit area is the size you
+# see. Strings in different planes cross freely; bodies still meet.
+enum Rank { BACK, MID, FRONT }
+const RANK_DEPTH := [-0.8, 0.0, 0.7]
+const RANK_SCALE := [0.9, 1.0, 1.07]
+const RANK_PAR := [0.88, 1.0, 1.08]    # how far each plane moves with the phone's lean (the field: 1)
+const RANK_AIM := [0.22, 0.0, -0.12]   # ... and as you aim (the field stays put)
+const REAR_DROP := 14.0                 # the back rail hangs this far below the front one (px at 1280 high)
+var rank := Rank.MID
 var depth := 0.0
 # Swing toward (+) / away from (−) the camera, driven by the phone's lean:
 # a damped pendulum in depth whose rate follows the string length. Visual,
@@ -636,8 +645,17 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_entry_run = 0.0
 	_admire_t = 0.0
 	_vain_in = dice.randf_range(4.0, 8.0)
-	# Armoured kinds keep to the middle plane: their plates are world-sized.
-	depth = 0.0 if k == Kind.SHIELD or k == Kind.BOSS else dice.randf_range(-0.85, 0.85)
+	# Its rank: armoured kinds keep to the middle (their plates are world
+	# sized); the rest spread over the three, most in the middle. One roll,
+	# as before, picks the plane and a little play within it.
+	rank = Rank.MID
+	var pl := Rank.MID
+	var jitter := 0.0
+	if k != Kind.SHIELD and k != Kind.BOSS:
+		var roll := dice.randf()
+		pl = Rank.BACK if roll < 0.28 else (Rank.MID if roll < 0.7 else Rank.FRONT)
+		jitter = (fposmod(roll * 7.0, 1.0) - 0.5) * 0.1
+	_apply_rank(pl, jitter, false)
 	_rope_side.clear()
 	_depth_sort()
 	_pluck_cd = 0.0
@@ -751,6 +769,7 @@ func pose(k: Kind, at: Vector2) -> void:
 	size_k = 1.0
 	radius = RADIUS[k]
 	rod_half = ROD_HALF
+	rank = Rank.MID
 	depth = 0.0
 	temper = Temper.CALM
 	pos = at
@@ -2997,8 +3016,54 @@ func _sway_step(dt: float) -> void:
 	_sway_a = -_sway_amp * w * w * sn
 
 
+## How its swing toward or away from you (the phone's lean) shows: a slight
+## change of size, for the eye only. The plane's own size is in the radius
+## (see _apply_plane), so the hit area goes with what you see.
 func depth_scale() -> float:
+	return 1.0 + 0.04 * z_swing
+
+
+## Strings further back are finer.
+func rope_scale() -> float:
 	return 1.0 + 0.12 * seen_depth()
+
+
+## Puts it in plane `p`: its depth, its size (and with it the hit area) and,
+## for the back row, its hook on the rear rail. `move` carries the string
+## and body along (after the spawn has laid them out).
+func _apply_rank(p: Rank, jitter := 0.0, move := true) -> void:
+	var was := rank
+	rank = p
+	depth = clampf(float(RANK_DEPTH[p]) + jitter, -0.9, 0.9)
+	radius = RADIUS[kind] * size_k * float(RANK_SCALE[p])
+	rod_half = ROD_HALF * size_k * float(RANK_SCALE[p])
+	var drop := REAR_DROP * (_screen_h / 1280.0)
+	var dy := (drop if p == Rank.BACK else 0.0) - (drop if was == Rank.BACK else 0.0)
+	if dy != 0.0:
+		# The hook moves to the other rail; the string is that much shorter
+		# (or longer), so the body comes to hang just where it would have.
+		anchor.y += dy
+		pos.y += dy
+		goal_length = maxf(goal_length - dy, 20.0)
+		length = minf(length, goal_length)
+		if move:
+			for i in N:
+				_pts[i].y += dy
+				_prev[i].y += dy
+	_m_key = -1
+	_depth_sort()
+
+
+## A row keeps to one plane.
+func set_rank(p: Rank) -> void:
+	_apply_rank(p, 0.0, true)
+
+
+## Where it is drawn, against where it is (the field's own place): the
+## planes move a little apart with the phone's lean and as you aim, which
+## shows the room's depth. For the eye only, and a few px at most.
+func set_parallax(view: Vector2, aim: Vector2) -> void:
+	position = view * (float(RANK_PAR[rank]) - 1.0) + aim * float(RANK_AIM[rank])
 
 
 ## Depth as drawn: where it hangs, plus how far it is swinging in or out.

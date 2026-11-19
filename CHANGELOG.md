@@ -4,6 +4,66 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.8 – Dybde
+
+Feltet har fått dybde, som i et 2.5D-spill. Under panseret er spillet fortsatt 2D, med
+samme styring og samme fysikk. Bildet viser at fiendene henger på ulik avstand, og at
+rommet har lag.
+
+### Nytt
+
+- **Tre rader på ulik avstand:**
+  - **Bakerste rad** (omtrent 3 av 10) henger fra en egen, slankere skinne litt bak og
+    under den fremste. Fiendene der er 10 % mindre, og de glir inn i rommets dis: de tar
+    farge fra veggen og har tynnere tau.
+  - **Midterste rad** (omtrent 4 av 10) er som før. Vokteren og Spinneren henger alltid
+    her, og det gjør også rekkene.
+  - **Fremste rad** (omtrent 3 av 10) er 5 % større og litt lysere, og skyggen deres
+    faller lenger ut og mykere på veggen.
+- **Treffsonen følger størrelsen du ser.** Før var en fiende tegnet opptil 12 % større
+  eller mindre enn treffsonen sin. Nå er de like. Bare når du vipper telefonen, svinger
+  fienden inntil 4 % i størrelse, og det er bare for øyet.
+- **Lagene beveger seg hver for seg:**
+  - Når du vipper telefonen, flytter veggen seg minst, så bakerste rad, så midten og den
+    fremste raden. Nærmest deg driver noen store, myke støvkorn som flytter seg mest.
+  - Når du sikter, glir veggen og bakerste rad litt med siktet og støvkornene mot det,
+    som om du lener deg for å se langs skuddet. Feltet du skyter i og spretterten står
+    stille under fingeren.
+- **Lys med avstand:** fiendene nær lampen er litt lysere, og skyggene på veggen følger
+  svaiingen.
+
+### Rettferdig
+
+- **Ingenting du treffer eller får poeng for, flytter seg med lagene.** Bare tegningen
+  forskyves, med høyst noen få punkter.
+- **Mindre bevegelse** skrur av lagbevegelsen når du sikter, og støvkornene driver
+  saktere. Vippingen har sin egen bryter i innstillingene, som før. **Kamerabevegelse
+  av** skrur også av lagbevegelsen når du sikter.
+- På laveste effektnivå er støvkornene av.
+
+### Balanse
+
+Målt med botspillerne på de samme åtte frøene:
+
+| Spiller | v8.6 | v8.7 | v8.8 | Treff i v8.8 |
+|---|---|---|---|---|
+| Svak | 197 s | 193 s | 215 s | 69 % |
+| Middels | 283 s | 272 s | 248 s | 73 % |
+| God | 308 s | 273 s | 348 s | 68 % |
+
+Snittet av de tre er 270 s, mot 263 s i v8.6, og treffprosenten er den samme. Nivåene
+svinger i hver sin retning fra måling til måling. Med åtte runder per nivå kan medianen
+for ett nivå flytte seg 15–25 % av tilfeldigheter alene. Radene gjør altså ikke spillet
+merkbart lettere eller vanskeligere.
+
+### Ytelse
+
+I et fast, travelt felt med 21 fiender er skripttiden per bilde 8,7 ms i v8.6 og 8,9 ms
+i v8.8, målt på utviklingsmaskinen i omganger. Svaiingen og dybden koster altså rundt
+0,2 ms per bilde, innenfor støyen. En første versjon av dybden kostet 0,6 ms, fordi
+fargen på disen ble slått opp for hver fiende hver gang. Den slås nå opp én gang per
+bilde.
+
 ## v8.7 – Liv i rekkene
 
 Fiendene kommer ikke lenger bare inn og blir hengende. De svinger inn, svaier i hver sin

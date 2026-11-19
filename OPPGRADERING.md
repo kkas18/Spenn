@@ -18,7 +18,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
 | 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3), dager på rad (v8.5) | Ferdig |
-| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4), myke farger og figurer med egen karakter (v8.6), svaiing, innganger og erting (v8.7) | Ferdig |
+| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4), myke farger og figurer med egen karakter (v8.6), svaiing, innganger og erting (v8.7), dybde i 2.5D (v8.8) | Ferdig |
 | 5 | Lyd | Gjenstår |
 | 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
 | 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
@@ -515,6 +515,104 @@ gjør.
 - En egen måling av svaiingen alene ga bredder innenfor 1 punkt av målet og ingen rykk
   (største andrederivert 0,04 punkter per bilde²).
 
+### Trinn 4d – Dybde (v8.8, ferdig)
+
+Du ba om mer dybde, som i et 3D-spill, men i 2.5D. Under panseret er spillet fortsatt 2D,
+med samme styring og samme fysikk. Bildet viser at fiendene henger på ulik avstand, og at
+rommet har lag. Dette valgte du: de bakerste er litt mindre, og treffsonen følger alltid
+det du ser.
+
+**Hva som fantes fra før:** hver fiende hadde en tilfeldig dybde (−0,85 til 0,85). Den
+gjorde fienden opptil 12 % større eller mindre på skjermen, mørkere bak og lysere foran,
+og ga skyggen på veggen riktig avstand. Treffsonen fulgte ikke med. Telefonens helning
+flyttet allerede verden og ett lag med fjerne tråder.
+
+#### Tre rader
+
+| Rad | Andel | Størrelse og treffsone | Utseende |
+|---|---|---|---|
+| Bakerst | 28 % | 90 % | Henger fra en egen skinne bak og under den fremste. Glir inn i rommets dis (tar farge fra veggen), tynnere tau |
+| Midten | 42 % | 100 % | Som før. Vokteren og Spinneren (skjoldene hører til midten) og alle rekker |
+| Fremst | 30 % | 107 % | Litt lysere, skyggen på veggen faller lenger ut og mykere |
+
+- **Samme høyde:** en fiende på den bakre skinnen har så mye kortere tau at den henger
+  akkurat der den ellers ville hengt. Den når ikke linjen tidligere.
+- **Snittstørrelsen er nesten den samme** som før (under 1 % mindre): andelene og
+  størrelsene veier hverandre opp.
+- **Tau i ulike rader krysser hverandre fritt.** Kroppene kolliderer fortsatt med alle, så
+  kjedereaksjoner og trengsel virker som før.
+- **Skyggen på veggen** var riktig fra før: en fiende langt fra veggen (foran) kaster
+  skygge lenger ut og mykere. (I svaret mitt til deg skrev jeg det motsatt for bakerste
+  rad. Det er rettet her, og spillet følger det som er riktig.)
+
+#### Lag som beveger seg hver for seg
+
+Hvor mye hvert lag flytter seg, der feltet du skyter i er 1:
+
+| Lag | Når telefonen vippes | Når du sikter (opptil 8 punkter) |
+|---|---|---|
+| Veggen og de fjerne trådene | 0,4 | +0,9 (med siktet) |
+| Bakerste rad og den bakre skinnen | 0,88 | +0,22 |
+| Midten (feltet, spretterten, kulene) | 1 | 0 |
+| Fremste rad | 1,08 | −0,12 |
+| Støvkornene nærmest deg | 1,5 | −0,6 (mot siktet) |
+
+- **Feltet står stille når du sikter.** Spretterten og kulene flytter seg ikke under
+  fingeren. Det er rommet rundt som glir, som om du lener deg for å se langs skuddet.
+- **Bare tegningen flytter seg.** Treff og poeng regnes der fienden er. Når telefonen
+  vippes, svinger en fiende også inntil 4 % i størrelse (før 12 %), bare for øyet. Bakerste rad kan
+  være tegnet opptil om lag 3 punkter fra treffsonen når telefonen vippes helt ut, og
+  2 punkter når du sikter (vippingen holdes stille mens du sikter).
+- **Støvkornene:** seks store, myke korn uten skarpe kanter, litt lysere i lampens lys. På
+  laveste effektnivå er de av.
+- **Lys:** fiendene nær lampen er opptil 6 % lysere.
+
+#### Rettferdighet og innstillinger
+
+- **Mindre bevegelse** og **Kamerabevegelse av** skrur av lagbevegelsen når du sikter.
+  Med Mindre bevegelse driver støvkornene saktere. Vippingen har sin egen bryter, som før.
+- **Testen `repeat` er endret:** den andre runden har nå oppdrag som ikke kan nås på 100
+  sekunder (270 sekunder, bølge 8, 150 000 poeng). Før brukte den kjeder, kutt og knuste
+  rekker på nivå 30, men de har så lave tak at radene gjorde at testskuddene nådde ett av
+  dem. Det testen skal vise, at samme frø gir samme runde, er uendret.
+
+#### Balanse
+
+Målt med botspillerne på de samme åtte frøene og tre nivåer:
+
+| Spiller | v8.6 | v8.7 | v8.8 første forsøk | v8.8 |
+|---|---|---|---|---|
+| Svak | 197 s, treff 71 % | 193 s, 69 % | 191 s, 69 % | 215 s, 69 % |
+| Middels | 283 s, 72 % | 272 s, 73 % | 225 s, 70 % | 248 s, 73 % |
+| God | 308 s, 68 % | 273 s, 68 % | 330 s, 68 % | 348 s, 68 % |
+
+- **Første forsøk** hadde to små skjevheter: bakerste rad hang 17 punkter lavere, fordi
+  kroken satt på den bakre skinnen, og snittstørrelsen var 1,6 % mindre. Begge er
+  rettet: tauet er kortere med det samme, og fremste rad er 7 % større.
+- **v8.8:** snittet av de tre nivåene er 270 s, mot 263 s i v8.6, og treffprosenten er den
+  samme. Nivåene flytter seg i hver sin retning mellom målinger. Det er tilfeldigheter:
+  med åtte runder per nivå kan medianen for ett nivå variere 15–25 %. Det er mer enn
+  ±40 s, som jeg anslo tidligere.
+
+#### Ytelse
+
+Den vanlige målingen per del spiller med skudd, så to versjoner får ulikt antall
+fiender og effekter (12 mot 21 fiender i samme måling). Til sammenligning er derfor et
+fast felt brukt: de samme 21 fiendene holdt der de henger, ingen skudd, median
+skripttid per bilde over 600 bilder, beste av tre, versjonene i omganger.
+
+| Versjon | Skripttid per bilde |
+|---|---|
+| v8.6 | 9,0 og 8,5 ms |
+| v8.7 | 9,1, 8,5, 8,8, 8,3, 8,9 og 8,9 ms |
+| v8.8 | 9,3, 8,5, 8,9 og 9,1 ms |
+
+- **Svaiing og dybde koster rundt 0,2 ms per bilde,** innenfor støyen.
+- **Per fiende:** den nye fargeberegningen koster 1,7 µs mer per kall, og
+  lagoppdateringen 14 µs per bilde for hele feltet.
+- **Én feil er rettet underveis:** disens farge ble slått opp for hver fiende ved hver
+  fargeberegning, og det kostet 0,6 ms per bilde. Den slås nå opp én gang per bilde.
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -680,6 +778,11 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Rolige ansikter tegnes sjeldnere, travle hvert bilde (v8.6).** Rikere ansikter koster
   mer å tegne. I stedet for å kutte i ansiktene tegnes de rolige på nytt sjeldnere på
   lavere effektnivå, mens alt som er et varsel, tegnes hvert bilde.
+- **Dybden er mest for øyet, men treffsonen følger størrelsen (v8.8).** Lagene flytter
+  bare tegningen, med høyst noen få punkter, så det du treffer og får poeng for, ikke
+  avhenger av hvordan telefonen holdes. Størrelsen på radene er derimot ekte: det var
+  ditt valg at de bakerste skulle være litt vanskeligere å treffe. Snittstørrelsen er
+  holdt omtrent lik, så spillet ikke blir vanskeligere totalt.
 - **Svaiingen er ekte (v8.7).** En svaiing som bare var tegnet, ville flyttet fienden bort
   fra treffsonen. Den er derfor en del av fysikken og gjør spillet vanskeligere. Det er
   veid opp med stille fiender ved linjen og en langsom oppbygging (se trinn 4c).
@@ -715,6 +818,9 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Ansiktene er små på de minste figurene.** På Pendelen, Dykkeren og små Vakter er
   øynene 5–6 piksler i radius i spillets oppløsning, så bryn og munn er bare noen få
   piksler på en liten telefon. Uttrykket leses mest på øynene.
+- **Bakerste rad kan være tegnet noen få punkter fra treffsonen** når telefonen vippes
+  helt ut (om lag 3 punkter) eller når du sikter (om lag 2 punkter). Det er valgt for at
+  treff ikke skal avhenge av hvordan telefonen holdes.
 - **Tilbehøret er lite på de minste figurene.** En spire eller propell på en liten Vakt
   er 10–15 piksler i spillets oppløsning. Det synes, men bare så vidt på en liten
   telefon.

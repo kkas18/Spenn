@@ -17,6 +17,7 @@ var charge := 0.0              # 0..1, set by the game
 var hot := false               # overload running
 var _shown := 0.0
 var _clock := 0.0
+var rear_off := Vector2.ZERO   # where the rear rail is drawn against the front one (set by the game)
 
 
 func setup(layout: Layout, list: Array[Target]) -> void:
@@ -59,6 +60,22 @@ func _draw() -> void:
 	# Drawn past both edges so tilt parallax never shows the beam's ends.
 	var x0 := -32.0
 	var ww := w + 64.0
+	# The rear rail (v8.8): a slimmer beam nearer the wall, which the back
+	# row hangs from, seen just under the front one. It moves a little less
+	# than the front one as the phone leans (see Target.RANK_PAR).
+	# Further off, it takes on the wall's colour, like the back row.
+	var ry := l.rail_y + 3.0 + Target.REAR_DROP * l.scale - 3.5
+	var haze := Pal.world("top")
+	draw_set_transform(rear_off)
+	draw_rect(Rect2(x0, ry + 6.0, ww, 4.0), Color(0, 0, 0, 0.16))
+	draw_rect(Rect2(x0, ry - 1.0, ww, 6.5), Pal.METAL_DARK.lerp(haze, 0.35))
+	draw_rect(Rect2(x0, ry, ww, 4.0), Pal.METAL.lerp(haze, 0.4))
+	draw_rect(Rect2(x0, ry, ww, 1.2), Color(Pal.METAL_LIGHT.lerp(haze, 0.3), 0.75))
+	var rx := 64.0
+	while rx < w:
+		Pal.disc(self, Vector2(rx, ry + 2.2), 1.2, Color(Pal.METAL_LIGHT.lerp(haze, 0.3), 0.6))
+		rx += 64.0
+	draw_set_transform(Vector2.ZERO)
 	if _flex_amp > 0.0 and _flex_t < 1.2:
 		_line.clear()
 		for i in 33:
@@ -94,7 +111,7 @@ func _draw() -> void:
 	# single batch however many strings hang from the beam.
 	for t in targets:
 		if _shows(t):
-			_hook_plate(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
+			_hook_plate(t.anchor + t.position + Vector2(0, _bend(t)), t.hook_angle(), t.rope_alpha)
 	draw_set_transform(Vector2.ZERO)
 	var x := 32.0
 	while x < w:
@@ -105,7 +122,7 @@ func _draw() -> void:
 		x += 64.0
 	for t in targets:
 		if _shows(t):
-			_hook_eye(t.anchor + Vector2(0, offset_at(t.anchor.x)), t.hook_angle(), t.rope_alpha)
+			_hook_eye(t.anchor + t.position + Vector2(0, _bend(t)), t.hook_angle(), t.rope_alpha)
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -130,6 +147,11 @@ func _draw_inlay(y: float) -> void:
 	for sx: float in [-1.0, 1.0]:
 		var e := _inlay[0] if sx < 0.0 else _inlay[16]
 		Pal.disc(self, e, 2.4 + 1.2 * pulse, Pal.GOLD_LIGHT)
+
+
+## The front beam's flex where this hook hangs (the rear rail does not flex).
+func _bend(t: Target) -> float:
+	return 0.0 if t.rank == Target.Rank.BACK else offset_at(t.anchor.x)
 
 
 func _shows(t: Target) -> bool:

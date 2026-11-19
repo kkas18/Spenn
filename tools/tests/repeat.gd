@@ -34,7 +34,10 @@ func _test() -> void:
 	var tier: int = device.tier
 	device.tier = 0
 	device.tier_changed.emit()
-	var second := await _play([["chain", 30], ["cut", 30], ["break", 30]])
+	# Out of reach in 100 s at any level of play: 270 s survived, wave 8 and
+	# 150 000 points (the capped goals of level 30). Chains, cuts and broken
+	# rows are capped low enough that a run can make them.
+	var second := await _play([["survive", 30], ["wave", 30], ["score", 30]])
 	device.tier = tier
 	device.tier_changed.emit()
 	if second.is_empty():

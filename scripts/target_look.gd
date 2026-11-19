@@ -304,7 +304,17 @@ func color() -> Color:
 	# separates into layers and the front row reads first.
 	var sd := seen_depth()
 	var back := maxf(0.0, -sd)
-	base = base.darkened(0.4 * back).lerp(Color("2A3140"), 0.14 * back).lightened(0.08 * maxf(0.0, sd))
+	# v8.8: the haze is the room's own colour (read once a frame), and
+	# whoever hangs in the lamp's light catches a little more of it.
+	if back > 0.0:
+		var frame := Engine.get_process_frames()
+		if frame != _haze_frame:
+			_haze_frame = frame
+			_haze = Pal.world("low")
+		base = base.darkened(0.2 * back).lerp(_haze, 0.38 * back)
+	var lamp := Vector2(field_w * 0.32, anchor.y - 63.0)
+	var lit := clampf(1.0 - pos.distance_to(lamp) / (_screen_h * 0.55), 0.0, 1.0)
+	base = base.lightened(0.1 * maxf(0.0, sd) + 0.06 * lit)
 	var ew := evolve_warning()
 	if ew > 0.0:
 		# About to harden: a quickening pale pulse.
@@ -338,6 +348,8 @@ func _base_color() -> Color:
 
 
 const SHADOW_OFF := Vector2(5.0, 6.0)
+static var _haze := Color()        # the room's haze this frame (see color)
+static var _haze_frame := -1
 const B_JELLY := 0.0
 const B_SHADOW := 4.0
 const B_CORD := 8.0
@@ -440,7 +452,6 @@ func _draw_rope(ci: RID) -> void:
 	# like its body (see color), so strings crossing in two planes read as
 	# one behind the other.
 	var sd := seen_depth()
-	var ds := depth_scale()
 	match style:
 		Rope.BUNGEE:
 			# Elastic: thick, thinner the more it is stretched.
@@ -455,7 +466,7 @@ func _draw_rope(ci: RID) -> void:
 			# Only a dark core here; the links are drawn on the face layer.
 			hw = 0.7
 			band = B_WIRE
-	hw *= ds
+	hw *= rope_scale()
 	_r_pts.resize(m * 2)
 	_r_uv.resize(m * 2)
 	var run := 0.0

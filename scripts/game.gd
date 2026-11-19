@@ -192,6 +192,7 @@ var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
 var mind: Mind           # how every enemy answers your aim (scripts/mind.gd)
 var habits := Habits.new()  # what they know of you, kept between runs (scripts/habits.gd)
 var backdrop: Backdrop
+var near: NearLayer
 var stage: MenuStage
 var targets: Array[Target] = []
 var balls: Array[Ball] = []
@@ -245,6 +246,7 @@ var _mission_t := 0.0
 # shifts the world a few px against the wall behind it.
 const TILT_PX := 18.0
 var _tilt := Vector2.ZERO
+var _aim_par := Vector2.ZERO        # aim parallax (px), see _update_depth
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
 var _gyro := Vector2.ZERO       # integrated rotation (rad), easing back to 0
@@ -298,6 +300,9 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
+	# The nearest layer: soft motes between you and the field (v8.8).
+	near = NearLayer.new()
+	add_child(near)
 	# Shock rings refract the world (not the HUD); hidden while none are live.
 	var shock_layer := CanvasLayer.new()
 	shock_layer.layer = 4
@@ -341,6 +346,10 @@ func _ready() -> void:
 
 
 func _apply_layout() -> void:
+	for t in targets:
+		# The screen's height before any step has run (sizes and the rear
+		# rail's drop are scaled by it at the spawn).
+		t._screen_h = layout.size.y
 	rail.setup(layout, targets)
 	backdrop.setup(layout)
 	backdrop.targets = targets
@@ -350,6 +359,7 @@ func _apply_layout() -> void:
 	slingshot.setup(layout)
 	hud.setup(layout)
 	stage.setup(layout)
+	near.setup(layout)
 	var ry := hud.menu_record_y()
 	# The eyes keep out of the whole band with the menu's text and the
 	# mission tickets, wall to wall.
@@ -359,7 +369,7 @@ func _apply_layout() -> void:
 func _on_resize() -> void:
 	layout = Layout.compute(get_viewport())
 	for t in targets:
-		t.anchor.y = layout.rail_y + 3.0
+		t.anchor.y = layout.rail_y + 3.0 + (Target.REAR_DROP * layout.scale if t.rank == Target.Rank.BACK else 0.0)
 	_apply_layout()
 	if state == State.MAIN_MENU:
 		title.setup(layout, hud.display_font())
@@ -711,6 +721,8 @@ func _spawn_formation(kind: Target.Kind, n: int) -> void:
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
 		t.aggression = director.aggression()
 		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
+		# A row hangs in one plane, the middle one.
+		t.set_rank(Target.Rank.MID)
 		_begin_entry(t, row_dir)
 		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * (0.2 - 0.1 * v)), Pal.kind_color(kind), 0.15 + i * 0.09)
 		_maybe_intro(t)
@@ -841,6 +853,7 @@ func _process(delta: float) -> void:
 	else:
 		_menu_world_t = 0.0
 	_update_tilt(delta)
+	_update_depth()
 	_update_ammo(delta)
 	_take_queued_aim()
 	_update_eyes()
@@ -865,6 +878,32 @@ func _process(delta: float) -> void:
 		_spawn_minions()
 		_medic_work()
 		_boss_stages()
+
+
+## The room's depth as you play (v8.8). As you aim, the planes move apart a
+## little, as if you leaned to look along the shot: the wall and the back
+## row slide with the aim, the near motes against it, and the field itself
+## stays put under your finger. With the phone's lean (fx.view) each plane
+## moves by its own share. For the eye only: a few px, and nothing that is
+## hit or scored moves. Off with Reduced motion or with Camera off.
+const AIM_PAR_PX := 8.0
+
+
+func _update_depth() -> void:
+	var want := Vector2.ZERO
+	if slingshot.is_aiming() and Prefs.camera and not Prefs.reduced_motion:
+		var d := layout.pouch_rest() - slingshot.pouch
+		if d.length() > 4.0:
+			want = Vector2(d.normalized().x * AIM_PAR_PX * slingshot.power * layout.scale, 0.0)
+	_aim_par = _aim_par.lerp(want, Pal.damp(0.18, Motion.rd))
+	var v := fx.view
+	for t in targets:
+		if t.phase != Target.Phase.OFF:
+			t.set_parallax(v, _aim_par)
+	var b := Target.Rank.BACK
+	rail.rear_off = v * (float(Target.RANK_PAR[b]) - 1.0) + _aim_par * float(Target.RANK_AIM[b])
+	backdrop.aim = _aim_par
+	near.position = v * 1.5 - _aim_par * 0.6
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity

@@ -57,6 +57,7 @@ var _pulsing := false
 var _flow := 0.0
 var targets: Array[Target] = []  # their shadows fall on the wall
 var view := Vector2.ZERO       # tilt parallax (world px); this layer moves less
+var aim := Vector2.ZERO        # aim parallax (px): as you aim this layer slides the most (v8.8)
 var _heat := 0.0
 signal energy_arrived(col: Color)
 const ENERGY_UP := 0.3         # s up the fibre
@@ -460,7 +461,7 @@ func _spawn_drop() -> void:
 func _draw_layer() -> void:
 	if l == null:
 		return
-	_layer.position = view * 0.4
+	_layer.position = view * 0.4 + aim * 0.9
 	# Soft textured shapes draw directly; every line, bead and plate is
 	# collected in `_ink_l` and goes out as one draw call at the end.
 	_ink_l.clear()
