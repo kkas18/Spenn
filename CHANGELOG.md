@@ -4,6 +4,61 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.7 – Liv i rekkene
+
+Fiendene kommer ikke lenger bare inn og blir hengende. De svinger inn, svaier i hver sin
+rytme og erter deg.
+
+### Nytt
+
+- **Innganger med personlighet:**
+  - De fleste svinger inn i tauet fra siden de henger på og gynger seg inn i svaiingen.
+  - Dykkeren stuper ned i en strikk og spretter et par ganger før den roer seg.
+  - Snella kommer rullende langs skinnen fra nærmeste kant mens den firer ut snøret.
+  - Tungvekten og Spinneren dunker ned så skinna rister og støvet drysser, og
+    småfiendene i nærheten skvetter.
+  - En rekke svinger inn etter hverandre fra samme side, som en dansetropp.
+- **De svaier rolig fram og tilbake,** hver i sin egen rytme (2,8–3,6 sekunder per
+  svai). En rekke svaier i takt med lederen sin, med en bølge som går bortover rekka. I
+  starten av en runde svaier de nesten ikke. Etter omtrent fire minutter svaier de opptil
+  en tredjedel til en halv kroppsbredde til hver side, og aldri mer enn naboene gir plass
+  til.
+- **De erter deg:**
+  - Bommer du, ler den du var nærmest med tunga ute. Så ler naboene etter tur, og den
+    nærmeste dulter borti den første.
+  - Ryker en knute, svaier hele flokken i takt et øyeblikk, med en bølge som går tvers
+    over feltet, og ler.
+  - Skallfiendene vugger når de ler, og de myke vrikker.
+- **Slik spiller du** har fått en setning om svaiingen: tim skuddet til de snur.
+
+### Rettferdig
+
+- **Jo lavere de henger, jo roligere.** I den øverste tredjedelen av feltet svaier de
+  fullt. Nærmere linjen roer de seg, og helt nede ved den henger de nesten stille. Det er
+  en rettferdig siste sjanse.
+- **Svaiingen stopper for varsler.** Når en fiende smalner blikket før et stup, eller ser
+  dit den skal før den glir til siden, henger den rett. Den svaier heller ikke mens den
+  glir raskt langs skinnen.
+- **Ertingen stopper når du sikter.** En fiende du sikter på, ler ikke og dulter ikke.
+- **Treffsonen følger svaiingen.** Fienden er der du ser den.
+- **Mindre bevegelse:** svaiingen er 40 % av vanlig bredde, og inngangene svinger halvt
+  så mye. Da er fiendene litt lettere å treffe.
+
+### Balanse
+
+Målt med botspillerne på de samme åtte frøene som før:
+
+| Spiller | v8.6 | v8.7 | Treff |
+|---|---|---|---|
+| Svak | 197 s | 193 s | 71 % → 69 % |
+| Middels | 283 s | 272 s | 72 % → 73 % |
+| God | 308 s | 273 s | 68 % → 68 % |
+
+Den første versjonen gjorde rundene 10–14 % kortere. Svaiingen ble derfor dempet nær
+linjen, og den bygger seg opp saktere. Svak og middels spiller varer nå like lenge som
+før. God spiller varer 35 s kortere med samme treffprosent. Det er innenfor spredningen
+(±40 s), men alle tre målingene lå 30–40 s under.
+
 ## v8.6 – Myke farger, ekte figurer
 
 Mykere og mer behagelige farger, og fiender som hver har sin egen karakter. Inspirasjonen

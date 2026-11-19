@@ -18,7 +18,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 1 | Stabilitet, kontroll og jevn flyt (v8.0, v8.0.1) | Ferdig |
 | 2 | Lys og liv: nytt visuelt uttrykk, effekter og feiring (v8.1) | Ferdig |
 | 3 | Én runde til: mål i sikte, oppdrag som ikke låser seg, nye kuler (v8.2), rettferdige fiender (v8.3), dager på rad (v8.5) | Ferdig |
-| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4), myke farger og figurer med egen karakter (v8.6) | Ferdig |
+| 4 | Farger og figurer: fargeharmoni, kulere og morsommere fiender (v8.4), myke farger og figurer med egen karakter (v8.6), svaiing, innganger og erting (v8.7) | Ferdig |
 | 5 | Lyd | Gjenstår |
 | 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
 | 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
@@ -29,7 +29,8 @@ et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som f�
 å ta én runde til (trinn 3) ble flyttet foran lyd, innstillinger og kode. Etter v8.2 ba
 du om fargeharmoni og kulere, morsommere fiender. Det ble trinn 4 (v8.4). Etter v8.5 ba
 du om mykere farger og fiender med hver sin karakter. Det ble v8.6, som en fortsettelse
-av trinn 4.
+av trinn 4. Deretter ba du om fiender som svaier og erter, og om mer dybde, som i et
+2.5D-spill. Det ble v8.7 og v8.8.
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -426,6 +427,94 @@ er tettere.
   svette og blunk sitter riktig på de nye ansiktene. I tillegg menyen, samlingen og
   kortene, der teksten nå leses på den lysere veggen.
 
+### Trinn 4c – Liv i rekkene (v8.7, ferdig)
+
+Du ba om at fiendene ikke bare skal komme inn i en pulje, men svaie fram og tilbake og
+erte. Før hang de nesten stille. Brisen var svak, og et drag tilbake under kroken stoppet
+all svaiing over 10 piksler.
+
+#### Svaiing
+
+- **Ekte bevegelse, ikke bare utseende.** Kroppen styres langs en bane x = A·sin(fase)
+  rundt kroken. Styringen tar med det tauet ville trukket den tilbake mot midten, og det
+  luften bremser. Treffsonen følger altså kroppen.
+- **Hver sin rytme:** 2,8–3,6 sekunder per svai. Rytmen og startpunktet regnes fra
+  rundens steg og fiendens plass, så det trekkes ingen terninger. Samme frø gir samme
+  runde.
+- **En rekke svaier i takt med lederen,** med en bølge bortover rekka. Når en knute ryker,
+  trekkes hele flokken mot én takt i 1,8 sekunder, med en bølge tvers over feltet.
+- **Bredden:** opptil 17 punkter til hver side på en skjerm 1280 punkter høy. Den
+  avhenger av type (Tungvekt 0,45, Vokter 0,5, Spinneren 0,2, Pipp 1,2, Dykker 1,1) og
+  temperament (dristig 1,15, forsiktig 0,75). Den bygger seg opp gjennom runden og er
+  full etter omtrent fire minutter. En rolig bølge gir 70 %, en vill 115 %.
+- **Aldri mer enn naboene gir plass til:** halve avstanden til nærmeste nabo i samme
+  høyde, eller til veggen.
+- **Slått ut av banen** (truffet, dyttet eller kollidert): da tar tauet over et
+  øyeblikk, og svaiingen fortsetter der kroppen er. Den hopper aldri.
+
+#### Innganger
+
+| Type | Inngang |
+|---|---|
+| De fleste | Svinger inn i tauet fra siden de henger på, ut mot midten, og gynger seg inn i svaiingen |
+| Dykker | Stuper ned i en strikk: mykere tau i 1,1 s, dypere dukk og et par sprett |
+| Snelle | Ruller langs skinnen fra nærmeste kant mens snøret firer ut |
+| Tungvekt, Spinneren | Dunker ned: skinna rister, støv drysser, småfiendene i nærheten skvetter, og den gynger |
+| Rekker | Svinger inn etter hverandre fra samme side, som en dansetropp |
+
+#### Erting
+
+- **Bom:** den ballen kom nærmest, ler når skrekken har gått over. Opptil tre naboer
+  innen 240 punkter ler etter tur, og den nærmeste dulter borti den første.
+- **Tapt knute:** de nærmeste ler med en gang, de andre etter tur, og flokken svaier i
+  takt.
+- Skallfiendene vugger når de ler, og de myke vrikker.
+
+#### Rettferdighet
+
+- **Stille ved linjen.** Svaiingen er full i den øverste tredjedelen av feltet og avtar
+  mot linjen, til 30 % ved 80 % av veien ned. Helt nede (i fare-båndet) henger fienden nesten stille.
+  Det er det skuddet som teller mest.
+- **Ingen svaiing under varsler:** smalt blikk før et stup, pupiller som ser dit den skal,
+  et raskt sprang langs skinnen, en ordre om å stupe, eller mens den kommer inn.
+- **Ingen erting når du sikter.** En fiende du sikter på eller som viser et varsel, ler
+  ikke og dulter ikke.
+- **Mindre bevegelse:** 40 % bredde og halvt så kraftig sving inn. Da er fiendene litt
+  lettere å treffe, og dagens utfordring blir bare lik for to spillere med samme
+  innstilling.
+
+#### Balanse
+
+Målt med botspillerne på de samme åtte frøene og tre nivåer. Botspilleren skyter alltid
+den laveste fienden, og den sikter litt foran en fiende som beveger seg, slik en person
+gjør.
+
+| Spiller | v8.6 | Første forsøk | Andre forsøk | v8.7 |
+|---|---|---|---|---|
+| Svak | 197 s, treff 71 % | 177 s, 68 % | 179 s, 69 % | 193 s, 69 % |
+| Middels | 283 s, 72 % | 245 s, 71 % | 302 s, 72 % | 272 s, 73 % |
+| God | 308 s, 68 % | 266 s, 68 % | 274 s, 67 % | 273 s, 68 % |
+
+- **Første forsøk** (opptil 22 punkter, halv bredde ved linjen og 60 % bredere under
+  jubel) gjorde rundene 10–14 % kortere, med nesten samme treffprosent. Fienden som
+  betyr mest, den laveste, svaiet fortsatt, og jubelen gjorde det vanskeligere rett etter
+  en tapt knute.
+- **Andre forsøk:** stille ved linjen og bare 20 % bredere under jubel.
+- **Tredje (v8.7):** opptil 17 punkter, full styrke først etter omtrent fire minutter,
+  og roligere allerede fra midten av feltet.
+- **Svak og middels spiller varer nå like lenge som før.** God spiller varer 35 s
+  kortere med samme treffprosent. Det er innenfor spredningen for gode spillere (±40 s),
+  men alle tre målingene lå 30–40 s under. Spillet er laget for å fortsette å presse
+  gode spillere, så det er ikke justert mer.
+
+#### Kontroll
+
+- Hele testpakken passerer. `physics` måler 0,00–0,02 rystelser per kropp og sekund i
+  tett felt (grensen er 0,5): svaiingen er jevn og regnes ikke som risting. `repeat`
+  viser at samme frø fortsatt gir samme runde.
+- En egen måling av svaiingen alene ga bredder innenfor 1 punkt av målet og ingen rykk
+  (største andrederivert 0,04 punkter per bilde²).
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -591,6 +680,9 @@ Tallene er median, med laveste og høyeste runde i parentes.
 - **Rolige ansikter tegnes sjeldnere, travle hvert bilde (v8.6).** Rikere ansikter koster
   mer å tegne. I stedet for å kutte i ansiktene tegnes de rolige på nytt sjeldnere på
   lavere effektnivå, mens alt som er et varsel, tegnes hvert bilde.
+- **Svaiingen er ekte (v8.7).** En svaiing som bare var tegnet, ville flyttet fienden bort
+  fra treffsonen. Den er derfor en del av fysikken og gjør spillet vanskeligere. Det er
+  veid opp med stille fiender ved linjen og en langsom oppbygging (se trinn 4c).
 - **Ingen musikk under runden.** Dette ble bestemt i v7.57 og står. Lydarbeidet i trinn 5
   gjelder effektene.
 - **Ingen pauseknapp.** Fjernet etter ønske tidligere. Pause er dobbelttrykk eller

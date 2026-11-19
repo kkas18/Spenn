@@ -136,6 +136,47 @@ var _taunt := -1.0             # time into a taunt (<0: none)
 var _taunt_in := 3.0           # until the next unprompted taunt
 var _taunt_delay := -1.0       # a near miss is mocked a moment later
 static var _last_tease_step := -1000   # the substep of the last "na-na" (one per 1.6 s at most)
+var _mock_t := -1.0            # laughing at a miss in a moment (see mock)
+var _mock_buddy: Target = null # ... and elbowing this neighbour as it does
+
+# Sway (v8.7): hanging, each swings slowly round its hook in a rhythm of its
+# own, a row in time with its leader (a ripple running along it), the whole
+# crowd as one when a knot is lost. The swing is real (the hit area goes
+# with it) and steady, so a shot can be timed: a path x = A sin(phase)
+# that the body is steered along, against the string's pull back to the
+# middle. Knocked off it (a hit, a shove), the string has it for a moment
+# and the swing picks up again from wherever it is. It stops for every
+# warning, and it never takes more room than the neighbours leave.
+const SWAY_PX := 17.0          # the widest swing either way (px at 1280 high), late in a run
+const SWAY_KP := 6.0           # how firmly it keeps to its path (1/s²)
+const SWAY_KD := 3.0           # ... and how its speed is held to it (1/s)
+const SWAY_KIND := {Kind.RING: 1.0, Kind.HEAVY: 0.45, Kind.SPLIT: 0.9, Kind.ROD: 0.0, Kind.DROP: 1.1,
+	Kind.SHIELD: 0.5, Kind.BOSS: 0.2, Kind.REEL: 0.8, Kind.SHADE: 0.9, Kind.MEDIC: 0.8, Kind.MIRROR: 0.6,
+	Kind.PIPP: 1.2, Kind.PAKKIS: 0.9, Kind.CAPTAIN: 0.7, Kind.SEER: 0.8, Kind.SNEAK: 0.6}
+const SWAY_TEMPER := [1.0, 0.75, 1.15, 1.05]  # calm, timid, bold, erratic
+const CHEER_TIME := 1.8        # a knot lost: the crowd sways as one this long
+const CHEER_W := 2.6           # ... to this beat (rad/s)
+static var sway_level := 0.0   # 0..1, set by the game: how lively the crowd is now
+static var cheer_t := 0.0      # > 0: the crowd is cheering a knot it took
+static var cheer_phase := 0.0
+var _sway_w := 2.0             # its own rhythm (rad/s)
+var _sway_ph := 0.0            # where in its swing it is (rad)
+var _sway_amp := 0.0           # how wide it swings now (px)
+var _sway_on := false          # steering this step
+var _sway_free := 0.0          # > 0: knocked off its path; the string has it
+var _sway_ax := 0.0            # the hook's x a step ago (for its speed)
+var _sway_av := 0.0            # the hook's speed (px/s)
+var _sway_x := 0.0             # this step's place on the path (px from the hook)
+var _sway_v := 0.0             # ... its speed there
+var _sway_a := 0.0             # ... and the acceleration along it
+var _low := 0.0                # how far down toward the line it hangs (0 at the rail, 1 at the line)
+
+# Entrances (v8.7): how it arrives on its string.
+enum Entry { DROP, SWING, BUNGEE, RAIL, THUD }
+var entry := Entry.DROP
+var _entry_kick := 0.0         # SWING: sideways speed given as it starts down (px/s)
+var _bungee_t := 0.0           # BUNGEE: the string is soft and springy this long after it lands
+var thud := false              # THUD: landed heavily this step (the game shakes the rail)
 # Teamwork: a sturdy one steps into the line of fire to shield an ally.
 var covered := false           # an ally is guarding this one: it holds still
 var _guard_wait := -1.0        # reaction time before the guard moves
@@ -522,6 +563,25 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	_taunt = -1.0
 	_taunt_in = dice.randf_range(2.0, 4.0)
 	_taunt_delay = -1.0
+	_mock_t = -1.0
+	_mock_buddy = null
+	# Its rhythm and where in it it starts: from the run's step count and its
+	# slot, so no die is drawn for it (the creatures' dice stay as they were).
+	_sway_w = lerpf(1.75, 2.25, _hash01(rope_clock * 7 + slot * 131 + 3))
+	_sway_ph = TAU * _hash01(rope_clock * 13 + slot * 71 + 11)
+	_sway_amp = 0.0
+	_sway_on = false
+	_sway_free = 0.0
+	_sway_ax = anchor_pos.x
+	_sway_av = 0.0
+	_sway_x = 0.0
+	_sway_v = 0.0
+	_sway_a = 0.0
+	_low = 0.0
+	entry = Entry.DROP
+	_entry_kick = 0.0
+	_bungee_t = 0.0
+	thud = false
 	temper = _roll_temper()
 	_roll_trait()
 	hat = _roll_hat(k)
@@ -779,6 +839,21 @@ func _land() -> void:
 		Kind.HEAVY, Kind.BOSS:
 			vel.y += 90.0
 			Sfx.play("clank", 0.8, -10.0)
+	match entry:
+		Entry.BUNGEE:
+			# Into the cord and out again: a soft, springy string for a
+			# moment, a deeper dive and two or three bounces.
+			_bungee_t = 1.1
+			vel.y += 220.0
+			squash_t = 0.0
+			squash_dir = Vector2.DOWN
+		Entry.THUD:
+			# Down with a thump that shakes the rail, then it rocks.
+			thud = true
+			var side := 1.0 if (slot + rope_clock) % 2 == 0 else -1.0
+			vel.x += side * (55.0 if kind == Kind.BOSS else 80.0)
+			ang_vel += side * 3.5
+			Sfx.play("clank", 0.62, -8.0)
 		Kind.MIRROR:
 			tilt = 0.0
 			flash_t = 0.12
@@ -789,6 +864,10 @@ func _land() -> void:
 
 
 func _on_entry() -> void:
+	if entry == Entry.SWING and _entry_kick != 0.0:
+		# Swings in on its string as it comes down, and rocks out of it
+		# into its sway.
+		vel.x += _entry_kick * (0.5 if Prefs.reduced_motion else 1.0) * (_screen_h / 1280.0)
 	match kind:
 		Kind.REEL:
 			Sfx.play("reel", 0.9, -6.0)
@@ -796,6 +875,29 @@ func _on_entry() -> void:
 			hidden_amt = 1.0
 		Kind.DROP:
 			Sfx.play("whoosh", 1.3, -10.0)
+
+
+## How it arrives (set by the game right after spawn): swinging in from the
+## side `dir` (-1 from the right, 1 from the left), into a bungee, along
+## the rail from `from_x`, or down with a thump.
+func begin_entry(style: Entry, dir := 1.0, from_x := NAN) -> void:
+	entry = style
+	match style:
+		Entry.SWING:
+			_entry_kick = dir * lerpf(60.0, 90.0, _hash01(rope_clock * 5 + slot * 17 + 1))
+		Entry.RAIL:
+			if not is_nan(from_x) and absf(from_x - anchor.x) > 8.0:
+				# In from the side: the hook runs along the rail to its place
+				# while the string pays out (the Snelle's winch).
+				var to := anchor.x
+				anchor.x = from_x
+				pos.x = from_x
+				_sway_ax = from_x
+				for i in N:
+					_pts[i] = anchor.lerp(pos, float(i) / (N - 1))
+					_prev[i] = _pts[i]
+				_slide_to = to
+				_slide_speed = 240.0 * (_screen_h / 1280.0)
 
 
 ## Sings one syllable on a note of the key, in this kind's register.
@@ -848,6 +950,10 @@ func _tease(dt: float) -> void:
 		_taunt_delay -= dt
 		if _taunt_delay < 0.0:
 			taunt()
+	if _mock_t >= 0.0:
+		_mock_t -= dt
+		if _mock_t < 0.0:
+			_mock_now()
 	if _taunt >= 0.0:
 		_taunt += dt
 		if _taunt >= TAUNT_TIME:
@@ -859,6 +965,36 @@ func _tease(dt: float) -> void:
 			taunt()
 
 
+## Your shot missed: in `delay` s it laughs at you, and elbows `buddy`.
+## A timid one keeps quiet. (See _mock_now: never while it is aimed at or
+## showing a warning.)
+func mock(delay: float, buddy: Target = null) -> void:
+	if temper == Temper.TIMID or _mock_t >= 0.0 or not is_hittable():
+		return
+	_mock_t = delay
+	_mock_buddy = buddy
+
+
+func _mock_now() -> void:
+	var b := _mock_buddy
+	_mock_buddy = null
+	if not is_hittable() or aimed or squint or tele_t > 0.0 or _tell_t > 0.0 or not is_nan(_queued_x):
+		return
+	taunt()
+	if b == null or not is_instance_valid(b) or not b.is_hittable() or b.aimed or b.squint:
+		return
+	if b.pos.distance_to(pos) > 210.0 * (_screen_h / 1280.0):
+		return
+	# An elbow in the neighbour's ribs ("did you see that?"), and it laughs
+	# along.
+	var side := signf(b.pos.x - pos.x)
+	if side == 0.0:
+		side = 1.0
+	b.push(Vector2(side * 38.0, -8.0) * b.body_mass(), b.pos - Vector2(side * b.radius, 0.0))
+	push(Vector2(-side * 14.0, 0.0) * body_mass(), pos)
+	b.taunt()
+
+
 ## A wiggle-and-bob, a wink and (rarely, quietly) a "na-na".
 func taunt() -> void:
 	if _taunt >= 0.0 or phase != Phase.HANGING or temper == Temper.TIMID or _closed_t > 0.0 or scared:
@@ -868,6 +1004,9 @@ func taunt() -> void:
 	if soft:
 		# A three-lobed wiggle.
 		_jv[2] += 110.0 * (radius / 30.0)
+	else:
+		# A shell rocks on its string.
+		ang_vel += 3.0 * (1.0 if (rope_clock + slot) % 2 == 0 else -1.0)
 	# Game time (substeps), not the wall clock: what happens in a run must
 	# not depend on when it is played.
 	if rope_clock - _last_tease_step > 192 or rope_clock < _last_tease_step:
@@ -1464,6 +1603,8 @@ static func new_run(run_seed: int) -> void:
 	dice.seed = run_seed ^ 0x7A26E7
 	rope_clock = 0
 	_last_tease_step = -1000
+	cheer_t = 0.0
+	cheer_phase = 0.0
 
 
 func rope_rope(o: Target) -> void:
@@ -1647,6 +1788,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 	_jolt_cd = maxf(0.0, _jolt_cd - dt)
 	flash_t = maxf(0.0, flash_t - dt)
 	fray_t = maxf(0.0, fray_t - dt)
+	_bungee_t = maxf(0.0, _bungee_t - dt)
 	match phase:
 		Phase.HANGING:
 			if delay > 0.0:
@@ -1710,6 +1852,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				length += step_len
 				goal_length = length
 				_lunge_left -= step_len
+			_sway_step(dt)
 			_body_step(dt)
 			_z_step(dt)
 			_tease(dt)
@@ -1717,6 +1860,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				smug = maxf(smug, 0.75)
 			_soft_step(dt)
 			danger = clampf(1.0 - (danger_y - bottom_y()) / danger_band, 0.0, 1.0)
+			_low = clampf((bottom_y() - anchor.y) / maxf(1.0, danger_y - anchor.y), 0.0, 1.0)
 			_rope_step(dt)
 		Phase.FALLING:
 			if pop_t > 0.0:
@@ -2661,10 +2805,19 @@ func _lunge_brain(dt: float, every: float, drop: float) -> void:
 func _body_step(dt: float) -> void:
 	vel.y += GRAVITY * dt
 	vel.x += wind * dt / body_mass()
+	if _sway_on:
+		# Along its swing: the path's own acceleration, what the string's pull
+		# toward the middle and the air would take off it, and a firm hand
+		# back onto the path (place and speed). Per unit mass, like gravity.
+		var span := maxf(pos.distance_to(anchor), 40.0)
+		var rel := pos.x - anchor.x
+		vel.x += (_sway_a + GRAVITY / span * _sway_x + DAMPING * _sway_v
+			+ SWAY_KP * (_sway_x - rel) + SWAY_KD * (_sway_v - (vel.x - _sway_av))) * dt
 	# They are alive: when the hook has moved on, the body pulls itself back
-	# under it instead of trailing for seconds on a long string.
+	# under it (under its swing) instead of trailing for seconds on a long
+	# string.
 	if kind != Kind.ROD and acro != Acro.PUMP:
-		var off := anchor.x - pos.x
+		var off := anchor.x + (_sway_x if _sway_on else 0.0) - pos.x
 		if absf(off) > 10.0:
 			vel.x += clampf(off * 6.0, -700.0, 700.0) * dt / body_mass()
 	var d := pos - anchor
@@ -2673,11 +2826,12 @@ func _body_step(dt: float) -> void:
 	if dist > length and dist > 0.001:
 		var dir := d / dist
 		# Near the danger line the string pulls tighter (stiffer, less bounce).
-		var k := STRING_K * (1.0 + danger * 0.9)
+		# Just arrived on a bungee, it is soft and springy for a moment.
+		var k := STRING_K * (1.0 + danger * 0.9) * (0.4 if _bungee_t > 0.0 else 1.0)
 		vel -= dir * k * (dist - length) * dt
 		_pull = k * (dist - length) / GRAVITY
 		# Extra damping along the string keeps the bounce elastic but calm.
-		vel -= dir * vel.dot(dir) * (2.2 + danger * 2.0) * dt
+		vel -= dir * vel.dot(dir) * ((0.9 if _bungee_t > 0.0 else 2.2) + danger * 2.0) * dt
 	# Pumping, it works with the swing: far less loss than at rest.
 	vel *= exp(-(0.12 if acro == Acro.PUMP else DAMPING) * dt)
 	pos += vel * dt
@@ -2749,6 +2903,98 @@ func _snap(impulse: Vector2) -> void:
 ## Current distance from the hook to the body (how stretched the string is).
 func _rope_len_now() -> float:
 	return pos.distance_to(anchor) if _attached else length
+
+
+## A number in 0..1 from an integer, the same on every phone (no die drawn).
+static func _hash01(n: int) -> float:
+	var x := (n * 2654435761) & 0xFFFFFFFF
+	x = (((x >> 16) ^ x) * 0x45D9F3B) & 0xFFFFFFFF
+	x = ((x >> 16) ^ x) & 0xFFFF
+	return float(x) / 65535.0
+
+
+## How wide it should swing now (px): wider as the run heats up, by kind and
+## temper, narrower close to the line, never wider than the room its
+## neighbours leave, and not at all while it shows a warning or is busy
+## with something else (arriving, a move, a lunge, an acrobatic swing).
+func _sway_want() -> float:
+	if kind == Kind.ROD or acro != Acro.NONE or rope_host != null or playdead > 0.0 or scared or golden \
+			or stun_t > 0.0 or _lunge_left > 0.0 or tele_t > 0.0 or _tell_t > 0.0 or not is_nan(_queued_x) \
+			or _dropping or not _attached or _order_drop > 0.0:
+		return 0.0
+	var sc := _screen_h / 1280.0
+	if not is_nan(_slide_to) and leader == null and _slide_speed > 200.0 * sc:
+		# A quick move along the rail (a dodge, a cut across): it hangs straight.
+		return 0.0
+	var a := SWAY_PX * sc * sway_level * float(SWAY_KIND[kind]) * float(SWAY_TEMPER[temper])
+	if variant == Var.BOB or variant == Var.HOPPER:
+		a *= 0.6
+	elif variant == Var.BIG or champion:
+		a *= 0.75
+	if cheer_t > 0.0:
+		a *= 1.2
+	# The lower it hangs, the stiller: full in the upper half of the field,
+	# fading toward the line and all but still at it (a fair last chance).
+	a *= (1.0 - 0.7 * smoothstep(0.35, 0.8, _low)) * (1.0 - 0.8 * danger)
+	if Prefs.reduced_motion:
+		a *= 0.4
+	var room := 0.5 * minf(anchor.x - slide_lo, slide_hi - anchor.x) + 3.0
+	return clampf(minf(a, room), 0.0, 24.0 * sc)
+
+
+## Moves the swing on one step: its beat (a row keeps its leader's, each a
+## little behind its neighbour toward the end; a cheering crowd keeps one
+## beat with a wave running across it), how wide it is, and where on the
+## path the body should be now (_sway_x, _sway_v, _sway_a for _body_step).
+func _sway_step(dt: float) -> void:
+	_sway_av = (anchor.x - _sway_ax) / dt
+	_sway_ax = anchor.x
+	var want := _sway_want()
+	var w := _sway_w
+	var goal_ph := NAN
+	var pull := 1.2
+	if cheer_t > 0.0:
+		w = CHEER_W
+		goal_ph = cheer_phase - anchor.x * 0.004
+		pull = 2.6
+	elif leader != null and is_instance_valid(leader):
+		w = leader._sway_w
+		goal_ph = leader._sway_ph - form_off * 0.006
+	var rel := pos.x - anchor.x
+	var relv := vel.x - _sway_av
+	_sway_free = maxf(0.0, _sway_free - dt)
+	if struck_t > 0.0 or (_sway_on and absf(rel - _sway_x) > maxf(14.0, _sway_amp * 0.8)):
+		# Knocked off its path: the string has it for a moment.
+		_sway_free = maxf(_sway_free, 0.35)
+	if _sway_free > 0.0 or (not _sway_on and want > 0.0):
+		# Picks the swing up from wherever it is now (how far out, how
+		# fast), so it never jumps.
+		_sway_ph = atan2(rel * w, relv)
+		_sway_amp = minf(sqrt(rel * rel + (relv / w) * (relv / w)), 60.0)
+		_sway_on = _sway_free <= 0.0
+		if not _sway_on:
+			_sway_x = 0.0
+			return
+	elif not _sway_on:
+		# Hanging still, it keeps its beat (a row's leader keeps time for
+		# the rest of the row).
+		_sway_ph = fposmod(_sway_ph + w * dt, TAU)
+		return
+	_sway_ph = fposmod(_sway_ph + w * dt, TAU)
+	if not is_nan(goal_ph):
+		_sway_ph += clampf(wrapf(goal_ph - _sway_ph, -PI, PI), -pull * dt, pull * dt)
+	# Wider slowly, narrower faster, and at once for a warning.
+	var down := 120.0 if want <= 0.0 else 25.0
+	_sway_amp = move_toward(_sway_amp, want, (14.0 if want > _sway_amp else down) * dt)
+	if want <= 0.0 and _sway_amp < 0.5:
+		_sway_on = false
+		_sway_amp = 0.0
+		_sway_x = 0.0
+		return
+	var sn := sin(_sway_ph)
+	_sway_x = _sway_amp * sn
+	_sway_v = _sway_amp * w * cos(_sway_ph)
+	_sway_a = -_sway_amp * w * w * sn
 
 
 func depth_scale() -> float:

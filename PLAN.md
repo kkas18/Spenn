@@ -2812,3 +2812,22 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG
    `Fx`; tettere `_soft_band`).
 6. **Tester:** `colours` krever nå 0,06 mellom typer med samme form (`SHAPE`) og 0,035
    mellom alle typer. Hele pakken passerer, og botrundene gir de samme tallene som i v8.5.
+
+## v8.7 – Liv i rekkene
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4c) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Svaiing** (`Target._sway_want`, `_sway_step`, styringen i `_body_step`; `SWAY_PX`,
+   `SWAY_KIND`, `SWAY_TEMPER`, `sway_level` fra `Game._sway_level`): en bane
+   x = A·sin(fase) rundt kroken, med motvekt for tauets trekk og luftens brems, og et fast
+   grep tilbake på banen. Fanges opp fra der kroppen er etter et støt (`_sway_free`).
+   Bredden begrenses av naboene (`slide_lo`/`slide_hi`), av høyden i feltet (`_low`) og av
+   `danger`. Rytme og fase regnes fra `rope_clock` og `slot` (`_hash01`), uten terninger.
+2. **Takt:** en rekke følger lederens fase (`form_off`), og en jublende flokk følger
+   `cheer_phase` (`cheer_t`, `CHEER_TIME`, `CHEER_W`) etter en tapt knute (`Game._breach`).
+3. **Innganger** (`Target.Entry`, `begin_entry`, `Game._begin_entry`): SWING (sideveis fart
+   ved start), BUNGEE (mykt tau i `_bungee_t`), RAIL (kroken glir fra kanten), THUD
+   (`thud`: skinna rister, `fx.puff`, småfiender skvetter).
+4. **Erting:** `Target.mock` og `_mock_now` (le og dulte), `Game._near_miss` (den skuddet
+   kom nærmest) og `_mock_miss` (koret etter et bom). Skallfiendene vugger i `taunt`.
+5. **Tester:** hele pakken passerer. Balansen er målt tre ganger med `balance.sh`.

@@ -258,6 +258,8 @@ func collide(b: Ball) -> void:
 			if dist < rr + 34.0 and b.vel.length() > 500.0:
 				t.startle(b.pos)
 				t.annoy(0.25)
+			if dist < rr + 70.0:
+				g._near_miss(b, t, dist - rr)
 			continue
 		var n := d / dist if dist > 0.001 else -b.vel.normalized()
 		if t.kind == Target.Kind.MIRROR and not b.special and b.banks == 0 and b.hits == 0:

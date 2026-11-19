@@ -664,6 +664,7 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	# A fibre shows where it will hang a moment before it drops in.
 	var wait := FORESHADOW if state == State.PLAYING else 0.0
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, wait)
+	_begin_entry(t)
 	if wait > 0.0:
 		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * frac), Pal.kind_color(kind), wait)
 	_roll_variant(t)
@@ -675,12 +676,33 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	return t
 
 
+## How a newcomer arrives (see Target.Entry). Most swing in on their string
+## from the side they hang on, out toward the middle; the Dykker dives into
+## a bungee, the Snelle runs in along the rail from the nearer edge, and
+## the heavy ones come down with a thump. In a row (`row_dir` set), all but
+## the divers and the heavy ones swing in from the same side.
+func _begin_entry(t: Target, row_dir := 0.0) -> void:
+	if t.kind == Target.Kind.DROP:
+		t.begin_entry(Target.Entry.BUNGEE)
+	elif t.kind == Target.Kind.HEAVY or t.kind == Target.Kind.BOSS:
+		t.begin_entry(Target.Entry.THUD)
+	elif t.kind == Target.Kind.REEL and row_dir == 0.0:
+		var right := t.anchor.x > layout.center_x
+		var from := layout.size.x - layout.margin - t.radius if right else layout.margin + t.radius
+		t.begin_entry(Target.Entry.RAIL, 0.0, from)
+	else:
+		var d := row_dir if row_dir != 0.0 else (1.0 if t.anchor.x < layout.center_x else -1.0)
+		t.begin_entry(Target.Entry.SWING, d)
+
+
 ## A row of identical targets in a shallow V, dropping in left to right.
 ## Rows of five or more march behind a crowned leader in the middle: it
 ## dodges for all of them. Bring it down and the rest panic.
 func _spawn_formation(kind: Target.Kind, n: int) -> void:
 	var usable := layout.size.x - 120.0
 	var row: Array[Target] = []
+	# A chorus line: they swing in one after another from the same side.
+	var row_dir := 1.0 if (Target.rope_clock / 7) % 2 == 0 else -1.0
 	for i in n:
 		var t := _free_target()
 		if t == null:
@@ -689,6 +711,7 @@ func _spawn_formation(kind: Target.Kind, n: int) -> void:
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
 		t.aggression = director.aggression()
 		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
+		_begin_entry(t, row_dir)
 		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * (0.2 - 0.1 * v)), Pal.kind_color(kind), 0.15 + i * 0.09)
 		_maybe_intro(t)
 		row.append(t)
@@ -1213,6 +1236,17 @@ func _update_eyes() -> void:
 			for n in targets:
 				if n != t and n.is_hittable() and n.pos.distance_to(t.pos) < 240.0 * layout.scale:
 					n.watch(t, 0.7)
+		if t.thud:
+			# A heavy one came down with a thump: the rail shakes off a little
+			# dust, and the small ones close by jump.
+			t.thud = false
+			rail.flex(t.anchor.x, 5.0 if t.kind == Target.Kind.BOSS else 3.5)
+			fx.puff(Vector2(t.anchor.x, layout.rail_y + 4.0), Pal.INK_DIM, 3, 20.0, 0.22)
+			fx.shake(1.5)
+			for n in targets:
+				if n != t and n.is_hittable() and not n.aimed and n.mass() < t.mass() * 0.8 \
+						and n.pos.distance_to(t.pos) < 200.0 * layout.scale:
+					n.startle(t.pos)
 		t.threat = o
 		# Targets that have hung around learn as the run heats up.
 		t.aggression = maxf(t.aggression, director.aggression())
@@ -1386,6 +1420,10 @@ func _step(dt: float) -> void:
 	var worst := 0.0
 	_time += dt
 	_knock_sfx_cd = maxf(0.0, _knock_sfx_cd - dt)
+	if state == State.PLAYING or state == State.STARTING:
+		Target.sway_level = _sway_level()
+	Target.cheer_t = maxf(0.0, Target.cheer_t - dt)
+	Target.cheer_phase = fposmod(Target.cheer_phase + Target.CHEER_W * dt, TAU)
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
 			t.wind = _breeze(t.pos.x) + _push.x + gust
@@ -1449,6 +1487,17 @@ func _interpolate(k: float) -> void:
 
 ## Slow layered breeze: a few px/s² of sideways push that drifts across
 ## the field, enough for hanging targets to sway at rest.
+## How lively the crowd's sway is (Target.sway_level): barely at the start,
+## full a few minutes in. A calm wave sways less, a wild one more.
+func _sway_level() -> float:
+	var k := clampf(0.1 + 0.15 * director.intensity(), 0.1, 1.0)
+	if director.wave_mood == Director.WaveMood.CALM:
+		k *= 0.7
+	elif director.wave_mood == Director.WaveMood.CHAOS:
+		k = minf(1.0, k * 1.15)
+	return k
+
+
 func _breeze(x: float) -> float:
 	return (sin(_time * 0.37 + x * 0.004) * 0.65 + sin(_time * 0.91 + x * 0.013 + 1.7) * 0.35) * 9.0 * layout.scale
 
@@ -2108,10 +2157,17 @@ func _breach(t: Target) -> void:
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20, false, 2)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
-	# The ones hanging nearby enjoy it.
+	# The crowd enjoys it: for a moment they sway as one, a wave running
+	# across them, and laugh, the nearest at once and the rest after.
+	Target.cheer_t = Target.CHEER_TIME
+	Target.cheer_phase = fposmod(Target.rope_clock * 0.37, TAU)
 	for o in targets:
-		if o != t and o.is_hittable() and o.pos.distance_to(t.pos) < 260.0 * layout.scale:
-			o.taunt()
+		if o != t and o.is_hittable():
+			var d := o.pos.distance_to(t.pos)
+			if d < 260.0 * layout.scale:
+				o.taunt()
+			elif d < 560.0 * layout.scale:
+				o.mock(0.15 + d / (1600.0 * layout.scale))
 	streak = 0
 	_chain = 0
 	_cocky_t = 5.0
@@ -3235,6 +3291,7 @@ func _finish_ball(b: Ball) -> void:
 			Sfx.haptic(16, 0.4)
 	else:
 		streak = 0
+		_mock_miss(s)
 		if flow_t <= 0.0:
 			flow = maxf(0.0, flow - FLOW_MISS)
 		if overload_t <= 0.0:
@@ -3242,6 +3299,37 @@ func _finish_ball(b: Ball) -> void:
 			rail.charge = charge
 	hud.bar.streak = streak
 	_show_mult()
+
+
+## A ball came within `gap` px of `t` without touching it: the closest of
+## its shot is the one that will laugh first if the shot misses.
+func _near_miss(b: Ball, t: Target, gap: float) -> void:
+	if not _shots.has(b.shot_id):
+		return
+	var s: Dictionary = _shots[b.shot_id]
+	if gap < float(s.get("near_gap", INF)):
+		s.near_gap = gap
+		s.near = t
+
+
+## A shot missed: the one it came closest to laughs (once its fright has
+## passed), then up to three neighbours one after another, the first
+## elbowing it. Not one that is being aimed at (see Target.mock).
+func _mock_miss(s: Dictionary) -> void:
+	var lead: Target = s.get("near", null)
+	if lead == null or not is_instance_valid(lead) or not lead.is_hittable():
+		return
+	lead.mock(0.55)
+	var near: Array = []
+	for o in targets:
+		if o != lead and o.is_hittable() and not o.aimed:
+			var d := o.pos.distance_to(lead.pos)
+			if d < 240.0 * layout.scale:
+				near.append([d, o])
+	near.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	for i in mini(3, near.size()):
+		var o: Target = near[i][1]
+		o.mock(0.7 + 0.14 * i, lead if i == 0 else null)
 
 
 func _grant(kind: int) -> void:
