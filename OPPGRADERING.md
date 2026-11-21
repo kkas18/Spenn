@@ -23,7 +23,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
 | 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
 | 8 | Sluttkontroll og levering | Ferdig for denne runden (v8.5). Det som gjenstår, er å prøve spillet på en telefon |
-| 9 | Varig moro for voksne: bygg din runde (v8.9), raske økter (v8.10), mål som varer | v8.9 ferdig, v8.10 neste |
+| 9 | Varig moro for voksne: bygg din runde (v8.9), raske økter (v8.10), mål som varer | v8.9 og v8.10 ferdig. Mål som varer er ikke bestilt ennå |
 
 Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
 et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
@@ -33,7 +33,7 @@ du om mykere farger og fiender med hver sin karakter. Det ble v8.6, som en forts
 av trinn 4. Deretter ba du om fiender som svaier og erter, og om mer dybde, som i et
 2.5D-spill. Det ble v8.7 og v8.8. Etter v8.8 sa du at spillet er for voksne som kjeder
 seg hjemme eller på vei til jobben, og at det ikke blir særlig gøy i lengden. Det er
-trinn 9: først v8.9 (bygg din runde), så v8.10 (raske økter).
+trinn 9: v8.9 (bygg din runde) og v8.10 (raske økter).
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -775,6 +775,54 @@ per bilde den samme: 6,95, 6,96 og 6,92 ms i v8.8 og 7,04, 6,94 og 6,90 ms i v8.
 i omganger på samme maskin. Med Splitt kan det være opptil ti kuler i lufta (før seks).
 Hver kule sjekkes mot hver fiende, og det koster lite.
 
+### Trinn 9b – Raske økter (v8.10, ferdig)
+
+Det andre steget du ba om: spillet skal passe til en kort tur til jobben eller en pause.
+To ting gjør det: en runde kan tas opp igjen der den slapp, og den rolige starten kan
+hoppes over.
+
+#### Fortsett der du slapp
+
+- **Når:** runden lagres hver gang en bølge begynner (fra bølge 2), også når den tas opp
+  igjen eller begynner med Hurtigstart.
+- **Hva:** bølgen og klokka (som styrer hvor vanskelig det er), poengene, knutene,
+  oppgraderingene og rekkefølgen i raden, og det runden har talt opp til oppdrag,
+  statistikk og rekordtempo. Fiendene lagres ikke: bølgen begynner på nytt.
+- **En knute du mister, lagres med det samme.** Å gå til menyen gir aldri en knute
+  tilbake, og poengene fra bølgen du var i, er tapt. Det er altså ingen fordel å avbryte.
+- **Slettes:** i det siste knute ryker (før resultatene), og når en ny vanlig runde
+  begynner. Dagens utfordring lagres ikke og rører ikke den lagrede runden.
+- **På menyen:** en gullknapp over Dagens utfordring, «Fortsett runden», med bølge,
+  poeng og knuter. Tittelbokstavene henger da litt høyere, så knappen får plass.
+  Teksten nederst blir «Dra for ny runde».
+- **Ved oppstart:** bølgens tittel sier «Fortsetter der du slapp», og ingenting henger
+  inn før den har bleknet.
+- **Lagringsfila:** runden ligger i en egen del av fila. En lagring som er skadet, eller
+  som har et annet oppsett, blir ikke tilbudt.
+
+#### Hurtigstart
+
+- **Låses opp** når du har nådd bølge 6 én gang. Da kommer en bryter ved siden av Dagens
+  utfordring, og valget huskes.
+- **En runde med Hurtigstart** begynner på bølge 3, så langt ute som en middels spiller
+  normalt er der: 65 sekunder. Målt med botspillerne begynner bølge 3 etter 94 sekunder
+  for en svak spiller, 64 for en middels og 52 for en god (median av åtte runder). Du
+  velger to oppgraderinger før første fiende («Hurtigstart · 1 av 2»).
+- **Rettferdig:** de to oppgraderingene er de du ellers ville valgt etter bølge 1 og 2.
+  Poengene fra de to bølgene får du ikke. Runden teller som en vanlig runde.
+- **Gjelder ikke Dagens utfordring.** Bryteren er dempet når den er valgt.
+
+#### Tester
+
+- **Ny test, `sessions`:** runden lagres når bølge 2 begynner, med poeng, knuter og
+  oppgradering. En knute som ryker, lagres med det samme. Spillet lukkes og åpnes igjen
+  med lagringsfila, menyen viser «Fortsett runden», og runden tas opp igjen på bølge 2
+  med de samme tallene og klokka der bølgen begynte. Ingenting henger inn før tittelen
+  har bleknet. Lagringen slettes når runden tapes og når en ny runde begynner. Dagens
+  utfordring verken lagrer eller sletter, og en skadet lagring blir ikke tilbudt.
+  Hurtigstart er låst før bølge 6, gir to valg og bølge 3, og gjelder ikke Dagens
+  utfordring.
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -925,6 +973,13 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 ## Beslutninger
 
+- **En lagret runde fortsetter fra starten av bølgen (v8.10).** Å lagre hele feltet midt i
+  en bølge (opptil 28 fiender med fysikk, humør og planer) ville vært skjørt. Å begynne
+  bølgen på nytt er enkelt og rettferdig: du mister poengene fra den bølgen, og en knute
+  du mistet, er fortsatt borte.
+- **Hurtigstart teller som en vanlig runde (v8.10).** Du får de to oppgraderingene du
+  ellers ville valgt etter bølge 1 og 2, men ikke poengene fra dem. Det er altså ingen
+  snarvei til rekorden, bare til spenningen.
 - **Du velger selv, men minst ett kort endrer spillet (v8.9).** Tre tilfeldige kort kunne
   gitt tre tall-oppgraderinger på rad, og da blir valget kjedelig. Med minst én som
   endrer hvordan du spiller, blir to runder ulike.

@@ -4,6 +4,37 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.10 – Raske økter
+
+Spillet passer nå bedre til korte økter, på bussen eller i en pause. En runde du går ut
+av, venter på deg, og når du har kommet langt nok, kan du hoppe over de rolige første
+bølgene.
+
+### Nytt
+
+- **Fortsett der du slapp.** Når en bølge begynner, lagres runden: bølgen, poengene,
+  knutene og oppgraderingene. Lukker du appen, går tilbake til menyen eller går tom for
+  strøm, står det **Fortsett runden** på menyen, med bølgen, poengene og knutene. Runden
+  fortsetter fra starten av bølgen du var i.
+- **Hurtigstart.** Når du har nådd bølge 6 én gang, kommer en bryter ved siden av Dagens
+  utfordring. Er den på, begynner runden på bølge 3, og du velger to oppgraderinger før
+  første fiende.
+- **Slik spiller du** har fått en linje om korte økter.
+
+### Rettferdig
+
+- **En knute du mister, er borte også i den lagrede runden.** Å gå til menyen og
+  fortsette gir aldri knuter tilbake. Poengene fra bølgen du var i, får du heller ikke
+  med, for runden fortsetter fra starten av den.
+- **Når runden er over, er det ingenting å fortsette.** Lagringen slettes i det runden
+  tapes, ikke først når resultatene vises.
+- **En ny runde erstatter den lagrede.** Menyen sier fra: «Dra for ny runde».
+- **Dagens utfordring** lagres ikke og rører ikke den lagrede runden, og Hurtigstart
+  gjelder ikke der. Den er samme runde for alle.
+- **Hurtigstart teller som en vanlig runde** for rekord, oppdrag og statistikk. De to
+  oppgraderingene er de du ellers ville valgt etter bølge 1 og 2, men poengene fra de to
+  bølgene får du ikke.
+
 ## v8.9 – Bygg din runde
 
 Etter hver bølge velger du nå selv én av tre oppgraderinger. Før fikk du én tilfeldig.

@@ -42,6 +42,11 @@ func _ready() -> void:
 	material = _mat
 
 
+## Hang higher (shorter strings): «Fortsett runden» takes the space under
+## the letters (v8.10).
+var short := false
+
+
 func setup(layout: Layout, display_font: Font, drop := false) -> void:
 	l = layout
 	font = display_font
@@ -79,7 +84,7 @@ func reset(drop := false) -> void:
 	var calm := Prefs.reduced_motion
 	for i in n:
 		var ax := l.size.x * (0.14 + 0.72 * i / maxf(1.0, n - 1.0))
-		var len: float = l.play_h * lens[i % lens.size()]
+		var len: float = l.play_h * lens[i % lens.size()] * (0.78 if short else 1.0)
 		var anchor := Vector2(ax, l.rail_y + 3.0)
 		var d := {
 			"ch": _current[i], "anchor": anchor, "len": len,

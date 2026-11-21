@@ -297,6 +297,26 @@ func next_wave() -> void:
 	roll_style()
 
 
+## Picks a run up as wave `w` begins, `t` seconds in (a run saved at that
+## point, or a quick start): the wave's quota from nothing, the clock, the
+## record of shots and the events as they stood.
+func resume_at(w: int, t: float, acc := 0.55, n_shots := 0, n_hits := 0, events := 0, event_in := EVENT_EVERY) -> void:
+	wave = maxi(1, w)
+	elapsed = maxf(0.0, t)
+	accuracy = clampf(acc, 0.0, 1.0)
+	shots = maxi(0, n_shots)
+	hits = clampi(n_hits, 0, shots)
+	event_count = maxi(0, events)
+	next_event = elapsed + clampf(event_in, 8.0, EVENT_EVERY)
+	wave_state = Wave.SPAWNING
+	wave_spawned = 0
+	wave_killed = 0
+	wave_break = 0.0
+	finale_done = false
+	extra_quota = 0
+	roll_style()
+
+
 func intensity() -> float:
 	# Time drives it, and each wave reached adds its own weight.
 	return elapsed / 45.0 + (wave - 1) * 0.2

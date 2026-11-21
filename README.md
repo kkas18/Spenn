@@ -17,7 +17,7 @@ Engelsk navn i appen er «Taut».
 Åpne fila på telefonen og godta installasjon fra nettleseren. Begge versjonene er signert
 med samme nøkkel og har samme versjonskode, så den ene kan installeres over den andre
 uten at rekorder og fremgang går tapt. Hvilken som er installert, står under
-Innstillinger → Apper → Spenn på telefonen: 8.9.0 (eller nyere) er den oppgraderte, 2.0.0 er
+Innstillinger → Apper → Spenn på telefonen: 8.10.0 (eller nyere) er den oppgraderte, 2.0.0 er
 originalen.
 
 **Slik spiller du:** legg fingeren på lomma i spretterten, dra nedover og slipp. Jo
@@ -51,6 +51,7 @@ tools/tests/balance.sh [sti/til/godot]    # balanse: botspillere på tre nivåer
 | `save` | Lagret fremgang tåler avbrutt skriving, skadet fil og feil verdier, og dager på rad telles riktig over måneds- og årsskifte |
 | `timing` | Sanntid og spilltid: treff-stopp, sakte film, overload og flyt varer det de skal, og ingen fiende flytter seg før varselet har vært synlig |
 | `perks` | Valget etter en bølge holder runden stille og tar kortet du velger, og hver av de åtte nye oppgraderingene gjør det kortet sier |
+| `sessions` | En runde lagres når en bølge begynner og tas opp igjen etter at appen er lukket, med poeng, knuter og oppgraderinger. Lagringen slettes når runden er over, og Hurtigstart låses opp og virker som den skal |
 | `physics` | Lik bane ved 30–144 Hz, ingen tunnelering, snorkutt, ingenting som setter seg fast eller rister |
 | `repeat` | Samme frø og samme skudd gir samme runde, uansett hvilke oppdrag du har og hva appen har gjort før |
 | `soak` | Travelt sluttspill under ild: ingen lekkasjer |

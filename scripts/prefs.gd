@@ -22,6 +22,7 @@ var tilt := true               # tilt parallax and gloss follow the phone
 var pull := 1                  # how far a full pull is: 0 short, 1 normal, 2 long (see PULL_SCALE)
 var camera := true             # the camera's own moves (shake, lean, punch); off keeps every other effect
 var big_text := false          # words in the field and on the results are set a fifth larger (see Hud.ts)
+var quick_start := false       # the next run starts at wave 3 with two upgrades picked (v8.10)
 ## A full pull as a share of the normal one. Short is quicker and coarser;
 ## long is finer, and on most phones needs the pull to begin a little
 ## above the pouch to reach full power.
@@ -50,6 +51,11 @@ var habits := {}               # what the enemies know of the player (see Habits
 var feats := {}                # achievements won: id -> the day (see Feats)
 var best_runs: Array = []      # the ten best runs: {"score", "wave", "secs", "acc", "day", "daily"}
 var pace: Array = []           # the record run's score as each wave began (wave 2 first): the pace to beat
+## A run left unfinished (v8.10): how it stood as its last wave began, so it
+## can be picked up there (see Game._save_run). Empty when there is none.
+var run_save := {}
+const RUN_SAVE := 1            # the layout of `run_save` (another is not picked up)
+const QUICK_UNLOCK := 6        # the best wave that unlocks Hurtigstart
 
 ## Where the progress is kept. Tests point it at a file of their own
 ## (the SPENN_SAVE environment variable), so they never touch a player's.
@@ -96,6 +102,7 @@ func load_from_disk() -> void:
 	Layout.pull_scale = PULL_SCALE[pull]
 	camera = _bool("settings", "camera", true)
 	big_text = _bool("settings", "big_text", false)
+	quick_start = _bool("settings", "quick_start", false)
 	record = maxi(0, _int("stats", "record", 0))
 	intro_seen = _bool("stats", "intro_seen", false)
 	seen = _dict("stats", "seen")
@@ -128,6 +135,7 @@ func load_from_disk() -> void:
 	for v: Variant in _array("meta", "pace"):
 		if (v is int or v is float) and pace.size() < 64:
 			pace.append(maxi(0, int(v)))
+	run_save = _dict("run", "save")
 	_generation = _int("seal", "n", 0)
 	_dirty = false
 	_fill_missions()
@@ -242,6 +250,30 @@ func toggle_camera() -> void:
 func toggle_big_text() -> void:
 	big_text = not big_text
 	_commit()
+
+
+func toggle_quick_start() -> void:
+	quick_start = not quick_start
+	_commit()
+
+
+## Hurtigstart is there once a run has reached wave QUICK_UNLOCK.
+func quick_unlocked() -> bool:
+	return int(stats.get("best_wave", 0)) >= QUICK_UNLOCK
+
+
+## The run left unfinished, if it can be picked up (of this layout, past
+## wave 1, with a knot left); otherwise empty.
+func saved_run() -> Dictionary:
+	var s := run_save
+	if s.is_empty() or int(s.get("v", 0)) != RUN_SAVE or int(s.get("wave", 0)) < 2 or int(s.get("lives", 0)) < 1:
+		return {}
+	for k: String in ["score", "elapsed", "perks"]:
+		if not s.has(k):
+			return {}
+	if not (s.perks is Dictionary):
+		return {}
+	return s
 
 
 func toggle_aim_guide() -> void:
@@ -363,6 +395,7 @@ func reset_progress() -> void:
 	missions = []
 	mission_level = 0
 	fresh = {}
+	run_save = {}
 	_fill_missions()
 	_commit()
 
@@ -458,6 +491,7 @@ func flush() -> bool:
 	c.set_value("settings", "pull", pull)
 	c.set_value("settings", "camera", camera)
 	c.set_value("settings", "big_text", big_text)
+	c.set_value("settings", "quick_start", quick_start)
 	c.set_value("stats", "record", record)
 	c.set_value("stats", "intro_seen", intro_seen)
 	c.set_value("stats", "seen", seen)
@@ -479,6 +513,7 @@ func flush() -> bool:
 	c.set_value("meta", "feats", feats)
 	c.set_value("meta", "best_runs", best_runs)
 	c.set_value("meta", "pace", pace)
+	c.set_value("run", "save", run_save)
 	# The seal goes last: a file without it was cut short.
 	c.set_value("seal", "format", FORMAT)
 	c.set_value("seal", "n", _generation + 1)

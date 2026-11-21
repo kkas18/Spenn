@@ -9,6 +9,7 @@ extends CanvasLayer
 signal resume_pressed
 signal restart_pressed
 signal menu_pressed
+signal continue_pressed
 
 const INTRO_TIME := 3.2
 
@@ -58,6 +59,8 @@ var _m_skins: Token
 var _m_coll: Token
 var _m_help: Token
 var _m_daily: IconBtn
+var _m_quick: IconBtn              # Hurtigstart on or off (v8.10, once wave 6 is reached)
+var _m_continue: ContinueBtn       # «Fortsett runden»: the run left unfinished (v8.10)
 var _inner: StyleBoxFlat
 var run_secs := 0              # the run's time so far, for the pause summary
 var daily := false             # the menu's mode: the next run is the daily challenge
@@ -159,10 +162,42 @@ func setup(layout: Layout) -> void:
 	_m_lang.custom_minimum_size = Vector2(touch * 1.75, touch)
 	_menu_bar.position = Vector2(l.margin, l.safe_top + Tok.SPACE_LG)
 	_menu_bar.size = Vector2(l.size.x - l.margin * 2.0, touch)
-	_m_daily.custom_minimum_size = Vector2(maxf(340.0, 48.0 * l.dp), maxf(72.0, 36.0 * l.dp))
-	_m_daily.size = _m_daily.custom_minimum_size
-	_m_daily.position = Vector2(l.size.x * 0.5 - _m_daily.size.x * 0.5, menu_record_y() - 118.0)
+	_place_menu_modes()
 	_over.setup()
+
+
+## The menu's modes: the daily toggle centred, or side by side with
+## Hurtigstart once that is unlocked; «Fortsett runden» above them.
+func _place_menu_modes() -> void:
+	if l == null:
+		return
+	var h := maxf(72.0, 36.0 * l.dp)
+	var y := menu_record_y() - 118.0
+	if Prefs.quick_unlocked():
+		var w := minf(330.0, (l.size.x - 2.0 * l.margin - Tok.SPACE_MD) * 0.5)
+		_m_daily.custom_minimum_size = Vector2(w, h)
+		_m_quick.custom_minimum_size = Vector2(w, h)
+		_m_daily.position = Vector2(l.size.x * 0.5 - w - Tok.SPACE_MD * 0.5, y)
+		_m_quick.position = Vector2(l.size.x * 0.5 + Tok.SPACE_MD * 0.5, y)
+	else:
+		_m_daily.custom_minimum_size = Vector2(maxf(340.0, 48.0 * l.dp), h)
+		_m_daily.position = Vector2(l.size.x * 0.5 - _m_daily.custom_minimum_size.x * 0.5, y)
+	_m_daily.size = _m_daily.custom_minimum_size
+	_m_quick.size = _m_quick.custom_minimum_size
+	var cw := minf(520.0, l.size.x - 2.0 * l.margin)
+	_m_continue.custom_minimum_size = Vector2(cw, maxf(96.0, 46.0 * l.dp))
+	_m_continue.size = _m_continue.custom_minimum_size
+	_m_continue.position = Vector2(l.size.x * 0.5 - cw * 0.5, y - _m_continue.size.y - Tok.SPACE_LG)
+
+
+## Which of the menu's modes show (and how the run left unfinished reads).
+func _menu_modes() -> Array[Control]:
+	var out: Array[Control] = [_m_daily]
+	if Prefs.quick_unlocked():
+		out.append(_m_quick)
+	if not Prefs.saved_run().is_empty():
+		out.append(_m_continue)
+	return out
 
 
 func _game_sensor() -> Vector3:
@@ -210,7 +245,10 @@ func menu_record_y() -> float:
 func show_menu() -> void:
 	bar.visible = false
 	_refresh_text()
-	for c: Control in [_menu_bar, _m_daily]:
+	_place_menu_modes()
+	var shown: Array[Control] = [_menu_bar]
+	shown.append_array(_menu_modes())
+	for c: Control in shown:
 		c.visible = true
 		c.modulate.a = 0.0
 		Motion.to(c, "modulate:a", 1.0, Motion.SLOW, Motion.Ease.ENTER, 0.15)
@@ -225,12 +263,12 @@ func show_menu() -> void:
 
 
 func hide_menu_ui() -> void:
-	Motion.to(_menu_bar, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
-	Motion.to(_m_daily, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
+	for c: Control in [_menu_bar, _m_daily, _m_quick, _m_continue]:
+		Motion.to(c, "modulate:a", 0.0, Motion.FAST, Motion.Ease.EXIT)
 	Motion.to(overlay, "menu_a", 0.0, Motion.FAST, Motion.Ease.EXIT)
 	Motion.after(Motion.FAST, func() -> void:
-		_menu_bar.visible = false
-		_m_daily.visible = false)
+		for c: Control in [_menu_bar, _m_daily, _m_quick, _m_continue]:
+			c.visible = false)
 
 
 ## The in-game bar opens with its own choreography (TopBar.begin_intro).
@@ -394,12 +432,13 @@ func perk_toast(id: String, level: int, from := Vector2.INF) -> void:
 
 
 ## The choice after a wave (v8.9): `ids` on offer, the level each already
-## has, the run's perks (for the "goes with" line) and the wave just won.
+## has, the run's perks (for the "goes with" line) and the line over the
+## title (the wave just won, or a quick start's pick).
 ## `cb` gets the id picked. A moment passes before a card answers, so a
 ## tap meant for the last shot never picks one.
-func open_choice(ids: Array[String], levels: Array[int], owned: Dictionary, wave: int, cb: Callable) -> void:
+func open_choice(ids: Array[String], levels: Array[int], owned: Dictionary, head: String, cb: Callable) -> void:
 	_choice_cb = cb
-	_choice_head.text = Loc.t("choice.head") % wave
+	_choice_head.text = head
 	_choice_title.text = Loc.t("choice.title")
 	_choice_head.add_theme_font_size_override("font_size", ts(16))
 	_choice_title.add_theme_font_size_override("font_size", ts(Tok.TYPE_DISPLAY - 24))
@@ -511,6 +550,18 @@ func _refresh_text() -> void:
 	_m_daily.caption = Loc.t("menu.daily")
 	_m_daily.lit = daily
 	_m_daily.queue_redraw()
+	# Hurtigstart has no say in the daily challenge (the same run for all).
+	_m_quick.caption = Loc.t("menu.quick")
+	_m_quick.lit = Prefs.quick_start and not daily
+	_m_quick.self_modulate.a = 0.4 if daily else 1.0
+	_m_quick.disabled = daily
+	_m_quick.queue_redraw()
+	var sv := Prefs.saved_run()
+	if not sv.is_empty():
+		_m_continue.title = Loc.t("menu.continue")
+		var kn := Loc.t("menu.knot1") if int(sv.lives) == 1 else Loc.t("menu.knots") % int(sv.lives)
+		_m_continue.sub = Loc.t("menu.continueSub") % [int(sv.wave), _group(int(sv.score)), kn]
+		_m_continue.queue_redraw()
 	_m_lang.queue_redraw()
 	_over.refresh_text()
 	bar.queue_redraw()
@@ -971,6 +1022,25 @@ func _build_menu_bar() -> void:
 	_m_daily.add_theme_font_size_override("font_size", 24)
 	_m_daily.visible = false
 	add_child(_m_daily)
+	# Hurtigstart (v8.10): from wave 3, two upgrades picked first.
+	_m_quick = _icon_button("bolt", func() -> void:
+		if daily:
+			return
+		Prefs.toggle_quick_start()
+		_refresh_text())
+	_m_quick.theme = _theme
+	_m_quick.add_theme_font_size_override("font_size", 24)
+	_m_quick.visible = false
+	add_child(_m_quick)
+	# «Fortsett runden» (v8.10): the run left unfinished picks up where its
+	# last wave began.
+	_m_continue = ContinueBtn.new()
+	_m_continue.hud = self
+	_m_continue.theme = _theme
+	_m_continue.theme_type_variation = &"RowButton"
+	_m_continue.visible = false
+	_m_continue.pressed.connect(func() -> void: _act(func() -> void: continue_pressed.emit()))
+	add_child(_m_continue)
 
 
 # ---------------------------------------------------------------- meta panels
@@ -1063,7 +1133,7 @@ func _fill_stats(box: VBoxContainer) -> void:
 ## How to play: a few short parts, each with its glyph, in the panels'
 ## quieter voice. Words only: everything it names is on screen in play.
 const HELP := [["help.shoot", "pull"], ["help.pause", "clock"], ["help.line", "shield"], ["help.read", "eye"],
-	["help.charge", "bolt"], ["help.perks", "perk:split"], ["help.trick", "bank"], ["help.daily", "calendar"]]
+	["help.charge", "bolt"], ["help.perks", "perk:split"], ["help.sessions", "restart"], ["help.trick", "bank"], ["help.daily", "calendar"]]
 
 
 func _fill_help(box: VBoxContainer) -> void:
@@ -1883,6 +1953,42 @@ class IconBtn extends UIButton:
 		Hud.glyph(self, glyph, Vector2(x0 + iw * 0.5, cy), s, col)
 		var base := cy + (f.get_ascent(fs) - f.get_descent(fs)) * 0.5
 		draw_string(f, Vector2(x0 + iw + 12.0, base), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col if lit else Tok.TEXT_PRIMARY)
+
+
+## «Fortsett runden» (v8.10): a gold plate with a play mark, the words, and
+## under them the wave, the score and the knots of the run left unfinished.
+class ContinueBtn extends UIButton:
+	var hud: Hud
+	var title := ""
+	var sub := ""
+
+	func _draw() -> void:
+		if hud == null:
+			return
+		var down := get_draw_mode() == DRAW_PRESSED or get_draw_mode() == DRAW_HOVER_PRESSED
+		var plate := Rect2(Vector2(2, 2), size - Vector2(4, 6))
+		Hud.pill(self, Rect2(plate.position + Vector2(2, 3.5), plate.size), Color(0, 0, 0, 0.45))
+		Hud.pill(self, plate, Tok.PRIMARY_LO)
+		Hud.pill(self, plate.grow(-2.5), Tok.PRIMARY_HI if not down else Tok.PRIMARY)
+		Hud.pill(self, plate.grow(-6.0), Tok.PRIMARY.darkened(0.08) if down else Tok.PRIMARY)
+		var cy := plate.get_center().y
+		# The play mark in a dark disc.
+		var mc := Vector2(plate.position.x + plate.size.y * 0.5 + 4.0, cy)
+		var mr := plate.size.y * 0.32
+		draw_circle(mc, mr, Color(Tok.ON_PRIMARY, 0.9), true, -1.0, true)
+		var k := mr * 0.5
+		draw_colored_polygon(PackedVector2Array([mc + Vector2(-k * 0.7, -k), mc + Vector2(k * 1.1, 0), mc + Vector2(-k * 0.7, k)]), Tok.PRIMARY_HI)
+		var x0 := mc.x + mr + 16.0
+		var w := plate.end.x - x0 - 18.0
+		var tf := hud.body_font()
+		var sf := hud._font_body
+		var tfs := Hud.ts(26)
+		var sfs := Hud.ts(18)
+		var th := tf.get_height(tfs)
+		var sh := sf.get_height(sfs)
+		var top := cy - (th + sh) * 0.5
+		draw_string(tf, Vector2(x0, top + tf.get_ascent(tfs)), title, HORIZONTAL_ALIGNMENT_LEFT, w, tfs, Tok.ON_PRIMARY)
+		draw_string(sf, Vector2(x0, top + th + sf.get_ascent(sfs)), sub, HORIZONTAL_ALIGNMENT_LEFT, w, sfs, Color(Tok.ON_PRIMARY, 0.78))
 
 
 ## A ball in the gallery: the ball itself, large, on a brass socket, its
@@ -3564,7 +3670,8 @@ class Overlay extends Control:
 		_draw_missions(l, a, y + 112.0)
 		var p := (0.55 + 0.45 * sin(_clock * 2.4)) * a
 		var py := l.fork_y - 84.0
-		draw_string(body, Vector2(0, py), Loc.t("menu.play"), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(24), Color(Tok.PRIMARY, p))
+		var prompt := "menu.playNew" if not hud.daily and not Prefs.saved_run().is_empty() else "menu.play"
+		draw_string(body, Vector2(0, py), Loc.t(prompt), HORIZONTAL_ALIGNMENT_CENTER, w, Hud.ts(24), Color(Tok.PRIMARY, p))
 		var cx := w * 0.5
 		var cy := py + 16.0 + 3.0 * sin(_clock * 2.4)
 		draw_polyline(PackedVector2Array([Vector2(cx - 9, cy), Vector2(cx, cy + 8), Vector2(cx + 9, cy)]), Color(Tok.PRIMARY, p), 2.5, true)

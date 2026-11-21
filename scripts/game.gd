@@ -135,6 +135,12 @@ const BLAST_R := [0.0, 100.0, 130.0]   # Smell: px (× scale) a kill's burst rea
 const BLAST_MAX := [0, 1, 2]           # ... and the most it strikes
 const FREEZE_R := [0.0, 70.0, 100.0]   # Frost: px (× scale) around a hit
 const FREEZE_TIME := [0.0, 1.5, 2.5]   # ... and for how long (s); see Target.FROST_REST
+# Short sessions (v8.10). Hurtigstart: the run begins as wave 3 does for an
+# average player (its wave and its time: the medium bot reaches wave 3 at
+# 58-73 s, median 64), two upgrades picked first.
+const QUICK_WAVE := 3
+const QUICK_ELAPSED := 65.0
+const QUICK_PICKS := 2
 
 var layout: Layout
 var director := Director.new()
@@ -151,6 +157,9 @@ var flow_t := 0.0               # real seconds of flow left
 var flows := 0                  # flow streaks this run
 var perks := {}                 # upgrades picked this run: id -> level
 var _choice: Array[String] = [] # the upgrades on offer while the choice is open
+var _quick_left := 0            # Hurtigstart: upgrades still to pick before the first wave
+var quick := false              # this run began with Hurtigstart
+var resumed_at := 0             # the wave this run was picked up at (0: it began fresh)
 var _aim_slow := 1.0            # Fokus: the game time while aiming, eased
 var _aim_start := -1.0          # game time the current pull began
 var _release_hold := -1.0       # how long the last pull was held
@@ -350,6 +359,7 @@ func _ready() -> void:
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
 	hud.menu_pressed.connect(_to_menu)
+	hud.continue_pressed.connect(continue_run)
 	hud.bar.record_broken.connect(_on_record_broken)
 	hud.bar.wave_record.connect(_on_wave_record)
 	backdrop.energy_arrived.connect(_on_energy)
@@ -374,9 +384,13 @@ func _apply_layout() -> void:
 	hud.setup(layout)
 	stage.setup(layout)
 	near.setup(layout)
-	var ry := hud.menu_record_y()
-	# The eyes keep out of the whole band with the menu's text and the
-	# mission tickets, wall to wall.
+	_menu_avoid()
+
+
+## The eyes keep out of the whole band with the menu's text and the
+## mission tickets, wall to wall (and «Fortsett runden» above them).
+func _menu_avoid() -> void:
+	var ry := hud.menu_record_y() - (110.0 if not Prefs.saved_run().is_empty() else 0.0)
 	stage.avoid = Rect2(0.0, ry - 190.0, layout.size.x, layout.fork_y - ry + 110.0)
 
 
@@ -461,7 +475,10 @@ func _to_menu() -> void:
 		hud.scrim_to(0.0, Motion.NORMAL)
 		hud.fade_hud(0.0, Motion.FAST)
 	_clear_field()
-	# The title falls in on its strings and the dark comes alive.
+	# The title falls in on its strings and the dark comes alive (higher
+	# when «Fortsett runden» needs the room under it).
+	title.short = not Prefs.saved_run().is_empty()
+	_menu_avoid()
 	title.setup(layout, hud.display_font(), true)
 	stage.avoid_pts = title.rest_points()
 	stage.show_stage(1.4 if not from_game else 0.8)
@@ -471,11 +488,13 @@ func _to_menu() -> void:
 
 
 ## First release on the menu starts a run: the letters' strings snap, the
-## HUD comes in piece by piece and the first row hangs in.
-func _start_run() -> void:
+## HUD comes in piece by piece and the first row hangs in. With `resume`
+## (a saved run, see _save_run) the run is picked up as that wave began;
+## with Hurtigstart on, it begins at wave 3 after two upgrades are picked.
+func _start_run(resume := {}) -> void:
 	_set_state(State.STARTING)
 	# The daily challenge: the same spawn sequence for everyone that day.
-	daily = hud.daily
+	daily = hud.daily and resume.is_empty()
 	# One seed drives everything a run rolls (spawns, the director's pacing
 	# and moods, each enemy's temper): the date for the daily challenge,
 	# chance otherwise, or the one a test asked for (SPENN_SEED).
@@ -553,13 +572,30 @@ func _start_run() -> void:
 	habits.restore({} if daily else Prefs.habits)
 	habits.begin_run()
 	mind.reset()
-	hud.bar.score = 0
-	hud.bar.shown_score = 0.0
+	resumed_at = 0
+	quick = false
+	_quick_left = 0
+	if not resume.is_empty():
+		_apply_save(resume)
+	elif not daily:
+		# A new run leaves the unfinished one behind (the daily challenge
+		# does not touch it).
+		_drop_run_save()
+		if Prefs.quick_start and Prefs.quick_unlocked():
+			quick = true
+			_quick_left = QUICK_PICKS
+			director.resume_at(QUICK_WAVE, QUICK_ELAPSED, 0.55, 0, 0, 0, 20.0)
+			# The pace has a wave 2 for comparison with the record run.
+			_run_pace = [0]
+	_tactic_told = director.tactic() if director.wave > 1 else 0
+	_acro_told = director.wave >= ACRO_WAVE
+	hud.bar.score = score
+	hud.bar.shown_score = float(score)
 	hud.bar.lives = lives
 	hud.bar.streak = 0
 	hud.bar.phase = 1
 	hud.bar.progress = 0.0
-	hud.bar.set_mult(1)
+	_show_mult()
 	# The bests this run chases (the bar says when they are near or beaten).
 	hud.bar.daily = daily
 	hud.bar.best = Prefs.daily_record() if daily else Prefs.record
@@ -569,15 +605,26 @@ func _start_run() -> void:
 	hud.reveal_hud()
 	title.release()
 	_menu_exit()
-	# No pause button: the first few runs say how to pause instead.
-	Prefs.runs += 1
-	Prefs.save()
-	hud.card(Loc.t("event.survive"), Loc.t("pause.hint") if Prefs.runs <= 3 else Loc.t("event.surviveSub"))
-	_spawn_formation(Target.Kind.RING, 4)
+	if resumed_at > 0:
+		# Picked up: the wave's title says so, and nothing hangs in until it fades.
+		Prefs.save()
+		_begin_wave(Loc.t("resume.sub"))
+	elif quick:
+		Prefs.runs += 1
+		Prefs.save()
+		_intro_hold = 99.0
+	else:
+		# No pause button: the first few runs say how to pause instead.
+		Prefs.runs += 1
+		Prefs.save()
+		hud.card(Loc.t("event.survive"), Loc.t("pause.hint") if Prefs.runs <= 3 else Loc.t("event.surviveSub"))
+		_spawn_formation(Target.Kind.RING, 4)
 	Music.set_mode(Music.Mode.PLAY)
 	Motion.after(0.5, func() -> void:
 		if state == State.STARTING:
-			_set_state(State.PLAYING))
+			_set_state(State.PLAYING)
+			if _quick_left > 0:
+				_open_choice())
 
 
 ## The record just fell, mid-run: the counter takes the stamp (drawn by the
@@ -1178,26 +1225,37 @@ func _wave_tick(delta: float) -> void:
 				Sfx.cue("wave_in")
 			if director.wave_break <= 0.0:
 				director.next_wave()
-				_wave_clean = true
-				if director.wave >= 5:
-					_feat("wave5")
-				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
-				# The title is set first; the first of the wave come as it fades.
-				_intro_hold = INTRO_HOLD
-				# A new wave, a new colour theme, eased in.
-				Pal.next_theme()
-				var wm := director.roll_mood()
-				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
-				_note_pace()
-				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
-				_schedule_hazard()
-				if director.wave == ACRO_WAVE and not _acro_told:
-					_acro_told = true
-					fx.after(1.8, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
-				var tac := director.tactic()
-				if tac > _tactic_told:
-					_tactic_told = tac
-					fx.after(1.8, func() -> void: _announce_tactic(tac))
+				_begin_wave()
+
+
+## A wave begins (after a break, or as a picked-up run or a quick start
+## gets going): its title and mood, a new colour theme, the pace against
+## the record run, the hazard it brings and what the enemies have learned.
+## Then the run is saved as it stands (see _save_run). `sub` replaces the
+## mood's line under the title.
+func _begin_wave(sub := "") -> void:
+	_wave_clean = true
+	if director.wave >= 5:
+		_feat("wave5")
+	director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
+	# The title is set first; the first of the wave come as it fades.
+	_intro_hold = INTRO_HOLD
+	# A new wave, a new colour theme, eased in.
+	Pal.next_theme()
+	var wm := director.roll_mood()
+	var line := Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else ""
+	hud.wave_intro(director.wave, sub if sub != "" else line, Tok.PRIMARY if sub != "" else WAVE_MOOD_COL[wm])
+	_note_pace()
+	backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
+	_schedule_hazard()
+	if director.wave == ACRO_WAVE and not _acro_told:
+		_acro_told = true
+		fx.after(1.8, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
+	var tac := director.tactic()
+	if tac > _tactic_told:
+		_tactic_told = tac
+		fx.after(1.8, func() -> void: _announce_tactic(tac))
+	_save_run()
 
 
 func _clear_wave() -> void:
@@ -2262,6 +2320,8 @@ func _breach(t: Target) -> void:
 			o.goal_length = o.length
 	if lives <= 0:
 		_begin_death(at)
+	else:
+		_save_lives()
 
 
 ## Death: impact (shake, coral flash, sparks, low hit), then slow motion
@@ -2276,6 +2336,9 @@ func _begin_death(at: Vector2) -> void:
 	hud.clear_cards()
 	_vignette.set_shader_parameter("glow", 0.0)
 	_set_state(State.DEATH)
+	# The run is over: there is nothing to pick up.
+	if not daily:
+		_drop_run_save()
 	hud.locked = true
 	slingshot.cancel()
 	_touch = -1
@@ -2665,6 +2728,100 @@ func _try_rescue(t: Target) -> void:
 	t.expect_rescue(best)
 
 
+# ---------------------------------------------------------------- sessions
+
+## The run as it stands when a wave begins (v8.10): what «Fortsett» needs
+## to pick it up there if the app is closed, the phone dies or you go back
+## to the menu. Not the daily challenge (it is the same run for everyone).
+## The enemies are not kept: a picked-up run starts its wave afresh.
+func _save_run() -> void:
+	if daily or state == State.DEATH or state == State.GAME_OVER or state == State.MAIN_MENU:
+		return
+	var order: Array = []
+	for id in hud.perk_order:
+		order.append(id)
+	Prefs.run_save = {
+		"v": Prefs.RUN_SAVE, "day": Meta.today(),
+		"wave": director.wave, "elapsed": director.elapsed, "accuracy": director.accuracy,
+		"shots": director.shots, "hits": director.hits, "events": director.event_count,
+		"event_in": director.next_event - director.elapsed,
+		"score": score, "lives": lives, "perks": perks.duplicate(), "order": order,
+		"best_streak": best_streak, "cuts": cuts, "overloads": overloads, "flows": flows,
+		"revenges": revenges, "skills": Array(skill_counts), "waves_cleared": waves_cleared,
+		"kills": run_kills, "next_life_at": _next_life_at, "pace": _run_pace.duplicate(),
+		"missions_done": _missions_done.duplicate(), "mission_slots": _mission_slots.duplicate(),
+		"quick": quick,
+	}
+	Prefs.save()
+
+
+## A knot lost is lost in the saved run too (going back to the menu never
+## wins one back).
+func _save_lives() -> void:
+	var s := Prefs.run_save
+	if not s.is_empty() and not daily and lives < int(s.get("lives", LIVES)):
+		s["lives"] = lives
+		Prefs.save()
+
+
+func _drop_run_save() -> void:
+	if not Prefs.run_save.is_empty():
+		Prefs.run_save = {}
+		Prefs.save()
+
+
+## «Fortsett» on the menu: the saved run picks up as its wave began.
+func continue_run() -> void:
+	var s := Prefs.saved_run()
+	if s.is_empty() or state != State.MAIN_MENU:
+		return
+	_start_run(s)
+
+
+## A saved run's numbers back in place (see _save_run): the wave and its
+## clock, the score, the knots, the upgrades and what the run has counted.
+func _apply_save(s: Dictionary) -> void:
+	resumed_at = int(s.get("wave", 2))
+	quick = bool(s.get("quick", false))
+	director.resume_at(resumed_at, float(s.get("elapsed", 0.0)), float(s.get("accuracy", 0.55)),
+		int(s.get("shots", 0)), int(s.get("hits", 0)), int(s.get("events", 0)), float(s.get("event_in", Director.EVENT_EVERY)))
+	score = maxi(0, int(s.get("score", 0)))
+	var saved: Dictionary = s.get("perks", {})
+	perks = {}
+	for id: Variant in saved:
+		if Perks.MAX.has(str(id)):
+			perks[str(id)] = clampi(int(saved[id]), 0, int(Perks.MAX[str(id)]))
+	hud.perk_order.clear()
+	for id: Variant in s.get("order", []):
+		if perks.has(str(id)) and not hud.perk_order.has(str(id)):
+			hud.perk_order.append(str(id))
+	for id: String in perks:
+		if not hud.perk_order.has(id):
+			hud.perk_order.append(id)
+	hud.perk_levels = perks.duplicate()
+	_apply_perks()
+	lives = clampi(int(s.get("lives", LIVES)), 1, _max_lives())
+	best_streak = int(s.get("best_streak", 0))
+	cuts = int(s.get("cuts", 0))
+	overloads = int(s.get("overloads", 0))
+	flows = int(s.get("flows", 0))
+	revenges = int(s.get("revenges", 0))
+	var sk: Array = s.get("skills", [])
+	for i in mini(sk.size(), skill_counts.size()):
+		skill_counts[i] = int(sk[i])
+	waves_cleared = int(s.get("waves_cleared", resumed_at - 1))
+	run_kills = int(s.get("kills", 0))
+	_next_life_at = maxi(int(s.get("next_life_at", EXTRA_LIFE_EVERY)), score - score % EXTRA_LIFE_EVERY + EXTRA_LIFE_EVERY)
+	# This wave's pace is noted again as it begins.
+	_run_pace = []
+	for v: Variant in s.get("pace", []):
+		_run_pace.append(int(v))
+	if not _run_pace.is_empty():
+		_run_pace.pop_back()
+	_missions_done = (s.get("missions_done", []) as Array).duplicate()
+	_mission_slots = (s.get("mission_slots", []) as Array).duplicate()
+
+
 # ---------------------------------------------------------------- perks
 
 func perk(id: String) -> int:
@@ -2697,6 +2854,9 @@ func _open_choice() -> void:
 		return
 	var ids := Perks.offer(perks, lives < _max_lives(), _rng)
 	if ids.is_empty():
+		if _quick_left > 0:
+			_quick_left = 0
+			_begin_wave(Loc.t("quick.sub"))
 		return
 	_choice = ids
 	_set_state(State.CHOOSING)
@@ -2706,7 +2866,10 @@ func _open_choice() -> void:
 	var levels: Array[int] = []
 	for id in ids:
 		levels.append(perk(id))
-	hud.open_choice(ids, levels, perks, director.wave, choose)
+	var head := Loc.t("choice.head") % director.wave
+	if _quick_left > 0:
+		head = Loc.t("choice.quick") % [QUICK_PICKS - _quick_left + 1, QUICK_PICKS]
+	hud.open_choice(ids, levels, perks, head, choose)
 
 
 func choosing() -> bool:
@@ -2731,6 +2894,12 @@ func choose(id: String) -> void:
 	hud.close_choice()
 	_set_state(State.PLAYING)
 	_take_perk(id, from)
+	if _quick_left > 0:
+		_quick_left -= 1
+		if _quick_left > 0:
+			_open_choice()
+		else:
+			_begin_wave(Loc.t("quick.sub"))
 
 
 func _take_perk(id: String, from := Vector2.INF) -> void:

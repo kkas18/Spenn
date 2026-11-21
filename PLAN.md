@@ -2879,3 +2879,19 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9) og [CHANGELOG.md]
 6. **Tester:** ny test `perks`. Testoppsettet velger automatisk (`auto_pick`,
    `pick_upgrade`), og botspilleren har sin egen rekkefølge (`PICK`). Hele pakken
    passerer.
+
+## v8.10 – Raske økter
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9b) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Lagring** (`Game._save_run`, `_save_lives`, `_drop_run_save`, `_apply_save`,
+   `continue_run`; `Prefs.run_save`, `RUN_SAVE`, `saved_run`): `_begin_wave` (bølgens
+   start, skilt ut fra `_wave_tick`) lagrer runden. `Director.resume_at` setter bølgen,
+   klokka og skuddtallene når runden tas opp igjen.
+2. **Hurtigstart** (`QUICK_WAVE`, `QUICK_ELAPSED` = 65 s, `QUICK_PICKS`, `_quick_left`;
+   `Prefs.quick_start`, `QUICK_UNLOCK`, `quick_unlocked`): `_start_run` starter på bølge
+   3. Valgene kommer etter hverandre i `choose`, og `_begin_wave` begynner bølgen.
+3. **Menyen** (`Hud._place_menu_modes`, `_menu_modes`, `ContinueBtn`, `_m_quick`;
+   `TitleLetters.short`, `Game._menu_avoid`): knappen og bryteren, og tittelen henger
+   høyere når knappen vises.
+4. **Tester:** ny test `sessions`. Hele pakken passerer.
