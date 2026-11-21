@@ -5,10 +5,10 @@ extends Node2D
 ## it. Also lives, streaks, chains, collisions and scoring. All nodes are created once
 ## in _ready(); targets, balls and effects are pooled.
 
-enum State { BOOT, INTRO, MAIN_MENU, STARTING, PLAYING, PAUSED, RESUMING, DEATH, GAME_OVER, RESTARTING }
+enum State { BOOT, INTRO, MAIN_MENU, STARTING, PLAYING, PAUSED, RESUMING, DEATH, GAME_OVER, RESTARTING, CHOOSING }
 
 const MAX_TARGETS := 28
-const MAX_BALLS := 6
+const MAX_BALLS := 10            # a triple fan that splits (Splitt, v8.9) can have nine in the air
 const AMMO_CAP := 5
 const SUBSTEP := 1.0 / 120.0
 # Ball vs body: an impulse exchange between masses. The ball is mass 1; a
@@ -22,17 +22,25 @@ const RIGID_MU := 0.12
 const PLATE_E := 0.7
 const LIVES := 3
 const CUT_SPEED := 1400.0      # a rising ball this fast severs a string near its hook
-const EXTRA_LIFE_EVERY := 1500
+const EXTRA_LIFE_EVERY := 1500   # points for a lost knot back in wave 1 ...
+const EXTRA_LIFE_WAVE := 0.25    # ... and a quarter more for each wave after (v8.9)
 const CHAIN_WINDOW := 1.2
 const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const RESCUE := 0.85           # ... and above this, a rescue ("SAVED!")
 # Hazards: from wave 3 most waves bring one event partway through.
 enum Hazard { NONE, GUST, BLACKOUT, GOLD }
 const HAZARD_FROM := 2
-const GUST_TIME := 9.0
+# The lengths below are in real seconds, and they are the ones the game
+# has in fact been played with. Up to v7.57 they read 9 and 8 s (and
+# overload 5 s, flow 7 s), but every hit made the real-time clocks leap
+# 0.83 s ahead (see Motion.rd), so a gust or a blackout was over in about
+# 3 s, overload in about 2.5 s (1.5 to 3.6 s: shorter the more you hit)
+# and flow in about 3 s. With the clocks right, the numbers now say what
+# happens, and no longer depend on how many hits land.
+const GUST_TIME := 4.0
 const GUST_ACC := 160.0         # px/s² at full strength (targets; balls feel a share)
 const GUST_BALL := 0.6
-const BLACKOUT_TIME := 8.0
+const BLACKOUT_TIME := 3.5
 const GOLD_BONUS := 400
 # Nemesis: the target that took a knot returns 18-30 s of play later,
 # scarred and tougher; destroying it pays revenge.
@@ -84,17 +92,25 @@ const Ammo := Slingshot.Ammo
 # rail); misses and breaches bleed it. Full, it discharges for
 # OVERLOAD_TIME real seconds: time slows, every ball pierces, reloads are
 # near instant, the targets panic and climb their strings, points double.
-const OVERLOAD_TIME := 5.0
+const OVERLOAD_TIME := 2.5       # real seconds (see GUST_TIME)
 const OVERLOAD_SCALE := 0.7
-const OVERLOAD_RELOAD := 0.3   # reload time factor while it lasts
+const OVERLOAD_RELOAD := 0.5   # reload time factor while it lasts
 const CHARGE_KILL := 0.03
+const VIGNETTE := 0.36          # how far the corners sink (it was 0.55: a dark room; the stage is lit)
+const VIGNETTE_TENSE := 0.66    # ... with an enemy at the line
+const CHARGE_WAVE := 0.15       # per wave past CHARGE_FROM, a kill charges this much less (see _charge)
+const CHARGE_FROM := 4          # waves 1 to 4 charge as they always have
 # Flow: quick hits fill a meter; full, the run speeds up for a while.
-const FLOW_TIME := 7.0          # real seconds
-const FLOW_HIT := 0.12
-const FLOW_KILL := 0.2
+const FLOW_TIME := 3.0          # real seconds (see GUST_TIME)
+const STREAK_CARD_AT := 2.4     # s into the first run of a day: "day 3 in a row"
+# What a shot that hit, and a kill, add to the meter. (0.12 and 0.2 while
+# each hit also cost the meter 0.08 through the leaping decay; a kill
+# with one ball fills it as it did then.)
+const FLOW_HIT := 0.1
+const FLOW_KILL := 0.14
 const FLOW_MISS := 0.3
 const FLOW_DECAY := 0.1         # per second while not flowing
-const FLOW_RELOAD := 1.4        # reload speed factor while it lasts
+const FLOW_RELOAD := 1.3        # reload speed factor while it lasts
 const CHARGE_MISS := 0.05
 const CHARGE_BREACH := 0.35
 # Skill shots: named, paid and voiced (a short phrase up the note ladder).
@@ -108,6 +124,23 @@ const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 # freshly struck target slamming a neighbour this hard hurts it.
 const CRUSH_SPEED := 220.0
 const KNOCK_SPEED := 240.0
+# The upgrades that change a run (v8.9, see Perks), by level (0, 1, 2).
+const AIM_SLOW := [1.0, 0.8, 0.7]      # Fokus: game time while you aim
+const BIG_GROW := [0.0, 4.0, 8.0]      # Stor kule: px on a ball's radius
+const SPLIT_SPREAD := 0.42             # Splitt: rad between a ball and its piece
+const SPLIT_SPEED := 650.0             # ... the pieces fly at least this fast (px/s, × scale)
+const RICOCHET_REACH := 320.0          # Rikosjett: px (× scale) to the next enemy
+const RICOCHET_SPEED := 950.0          # ... and at least this fast (px/s, × scale)
+const BLAST_R := [0.0, 100.0, 130.0]   # Smell: px (× scale) a kill's burst reaches
+const BLAST_MAX := [0, 1, 2]           # ... and the most it strikes
+const FREEZE_R := [0.0, 70.0, 100.0]   # Frost: px (× scale) around a hit
+const FREEZE_TIME := [0.0, 1.5, 2.5]   # ... and for how long (s); see Target.FROST_REST
+# Short sessions (v8.10). Hurtigstart: the run begins as wave 3 does for an
+# average player (its wave and its time: the medium bot reaches wave 3 at
+# 58-73 s, median 64), two upgrades picked first.
+const QUICK_WAVE := 3
+const QUICK_ELAPSED := 65.0
+const QUICK_PICKS := 2
 
 var layout: Layout
 var director := Director.new()
@@ -123,6 +156,11 @@ var flow := 0.0                 # 0..1: the meter, or what is left of flow
 var flow_t := 0.0               # real seconds of flow left
 var flows := 0                  # flow streaks this run
 var perks := {}                 # upgrades picked this run: id -> level
+var _choice: Array[String] = [] # the upgrades on offer while the choice is open
+var _quick_left := 0            # Hurtigstart: upgrades still to pick before the first wave
+var quick := false              # this run began with Hurtigstart
+var resumed_at := 0             # the wave this run was picked up at (0: it began fresh)
+var _aim_slow := 1.0            # Fokus: the game time while aiming, eased
 var _aim_start := -1.0          # game time the current pull began
 var _release_hold := -1.0       # how long the last pull was held
 var _tactic_told := 0
@@ -177,12 +215,17 @@ var smarts: Smarts       # the smart enemies' thinking (scripts/smarts.gd)
 var mind: Mind           # how every enemy answers your aim (scripts/mind.gd)
 var habits := Habits.new()  # what they know of you, kept between runs (scripts/habits.gd)
 var backdrop: Backdrop
+var near: NearLayer
 var stage: MenuStage
 var targets: Array[Target] = []
 var balls: Array[Ball] = []
 
 var _rng := RandomNumberGenerator.new()
+## Tests set this (or the SPENN_SEED environment variable) to make every
+## run roll the same; 0 leaves it to chance.
+static var test_seed := 0
 var _acc := 0.0
+var _sling_acc := 0.0           # real time not yet stepped by the slingshot's band
 var _state_t := 0.0
 var _spawn_t := 0.0
 var _intro_hold := 0.0          # a new wave's title is showing: nothing comes yet
@@ -193,9 +236,14 @@ var _chain_t := 0.0
 var _next_life_at := EXTRA_LIFE_EVERY
 var _beat_t := 0.0
 var _vignette: ShaderMaterial
+var _sky_sent := -1.0           # the world whose light the creatures were last given (Pal.world_stamp)
+const MENU_WORLD_EVERY := 12.0  # s between the menu's changes of world
+var _menu_world_t := 0.0
 var _tension := 0.0
 var _touch := -1
 var _origin := Vector2.ZERO
+var _aim_queued := false        # a press that waits for the last ball to leave the pouch
+var _drag_off := Vector2.ZERO   # the finger's travel in the current pull
 var _time := 0.0
 var _knock_sfx_cd := 0.0
 var _shot_seq := 0
@@ -214,11 +262,14 @@ var daily := false              # this run is the daily challenge
 var run_kills := 0
 var _missions_done: Array = []  # lines of the missions finished this run
 var _mission_slots: Array = []  # slots already paid this run
+var _points_start := 0          # lifetime points when the run began (the results show what it added)
+var _run_pace: Array = []       # this run's score as each wave began (wave 2 first), see Prefs.pace
 var _mission_t := 0.0
 # Tilt parallax: the phone's lean (relative to how it is usually held)
 # shifts the world a few px against the wall behind it.
 const TILT_PX := 18.0
 var _tilt := Vector2.ZERO
+var _aim_par := Vector2.ZERO        # aim parallax (px), see _update_depth
 var _tilt_ref := Vector2.ZERO
 var _tilt_seen := false
 var _gyro := Vector2.ZERO       # integrated rotation (rad), easing back to 0
@@ -243,6 +294,8 @@ func _ready() -> void:
 	smarts = Smarts.new(self)
 	mind = Mind.new(self)
 	_rng.randomize()
+	if OS.get_environment("SPENN_SEED") != "":
+		test_seed = int(OS.get_environment("SPENN_SEED"))
 	layout = Layout.compute(get_viewport())
 	backdrop = Backdrop.new()
 	add_child(backdrop)
@@ -256,6 +309,7 @@ func _ready() -> void:
 	world.add_child(title)
 	for i in MAX_TARGETS:
 		var t := Target.new()
+		t.slot = i
 		world.add_child(t)
 		targets.append(t)
 	slingshot = Slingshot.new()
@@ -269,6 +323,9 @@ func _ready() -> void:
 	fx.z_index = 2
 	fx.shake_target = world
 	world.add_child(fx)
+	# The nearest layer: soft motes between you and the field (v8.8).
+	near = NearLayer.new()
+	add_child(near)
 	# Shock rings refract the world (not the HUD); hidden while none are live.
 	var shock_layer := CanvasLayer.new()
 	shock_layer.layer = 4
@@ -302,15 +359,21 @@ func _ready() -> void:
 	hud.resume_pressed.connect(_resume)
 	hud.restart_pressed.connect(_restart)
 	hud.menu_pressed.connect(_to_menu)
+	hud.continue_pressed.connect(continue_run)
 	hud.bar.record_broken.connect(_on_record_broken)
 	hud.bar.wave_record.connect(_on_wave_record)
 	backdrop.energy_arrived.connect(_on_energy)
 	get_viewport().size_changed.connect(_on_resize)
+	Prefs.pull_changed.connect(_on_resize)
 	_apply_layout()
 	_boot()
 
 
 func _apply_layout() -> void:
+	for t in targets:
+		# The screen's height before any step has run (sizes and the rear
+		# rail's drop are scaled by it at the spawn).
+		t._screen_h = layout.size.y
 	rail.setup(layout, targets)
 	backdrop.setup(layout)
 	backdrop.targets = targets
@@ -320,16 +383,21 @@ func _apply_layout() -> void:
 	slingshot.setup(layout)
 	hud.setup(layout)
 	stage.setup(layout)
-	var ry := hud.menu_record_y()
-	# The eyes keep out of the whole band with the menu's text and the
-	# mission tickets, wall to wall.
+	near.setup(layout)
+	_menu_avoid()
+
+
+## The eyes keep out of the whole band with the menu's text and the
+## mission tickets, wall to wall (and «Fortsett runden» above them).
+func _menu_avoid() -> void:
+	var ry := hud.menu_record_y() - (110.0 if not Prefs.saved_run().is_empty() else 0.0)
 	stage.avoid = Rect2(0.0, ry - 190.0, layout.size.x, layout.fork_y - ry + 110.0)
 
 
 func _on_resize() -> void:
 	layout = Layout.compute(get_viewport())
 	for t in targets:
-		t.anchor.y = layout.rail_y + 3.0
+		t.anchor.y = layout.rail_y + 3.0 + (Target.REAR_DROP * layout.scale if t.rank == Target.Rank.BACK else 0.0)
 	_apply_layout()
 	if state == State.MAIN_MENU:
 		title.setup(layout, hud.display_font())
@@ -349,6 +417,9 @@ func _clear_field() -> void:
 	_shots.clear()
 	_intro_queue.clear()
 	perks.clear()
+	_choice.clear()
+	_aim_slow = 1.0
+	hud.close_choice()
 	hud.perk_order.clear()
 	hud.perk_levels = {}
 	_apply_perks()
@@ -369,7 +440,7 @@ func _clear_field() -> void:
 	_heat = 0.0
 	Target.morale = 0.0
 	_cocky_t = 0.0
-	_vignette.set_shader_parameter("strength", 0.55)
+	_vignette.set_shader_parameter("strength", VIGNETTE)
 	_vignette.set_shader_parameter("glow", 0.0)
 
 
@@ -404,7 +475,10 @@ func _to_menu() -> void:
 		hud.scrim_to(0.0, Motion.NORMAL)
 		hud.fade_hud(0.0, Motion.FAST)
 	_clear_field()
-	# The title falls in on its strings and the dark comes alive.
+	# The title falls in on its strings and the dark comes alive (higher
+	# when «Fortsett runden» needs the room under it).
+	title.short = not Prefs.saved_run().is_empty()
+	_menu_avoid()
 	title.setup(layout, hud.display_font(), true)
 	stage.avoid_pts = title.rest_points()
 	stage.show_stage(1.4 if not from_game else 0.8)
@@ -414,22 +488,41 @@ func _to_menu() -> void:
 
 
 ## First release on the menu starts a run: the letters' strings snap, the
-## HUD comes in piece by piece and the first row hangs in.
-func _start_run() -> void:
+## HUD comes in piece by piece and the first row hangs in. With `resume`
+## (a saved run, see _save_run) the run is picked up as that wave began;
+## with Hurtigstart on, it begins at wave 3 after two upgrades are picked.
+func _start_run(resume := {}) -> void:
 	_set_state(State.STARTING)
 	# The daily challenge: the same spawn sequence for everyone that day.
-	daily = hud.daily
-	if daily:
-		_rng.seed = Meta.today()
-		seed(Meta.today())
-	else:
-		_rng.randomize()
-		randomize()
+	daily = hud.daily and resume.is_empty()
+	# One seed drives everything a run rolls (spawns, the director's pacing
+	# and moods, each enemy's temper): the date for the daily challenge,
+	# chance otherwise, or the one a test asked for (SPENN_SEED).
+	randomize()
+	var run_seed := Meta.today() if daily else (test_seed if test_seed != 0 else randi())
+	_rng.seed = run_seed
+	director.reseed(run_seed)
+	seed(run_seed)
+	Target.new_run(run_seed)
+	# The first run of a day counts toward the days in a row; from two in a
+	# row, a card says so once the wave has been called (and seven make an
+	# achievement). Nothing here touches the run itself.
+	var days := Prefs.note_day()
+	if days >= 2:
+		Motion.after(STREAK_CARD_AT, func() -> void:
+			if state != State.PLAYING and state != State.STARTING:
+				return
+			var sub := Loc.t("streak.best") % Prefs.streak_best if Prefs.streak_best > days else Loc.t("streak.longest")
+			hud.card(Loc.t("streak.card") % days, sub, 1.6)
+			if days >= 7:
+				_feat("week"))
 	run_kills = 0
 	# Each run starts in its own theme (the daily one is the same for all).
-	Pal.set_theme(_rng.randi() % Pal.THEMES.size(), true)
+	Pal.set_theme(_rng.randi() % Pal.HARMONY.size(), true)
 	_missions_done = []
 	_mission_slots = []
+	_points_start = Prefs.skin_points
+	_run_pace = []
 	_mission_t = 0.0
 	score = 0
 	lives = LIVES
@@ -479,13 +572,30 @@ func _start_run() -> void:
 	habits.restore({} if daily else Prefs.habits)
 	habits.begin_run()
 	mind.reset()
-	hud.bar.score = 0
-	hud.bar.shown_score = 0.0
+	resumed_at = 0
+	quick = false
+	_quick_left = 0
+	if not resume.is_empty():
+		_apply_save(resume)
+	elif not daily:
+		# A new run leaves the unfinished one behind (the daily challenge
+		# does not touch it).
+		_drop_run_save()
+		if Prefs.quick_start and Prefs.quick_unlocked():
+			quick = true
+			_quick_left = QUICK_PICKS
+			director.resume_at(QUICK_WAVE, QUICK_ELAPSED, 0.55, 0, 0, 0, 20.0)
+			# The pace has a wave 2 for comparison with the record run.
+			_run_pace = [0]
+	_tactic_told = director.tactic() if director.wave > 1 else 0
+	_acro_told = director.wave >= ACRO_WAVE
+	hud.bar.score = score
+	hud.bar.shown_score = float(score)
 	hud.bar.lives = lives
 	hud.bar.streak = 0
 	hud.bar.phase = 1
 	hud.bar.progress = 0.0
-	hud.bar.set_mult(1)
+	_show_mult()
 	# The bests this run chases (the bar says when they are near or beaten).
 	hud.bar.daily = daily
 	hud.bar.best = Prefs.daily_record() if daily else Prefs.record
@@ -495,21 +605,35 @@ func _start_run() -> void:
 	hud.reveal_hud()
 	title.release()
 	_menu_exit()
-	# No pause button: the first few runs say how to pause instead.
-	Prefs.runs += 1
-	Prefs.save()
-	hud.card(Loc.t("event.survive"), Loc.t("pause.hint") if Prefs.runs <= 3 else Loc.t("event.surviveSub"))
-	_spawn_formation(Target.Kind.RING, 4)
+	if resumed_at > 0:
+		# Picked up: the wave's title says so, and nothing hangs in until it fades.
+		Prefs.save()
+		_begin_wave(Loc.t("resume.sub"))
+	elif quick:
+		Prefs.runs += 1
+		Prefs.save()
+		_intro_hold = 99.0
+	else:
+		# No pause button: the first few runs say how to pause instead.
+		Prefs.runs += 1
+		Prefs.save()
+		hud.card(Loc.t("event.survive"), Loc.t("pause.hint") if Prefs.runs <= 3 else Loc.t("event.surviveSub"))
+		_spawn_formation(Target.Kind.RING, 4)
 	Music.set_mode(Music.Mode.PLAY)
 	Motion.after(0.5, func() -> void:
 		if state == State.STARTING:
-			_set_state(State.PLAYING))
+			_set_state(State.PLAYING)
+			if _quick_left > 0:
+				_open_choice())
 
 
 ## The record just fell, mid-run: the counter takes the stamp (drawn by the
 ## bar); here, the burst of brass, the chime and a breath of slow motion.
 func _on_record_broken() -> void:
 	var at := Vector2(layout.center_x, layout.safe_top + 47.0)
+	backdrop.pulse(Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.2), Pal.GOLD_LIGHT, 0.4, layout.size.x * 0.6, 1.4)
+	fx.confetti(Vector2(layout.center_x, layout.rail_y + 10.0), layout.size.x * 0.7, 34)
+	fx.glitter(at, Pal.GOLD_LIGHT, 20, 1.5)
 	fx.sparks(at, Pal.GOLD_LIGHT, 18)
 	fx.ring(at, Pal.GOLD_LIGHT, 70.0)
 	fx.flash(at, 90.0, Pal.GOLD_LIGHT)
@@ -614,6 +738,7 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	# A fibre shows where it will hang a moment before it drops in.
 	var wait := FORESHADOW if state == State.PLAYING else 0.0
 	t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * frac, wait)
+	_begin_entry(t)
 	if wait > 0.0:
 		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * frac), Pal.kind_color(kind), wait)
 	_roll_variant(t)
@@ -625,12 +750,33 @@ func _spawn_one(kind: Target.Kind, len_frac := -1.0) -> Target:
 	return t
 
 
+## How a newcomer arrives (see Target.Entry). Most swing in on their string
+## from the side they hang on, out toward the middle; the Dykker dives into
+## a bungee, the Snelle runs in along the rail from the nearer edge, and
+## the heavy ones come down with a thump. In a row (`row_dir` set), all but
+## the divers and the heavy ones swing in from the same side.
+func _begin_entry(t: Target, row_dir := 0.0) -> void:
+	if t.kind == Target.Kind.DROP:
+		t.begin_entry(Target.Entry.BUNGEE)
+	elif t.kind == Target.Kind.HEAVY or t.kind == Target.Kind.BOSS:
+		t.begin_entry(Target.Entry.THUD)
+	elif t.kind == Target.Kind.REEL and row_dir == 0.0:
+		var right := t.anchor.x > layout.center_x
+		var from := layout.size.x - layout.margin - t.radius if right else layout.margin + t.radius
+		t.begin_entry(Target.Entry.RAIL, 0.0, from)
+	else:
+		var d := row_dir if row_dir != 0.0 else (1.0 if t.anchor.x < layout.center_x else -1.0)
+		t.begin_entry(Target.Entry.SWING, d)
+
+
 ## A row of identical targets in a shallow V, dropping in left to right.
 ## Rows of five or more march behind a crowned leader in the middle: it
 ## dodges for all of them. Bring it down and the rest panic.
 func _spawn_formation(kind: Target.Kind, n: int) -> void:
 	var usable := layout.size.x - 120.0
 	var row: Array[Target] = []
+	# A chorus line: they swing in one after another from the same side.
+	var row_dir := 1.0 if (Target.rope_clock / 7) % 2 == 0 else -1.0
 	for i in n:
 		var t := _free_target()
 		if t == null:
@@ -639,6 +785,9 @@ func _spawn_formation(kind: Target.Kind, n: int) -> void:
 		var v := absf(i - (n - 1) * 0.5) / maxf(1.0, (n - 1) * 0.5)
 		t.aggression = director.aggression()
 		t.spawn(kind, Vector2(x, layout.rail_y + 3.0), 12.0, layout.play_h * (0.2 - 0.1 * v), 0.15 + i * 0.09)
+		# A row hangs in one plane, the middle one.
+		t.set_rank(Target.Rank.MID)
+		_begin_entry(t, row_dir)
 		backdrop.foreshadow(Vector2(x, layout.rail_y + 3.0 + layout.play_h * (0.2 - 0.1 * v)), Pal.kind_color(kind), 0.15 + i * 0.09)
 		_maybe_intro(t)
 		row.append(t)
@@ -738,6 +887,15 @@ func _free_target() -> Target:
 # ---------------------------------------------------------------- frame
 
 func _process(delta: float) -> void:
+	# The band snaps home in real time, in the same fixed steps as the
+	# rest: a shot leaves the pouch a twentieth of a second after the finger
+	# lets go, also in the middle of a hit-stop or slow motion (where it
+	# used to hang for up to a quarter of a second). The ball it fires then
+	# flies in the game's time like everything else.
+	_sling_acc += minf(Motion.rd, 0.05)
+	while _sling_acc >= SUBSTEP:
+		_sling_acc -= SUBSTEP
+		slingshot.step(SUBSTEP)
 	_acc += minf(delta, 0.05)
 	while _acc >= SUBSTEP:
 		_acc -= SUBSTEP
@@ -748,9 +906,21 @@ func _process(delta: float) -> void:
 		_step(SUBSTEP)
 	_interpolate(_acc / SUBSTEP)
 	_state_t += delta
-	Pal.theme_tick(delta / maxf(Engine.time_scale, 0.001))
+	Pal.theme_tick(Motion.rd)
+	# On the menu the stage moves on to the next world now and then: the
+	# first thing seen is the room alive (a run sets its own world).
+	if state == State.MAIN_MENU and not Prefs.reduced_motion:
+		_menu_world_t += Motion.rd
+		if _menu_world_t >= MENU_WORLD_EVERY:
+			_menu_world_t = 0.0
+			Pal.next_theme()
+	else:
+		_menu_world_t = 0.0
 	_update_tilt(delta)
+	_update_depth()
+	_update_aim_slow()
 	_update_ammo(delta)
+	_take_queued_aim()
 	_update_eyes()
 	_update_ball_light()
 	# Menu: new players (and anyone idle for a while) see how to shoot.
@@ -775,6 +945,43 @@ func _process(delta: float) -> void:
 		_boss_stages()
 
 
+## The room's depth as you play (v8.8). As you aim, the planes move apart a
+## little, as if you leaned to look along the shot: the wall and the back
+## row slide with the aim, the near motes against it, and the field itself
+## stays put under your finger. With the phone's lean (fx.view) each plane
+## moves by its own share. For the eye only: a few px, and nothing that is
+## hit or scored moves. Off with Reduced motion or with Camera off.
+const AIM_PAR_PX := 8.0
+
+
+func _update_depth() -> void:
+	var want := Vector2.ZERO
+	if slingshot.is_aiming() and Prefs.camera and not Prefs.reduced_motion:
+		var d := layout.pouch_rest() - slingshot.pouch
+		if d.length() > 4.0:
+			want = Vector2(d.normalized().x * AIM_PAR_PX * slingshot.power * layout.scale, 0.0)
+	_aim_par = _aim_par.lerp(want, Pal.damp(0.18, Motion.rd))
+	var v := fx.view
+	for t in targets:
+		if t.phase != Target.Phase.OFF:
+			t.set_parallax(v, _aim_par)
+	var b := Target.Rank.BACK
+	rail.rear_off = v * (float(Target.RANK_PAR[b]) - 1.0) + _aim_par * float(Target.RANK_AIM[b])
+	backdrop.aim = _aim_par
+	near.position = v * 1.5 - _aim_par * 0.6
+
+
+## Fokus: game time slows while you aim, eased in and out over a moment of
+## real time (so a quick shot is hardly slowed at all).
+func _update_aim_slow() -> void:
+	var want := 1.0
+	if perk("slowmo") > 0 and slingshot.is_aiming() and (state == State.PLAYING or state == State.STARTING):
+		want = float(AIM_SLOW[mini(perk("slowmo"), 2)])
+	if _aim_slow != want:
+		_aim_slow = move_toward(_aim_slow, want, Motion.rd / 0.18)
+		fx.set_aim_time(_aim_slow)
+
+
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
 ## sensor where there is one, else the raw accelerometer. Zero without.
 static func sensor_gravity() -> Vector3:
@@ -788,7 +995,7 @@ static func sensor_gravity() -> Vector3:
 ## angle over several seconds, so only a fresh lean moves the view; while
 ## aiming the view holds still. Off in settings or without a sensor.
 func _update_tilt(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	var sg := sensor_gravity()
 	var want := Vector2.ZERO
 	# Its own switch in settings (reduced motion no longer turns it off).
@@ -827,6 +1034,9 @@ func _update_tilt(delta: float) -> void:
 	var lean := Vector2(-_tilt.x, _tilt.y)
 	Target.set_view(lean)
 	slingshot.set_view(lean)
+	if Pal.world_stamp() != _sky_sent:
+		_sky_sent = Pal.world_stamp()
+		Target.set_sky(Pal.world("rim"))
 
 
 ## Linear acceleration = accelerometer − gravity. A drop of the phone
@@ -952,9 +1162,9 @@ func _pace(delta: float) -> void:
 	if _cocky_t > 0.0:
 		nerve = minf(nerve, -0.7)
 	Target.morale = lerpf(Target.morale, clampf(nerve, -1.0, 1.0), Pal.damp(0.02, delta))
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_heat = lerpf(_heat, 1.0 if overload_t > 0.0 else 0.0, Pal.damp(0.12, rd))
-	_vignette.set_shader_parameter("strength", lerpf(0.55, 0.78, _tension))
+	_vignette.set_shader_parameter("strength", lerpf(VIGNETTE, VIGNETTE_TENSE, _tension))
 	_vignette.set_shader_parameter("glow", _heat * (0.22 + 0.05 * sin(_time * 9.0)))
 	if backdrop.danger > 0.7:
 		_beat_t -= delta
@@ -1015,25 +1225,37 @@ func _wave_tick(delta: float) -> void:
 				Sfx.cue("wave_in")
 			if director.wave_break <= 0.0:
 				director.next_wave()
-				_wave_clean = true
-				if director.wave >= 5:
-					_feat("wave5")
-				director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
-				# The title is set first; the first of the wave come as it fades.
-				_intro_hold = INTRO_HOLD
-				# A new wave, a new colour theme, eased in.
-				Pal.next_theme()
-				var wm := director.roll_mood()
-				hud.wave_intro(director.wave, Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else "", WAVE_MOOD_COL[wm])
-				backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
-				_schedule_hazard()
-				if director.wave == ACRO_WAVE and not _acro_told:
-					_acro_told = true
-					fx.after(1.8, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
-				var tac := director.tactic()
-				if tac > _tactic_told:
-					_tactic_told = tac
-					fx.after(1.8, func() -> void: _announce_tactic(tac))
+				_begin_wave()
+
+
+## A wave begins (after a break, or as a picked-up run or a quick start
+## gets going): its title and mood, a new colour theme, the pace against
+## the record run, the hazard it brings and what the enemies have learned.
+## Then the run is saved as it stands (see _save_run). `sub` replaces the
+## mood's line under the title.
+func _begin_wave(sub := "") -> void:
+	_wave_clean = true
+	if director.wave >= 5:
+		_feat("wave5")
+	director.skill_shift = clampi(roundi((habits.live_skill(director.elapsed, run_kills) - 0.5) * 2.0), -1, 1)
+	# The title is set first; the first of the wave come as it fades.
+	_intro_hold = INTRO_HOLD
+	# A new wave, a new colour theme, eased in.
+	Pal.next_theme()
+	var wm := director.roll_mood()
+	var line := Loc.t(WAVE_MOOD_KEY[wm]) if wm != Director.WaveMood.NORMAL else ""
+	hud.wave_intro(director.wave, sub if sub != "" else line, Tok.PRIMARY if sub != "" else WAVE_MOOD_COL[wm])
+	_note_pace()
+	backdrop.ripple(Vector2(layout.center_x, layout.rail_y), Pal.GOLD_LIGHT, 1.2)
+	_schedule_hazard()
+	if director.wave == ACRO_WAVE and not _acro_told:
+		_acro_told = true
+		fx.after(1.8, func() -> void: hud.card(Loc.t("acro.title"), Loc.t("acro.sub"), 2.2))
+	var tac := director.tactic()
+	if tac > _tactic_told:
+		_tactic_told = tac
+		fx.after(1.8, func() -> void: _announce_tactic(tac))
+	_save_run()
 
 
 func _clear_wave() -> void:
@@ -1049,6 +1271,12 @@ func _clear_wave() -> void:
 	# sweeping the field from the rail down to the danger line.
 	fx.moment(_last_kill)
 	fx.sweep(layout.rail_y, layout.danger_y)
+	# The room celebrates: the wall floods with light from the last kill
+	# outward, and paper comes down from the rail.
+	backdrop.pulse(_last_kill, Pal.GOLD_LIGHT, 0.36, layout.size.x * 0.55, 1.3)
+	backdrop.pulse(Vector2(layout.size.x * 0.18, mid.y), Pal.world("aura_a").lightened(0.15), 0.24, layout.size.x * 0.5, 1.5)
+	backdrop.pulse(Vector2(layout.size.x * 0.82, mid.y), Pal.world("aura_b").lightened(0.15), 0.24, layout.size.x * 0.5, 1.5)
+	fx.confetti(Vector2(layout.center_x, layout.rail_y + 10.0), layout.size.x * 0.92, 60)
 	# Final-kill camera: the camera leans in on the last one and time all
 	# but stops; a gold ring runs out through the light fibres from the kill
 	# and a spark races along the rail.
@@ -1072,7 +1300,7 @@ func _clear_wave() -> void:
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
-	fx.after(1.4, _grant_perk)
+	fx.after(1.4, _open_choice)
 
 
 ## The balls in flight light what they pass (warm, fading as a spent ball
@@ -1134,6 +1362,17 @@ func _update_eyes() -> void:
 			for n in targets:
 				if n != t and n.is_hittable() and n.pos.distance_to(t.pos) < 240.0 * layout.scale:
 					n.watch(t, 0.7)
+		if t.thud:
+			# A heavy one came down with a thump: the rail shakes off a little
+			# dust, and the small ones close by jump.
+			t.thud = false
+			rail.flex(t.anchor.x, 5.0 if t.kind == Target.Kind.BOSS else 3.5)
+			fx.puff(Vector2(t.anchor.x, layout.rail_y + 4.0), Pal.INK_DIM, 3, 20.0, 0.22)
+			fx.shake(1.5)
+			for n in targets:
+				if n != t and n.is_hittable() and not n.aimed and n.mass() < t.mass() * 0.8 \
+						and n.pos.distance_to(t.pos) < 200.0 * layout.scale:
+					n.startle(t.pos)
 		t.threat = o
 		# Targets that have hung around learn as the run heats up.
 		t.aggression = maxf(t.aggression, director.aggression())
@@ -1247,17 +1486,7 @@ func _path_x_at(path: PackedVector2Array, y: float) -> float:
 
 ## A ball's next 0.6 s (gravity only), sampled at 30 Hz.
 func _flight(b: Ball) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	var p := b.pos
-	var v := b.vel
-	var dt := 1.0 / 30.0
-	var w := gust * GUST_BALL
-	for i in 18:
-		v.y += Ball.GRAVITY * dt
-		v.x += w * dt
-		p += v * dt
-		out.append(p)
-	return out
+	return Ball.trace(b.pos, b.vel, gust * GUST_BALL, layout, 0.6, 1.0 / 30.0, false)
 
 
 func _read_flight(t: Target, f: PackedVector2Array) -> void:
@@ -1317,6 +1546,10 @@ func _step(dt: float) -> void:
 	var worst := 0.0
 	_time += dt
 	_knock_sfx_cd = maxf(0.0, _knock_sfx_cd - dt)
+	if state == State.PLAYING or state == State.STARTING:
+		Target.sway_level = _sway_level()
+	Target.cheer_t = maxf(0.0, Target.cheer_t - dt)
+	Target.cheer_phase = fposmod(Target.cheer_phase + Target.CHEER_W * dt, TAU)
 	for t in targets:
 		if t.phase != Target.Phase.OFF:
 			t.wind = _breeze(t.pos.x) + _push.x + gust
@@ -1328,7 +1561,6 @@ func _step(dt: float) -> void:
 	contacts.target_contacts()
 	if state == State.PLAYING or state == State.STARTING:
 		contacts.falling_contacts()
-	slingshot.step(dt)
 	contacts.ball_contacts()
 	for b in balls:
 		if not b.active:
@@ -1347,13 +1579,13 @@ func _step(dt: float) -> void:
 			var hi := 2 if b.pos.y < layout.rail_y + layout.play_h * 0.3 else 0
 			Sfx.harp(fi + hi, -2.0 if b.hits > 0 else 0.0)
 		var gp := backdrop.gold_pos()
-		if gp != Vector2.INF and b.pos.distance_to(gp) < Ball.RADIUS + 14.0:
+		if gp != Vector2.INF and b.pos.distance_to(gp) < Ball.RADIUS + b.grow + 14.0:
 			_catch_gold(backdrop.catch_gold())
 		if stage.visible:
 			stage.flinch(b.pos)
 		if title.active and title.knock(b.pos, b.vel, Ball.RADIUS) and _knock_sfx_cd <= 0.0:
 			_knock_sfx_cd = 0.1
-			Sfx.play("knock", randf_range(0.8, 1.0), -6.0)
+			Sfx.play("knock", Sfx.vary(0.8, 1.0), -6.0)
 		contacts.collide(b)
 	if state == State.PLAYING or state == State.STARTING:
 		for t in targets:
@@ -1381,6 +1613,17 @@ func _interpolate(k: float) -> void:
 
 ## Slow layered breeze: a few px/s² of sideways push that drifts across
 ## the field, enough for hanging targets to sway at rest.
+## How lively the crowd's sway is (Target.sway_level): barely at the start,
+## full a few minutes in. A calm wave sways less, a wild one more.
+func _sway_level() -> float:
+	var k := clampf(0.1 + 0.15 * director.intensity(), 0.1, 1.0)
+	if director.wave_mood == Director.WaveMood.CALM:
+		k *= 0.7
+	elif director.wave_mood == Director.WaveMood.CHAOS:
+		k = minf(1.0, k * 1.15)
+	return k
+
+
 func _breeze(x: float) -> float:
 	return (sin(_time * 0.37 + x * 0.004) * 0.65 + sin(_time * 0.91 + x * 0.013 + 1.7) * 0.35) * 9.0 * layout.scale
 
@@ -1404,7 +1647,7 @@ func _chain_hit(t: Target, impulse: Vector2, contact: Vector2, closing: float, d
 	if killed:
 		gained += _kill_bonus(t, gained)
 	_add_score(gained, at)
-	fx.hitstop()
+	fx.hitstop(1.0 if killed else 0.6)
 	fx.flash(contact, t.radius * 0.7)
 	fx.sparks(contact, col, 8)
 	fx.ring(contact, col.lightened(0.15), t.radius)
@@ -1575,7 +1818,7 @@ func _on_block(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	fx.sparks(contact, Pal.METAL_LIGHT, 6)
 	fx.ring(contact, Pal.METAL_LIGHT, 14.0)
 	fx.popup(Loc.t("popup.blocked"), contact + Vector2(0, -18), Pal.INK_DIM, 16)
-	Sfx.play("clank", randf_range(0.95, 1.08), -3.0)
+	Sfx.play("clank", Sfx.vary(0.95, 1.08), -3.0)
 	Sfx.haptic(10, 0.3)
 
 
@@ -1584,7 +1827,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	b.hits += 1
 	_mark_hit(b)
 	var impulse: Vector2
-	var contact := b.pos - n * Ball.RADIUS
+	var contact := b.pos - n * (Ball.RADIUS + b.grow)
 	var closing := b.vel.length()
 	if b.special:
 		# Pierce: punches through, losing some speed to each body.
@@ -1630,7 +1873,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 		gained += _kill_bonus(t, gained)
 	_add_score(gained, t.pos)
 	# Response: hit-stop, sparks, ring, popup, sound and haptics on every hit.
-	fx.hitstop()
+	fx.hitstop((1.5 if kind == Target.Kind.BOSS else 1.0) if killed else 0.6)
 	fx.flash(contact, t.radius * (0.9 if killed else 0.55), col.lightened(0.4))
 	if killed:
 		fx.shock(t.pos, 9.0 if kind != Target.Kind.BOSS else 18.0, 170.0 if kind != Target.Kind.BOSS else 320.0)
@@ -1652,6 +1895,16 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if killed:
 		_charge(CHARGE_KILL * (2.0 if kind == Target.Kind.BOSS else 1.0))
 		_read_skills(b, hit_at, was_close)
+	# The upgrades that act on a hit (v8.9).
+	if perk("freeze") > 0:
+		_freeze_near(hit_at, t)
+	if killed and perk("blast") > 0:
+		_blast(hit_at, t)
+	if not b.special:
+		if perk("split") > 0 and not b.fragment and b.hits == 1:
+			_split_ball(b, t)
+		if killed and b.ricochets < perk("ricochet"):
+			_ricochet(b, t)
 
 
 ## Which skill shots this kill was: off a wall, after a long flight, the
@@ -1677,6 +1930,8 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	if s == Skill.BANK and skill_counts[s] >= 3:
 		_feat("bank")
 	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
+	if s == Skill.BANK and perk("walls") > 0:
+		pts *= 2
 	_add_score(pts, at)
 	var text := Loc.t(SKILL_KEY[s])
 	var rescue := s == Skill.CLUTCH and _close_danger >= RESCUE
@@ -1729,6 +1984,11 @@ func _charge(v: float) -> void:
 	var was := charge
 	if v > 0.0:
 		v *= 1.0 + 0.25 * perk("charge")
+		# Late waves bring far more to shoot at, so each kill fills a little
+		# less there: overload keeps coming at about the same pace instead
+		# of one chaining into the next. The first four waves, where a run
+		# usually ended before v8.0, charge exactly as they always have.
+		v /= 1.0 + CHARGE_WAVE * maxi(0, director.wave - CHARGE_FROM)
 	charge = clampf(charge + v, 0.0, 1.0)
 	rail.charge = charge
 	if was < 0.5 and charge >= 0.5 and Prefs.runs <= 3:
@@ -1752,6 +2012,7 @@ func _begin_overload() -> void:
 		ammo.append(Ammo.NORMAL)
 	var mid := Vector2(layout.center_x, layout.rail_y + layout.play_h * 0.45)
 	fx.shock(mid, 14.0, 560.0, 0.7)
+	backdrop.pulse(mid, Pal.GOLD_LIGHT, 0.34, layout.size.x * 0.7, 0.9)
 	fx.punch(0.035)
 	fx.shake(2.0)
 	hud.card(Loc.t("overload.title"), Loc.t("overload.sub"))
@@ -1768,7 +2029,7 @@ func _overload_tick(delta: float) -> void:
 		t.scared = on and t.phase == Target.Phase.HANGING
 	if not on:
 		return
-	overload_t -= delta / maxf(Engine.time_scale, 0.001)
+	overload_t -= Motion.rd
 	charge = maxf(0.0, overload_t / OVERLOAD_TIME)
 	rail.charge = charge
 	if overload_t <= 0.0:
@@ -1802,9 +2063,17 @@ func _kill_note() -> void:
 ## its squash) or shatters the shell; a survivor squishes or knocks.
 func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> void:
 	var kind := t.kind
+	# The wall takes light from every hit, and a kill throws off glints:
+	# what the player does shows in the whole room, not only at the spot.
+	if killed:
+		var big := kind == Target.Kind.BOSS
+		backdrop.pulse(t.pos, col.lerp(Color.WHITE, 0.25), 0.7 if big else 0.46, t.radius * (9.0 if big else 6.5), 1.0 if big else 0.6)
+		fx.glitter(t.pos, col, 24 if big else (16 if hits >= 2 else 12), 1.6 if big else 1.0)
+	else:
+		backdrop.pulse(t.pos, col, 0.15, t.radius * 3.2, 0.35)
 	if not killed:
 		if t.soft:
-			Sfx.play("squish", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+			Sfx.play("squish", 30.0 / t.radius * Sfx.vary(0.95, 1.05), loud)
 		else:
 			_material_knock(t, hits, loud)
 		Sfx.haptic(12 if t.soft else 9, 0.3 if t.soft else 0.4)
@@ -1818,16 +2087,16 @@ func _break_fx(t: Target, killed: bool, col: Color, loud: float, hits := 1) -> v
 			fx.burst(kind, at, rot, r, col, Vector2.ZERO)
 			fx.puff(at, col, 2, r * 1.3, 0.32))
 		# Jelly bursts wetly; the smaller it is, the higher it sounds.
-		Sfx.play("splat", 30.0 / t.radius * randf_range(0.95, 1.05), loud)
+		Sfx.play("splat", 30.0 / t.radius * Sfx.vary(0.95, 1.05), loud)
 		Sfx.play("squish", 1.1, loud - 6.0)
 	else:
 		var boss := kind == Target.Kind.BOSS
 		fx.burst(kind, t.pos, t.body_rot, t.radius, col, t.vel)
 		fx.shards(t.pos, col, 6 if boss else 2, t.vel)
 		fx.puff(t.pos, col, 6 if boss else 2, t.radius * (1.8 if boss else 1.3), 0.32)
-		Sfx.play("burst", randf_range(0.92, 1.08), loud)
+		Sfx.play("burst", Sfx.vary(0.92, 1.08), loud)
 		_material_knock(t, hits, loud)
-	Sfx.play("snap", randf_range(0.95, 1.1), -8.0)
+	Sfx.play("snap", Sfx.vary(0.95, 1.1), -8.0)
 	Sfx.haptic(18, 0.5)
 	if kind == Target.Kind.BOSS:
 		fx.moment(t.pos, Tok.PRIMARY_HI, 1.25)
@@ -1894,7 +2163,7 @@ func _on_cut(b: Ball, t: Target) -> void:
 	fx.sparks(b.pos, Pal.INK_DIM, 7)
 	fx.popup("+%d" % gained, b.pos + Vector2(0, -22), Pal.INK)
 	fx.shards(t.pos, col, 2, t.vel)
-	Sfx.play("cut", randf_range(0.95, 1.08))
+	Sfx.play("cut", Sfx.vary(0.95, 1.08))
 	Sfx.haptic(20, 0.5)
 	_charge(CHARGE_KILL)
 	_skill(Skill.CUT, b.pos)
@@ -2026,10 +2295,17 @@ func _breach(t: Target) -> void:
 	fx.popup(Loc.t("popup.lifeLost"), at + Vector2(0, -30), Pal.CORAL, 20, false, 2)
 	Sfx.play("breach")
 	Sfx.haptic(70, 0.9)
-	# The ones hanging nearby enjoy it.
+	# The crowd enjoys it: for a moment they sway as one, a wave running
+	# across them, and laugh, the nearest at once and the rest after.
+	Target.cheer_t = Target.CHEER_TIME
+	Target.cheer_phase = fposmod(Target.rope_clock * 0.37, TAU)
 	for o in targets:
-		if o != t and o.is_hittable() and o.pos.distance_to(t.pos) < 260.0 * layout.scale:
-			o.taunt()
+		if o != t and o.is_hittable():
+			var d := o.pos.distance_to(t.pos)
+			if d < 260.0 * layout.scale:
+				o.taunt()
+			elif d < 560.0 * layout.scale:
+				o.mock(0.15 + d / (1600.0 * layout.scale))
 	streak = 0
 	_chain = 0
 	_cocky_t = 5.0
@@ -2044,6 +2320,8 @@ func _breach(t: Target) -> void:
 			o.goal_length = o.length
 	if lives <= 0:
 		_begin_death(at)
+	else:
+		_save_lives()
 
 
 ## Death: impact (shake, coral flash, sparks, low hit), then slow motion
@@ -2058,6 +2336,9 @@ func _begin_death(at: Vector2) -> void:
 	hud.clear_cards()
 	_vignette.set_shader_parameter("glow", 0.0)
 	_set_state(State.DEATH)
+	# The run is over: there is nothing to pick up.
+	if not daily:
+		_drop_run_save()
 	hud.locked = true
 	slingshot.cancel()
 	_touch = -1
@@ -2088,20 +2369,58 @@ func _show_results() -> void:
 	if not daily:
 		habits.end_run(director.elapsed, run_kills)
 		Prefs.habits = habits.store()
-	Prefs.record_run(_run_stats())
+	Prefs.record_run(_run_stats(), _mission_slots)
 	Prefs.add_run({"score": score, "wave": director.wave, "secs": int(director.elapsed),
 		"acc": int(round(100.0 * director.hits / maxf(1.0, director.shots))), "day": Meta.today(), "daily": daily})
 	var prev := Prefs.daily_record() if daily else Prefs.record
-	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score)
+	var is_record := Prefs.submit_daily(score) if daily else Prefs.submit_score(score, _run_pace)
 	var acc := int(round(100.0 * director.hits / maxf(1.0, director.shots)))
 	_set_state(State.GAME_OVER)
 	var feats: Array = []
 	for i in skill_counts.size():
 		feats.append([SKILL_KEY[i], skill_counts[i]])
-	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads, daily, _missions_done)
+	hud.show_game_over(score, prev, is_record, int(director.elapsed), acc, feats, overloads, daily, _missions_done, _next_goals())
 	if not is_record:
 		Sfx.play("lose")
 	Motion.after(0.6, func() -> void: hud.locked = false)
+
+
+## A wave begins: the score is noted (should this run become the record,
+## it is the pace later runs are measured against), and the wave's card
+## says how this run stands against the record run at the same point. The
+## daily challenge has no pace: it is a different run every day.
+func _note_pace() -> void:
+	if daily:
+		return
+	_run_pace.append(score)
+	var i := _run_pace.size() - 1
+	if Prefs.record <= 0 or i >= Prefs.pace.size():
+		return
+	var diff := score - int(Prefs.pace[i])
+	if diff >= 0:
+		hud.wave_pace(Loc.t("pace.ahead") % Hud._group(diff), true)
+	else:
+		hud.wave_pace(Loc.t("pace.behind") % Hud._group(-diff), false)
+
+
+## What the next run can go for, for the results screen: the unfinished
+## mission this run came closest to, and the lifetime points before and
+## after it (they earn the balls).
+func _next_goals() -> Dictionary:
+	var goals := {"points_from": _points_start, "points_to": Prefs.skin_points}
+	var run := _run_stats()
+	var best := -1.0
+	for i in Prefs.missions.size():
+		if _mission_slots.has(i):
+			continue   # finished in this run: its slot holds the next one, not yet played for
+		var m: Dictionary = Prefs.missions[i]
+		var goal := Meta.goal(m.id, int(m.level))
+		var have := mini(Meta.progress(m.id, run), goal)
+		var k := float(have) / maxf(1.0, goal)
+		if k > best:
+			best = k
+			goals["mission"] = [Meta.describe(m.id, int(m.level)), have, goal]
+	return goals
 
 
 # ---------------------------------------------------------------- learning
@@ -2213,7 +2532,7 @@ func _hazard_tick(delta: float) -> void:
 		if _hazard_in <= 0.0:
 			_begin_hazard()
 		return
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	_hazard_t += rd
 	match _hazard:
 		Hazard.GUST:
@@ -2409,6 +2728,100 @@ func _try_rescue(t: Target) -> void:
 	t.expect_rescue(best)
 
 
+# ---------------------------------------------------------------- sessions
+
+## The run as it stands when a wave begins (v8.10): what «Fortsett» needs
+## to pick it up there if the app is closed, the phone dies or you go back
+## to the menu. Not the daily challenge (it is the same run for everyone).
+## The enemies are not kept: a picked-up run starts its wave afresh.
+func _save_run() -> void:
+	if daily or state == State.DEATH or state == State.GAME_OVER or state == State.MAIN_MENU:
+		return
+	var order: Array = []
+	for id in hud.perk_order:
+		order.append(id)
+	Prefs.run_save = {
+		"v": Prefs.RUN_SAVE, "day": Meta.today(),
+		"wave": director.wave, "elapsed": director.elapsed, "accuracy": director.accuracy,
+		"shots": director.shots, "hits": director.hits, "events": director.event_count,
+		"event_in": director.next_event - director.elapsed,
+		"score": score, "lives": lives, "perks": perks.duplicate(), "order": order,
+		"best_streak": best_streak, "cuts": cuts, "overloads": overloads, "flows": flows,
+		"revenges": revenges, "skills": Array(skill_counts), "waves_cleared": waves_cleared,
+		"kills": run_kills, "next_life_at": _next_life_at, "pace": _run_pace.duplicate(),
+		"missions_done": _missions_done.duplicate(), "mission_slots": _mission_slots.duplicate(),
+		"quick": quick,
+	}
+	Prefs.save()
+
+
+## A knot lost is lost in the saved run too (going back to the menu never
+## wins one back).
+func _save_lives() -> void:
+	var s := Prefs.run_save
+	if not s.is_empty() and not daily and lives < int(s.get("lives", LIVES)):
+		s["lives"] = lives
+		Prefs.save()
+
+
+func _drop_run_save() -> void:
+	if not Prefs.run_save.is_empty():
+		Prefs.run_save = {}
+		Prefs.save()
+
+
+## «Fortsett» on the menu: the saved run picks up as its wave began.
+func continue_run() -> void:
+	var s := Prefs.saved_run()
+	if s.is_empty() or state != State.MAIN_MENU:
+		return
+	_start_run(s)
+
+
+## A saved run's numbers back in place (see _save_run): the wave and its
+## clock, the score, the knots, the upgrades and what the run has counted.
+func _apply_save(s: Dictionary) -> void:
+	resumed_at = int(s.get("wave", 2))
+	quick = bool(s.get("quick", false))
+	director.resume_at(resumed_at, float(s.get("elapsed", 0.0)), float(s.get("accuracy", 0.55)),
+		int(s.get("shots", 0)), int(s.get("hits", 0)), int(s.get("events", 0)), float(s.get("event_in", Director.EVENT_EVERY)))
+	score = maxi(0, int(s.get("score", 0)))
+	var saved: Dictionary = s.get("perks", {})
+	perks = {}
+	for id: Variant in saved:
+		if Perks.MAX.has(str(id)):
+			perks[str(id)] = clampi(int(saved[id]), 0, int(Perks.MAX[str(id)]))
+	hud.perk_order.clear()
+	for id: Variant in s.get("order", []):
+		if perks.has(str(id)) and not hud.perk_order.has(str(id)):
+			hud.perk_order.append(str(id))
+	for id: String in perks:
+		if not hud.perk_order.has(id):
+			hud.perk_order.append(id)
+	hud.perk_levels = perks.duplicate()
+	_apply_perks()
+	lives = clampi(int(s.get("lives", LIVES)), 1, _max_lives())
+	best_streak = int(s.get("best_streak", 0))
+	cuts = int(s.get("cuts", 0))
+	overloads = int(s.get("overloads", 0))
+	flows = int(s.get("flows", 0))
+	revenges = int(s.get("revenges", 0))
+	var sk: Array = s.get("skills", [])
+	for i in mini(sk.size(), skill_counts.size()):
+		skill_counts[i] = int(sk[i])
+	waves_cleared = int(s.get("waves_cleared", resumed_at - 1))
+	run_kills = int(s.get("kills", 0))
+	_next_life_at = maxi(int(s.get("next_life_at", EXTRA_LIFE_EVERY)), score - score % EXTRA_LIFE_EVERY + EXTRA_LIFE_EVERY)
+	# This wave's pace is noted again as it begins.
+	_run_pace = []
+	for v: Variant in s.get("pace", []):
+		_run_pace.append(int(v))
+	if not _run_pace.is_empty():
+		_run_pace.pop_back()
+	_missions_done = (s.get("missions_done", []) as Array).duplicate()
+	_mission_slots = (s.get("mission_slots", []) as Array).duplicate()
+
+
 # ---------------------------------------------------------------- perks
 
 func perk(id: String) -> int:
@@ -2420,29 +2833,89 @@ func _ammo_cap() -> int:
 
 
 func _reload_time() -> float:
-	return director.reload_time() * pow(0.85, perk("reload"))
+	return director.reload_time() * pow(0.85, perk("reload")) * pow(1.1, perk("big"))
+
+
+## Knots a run can hold: Glasskanon takes one away.
+func _max_lives() -> int:
+	return LIVES - perk("glass")
 
 
 func _flow_time() -> float:
-	return FLOW_TIME + 2.5 * perk("flow")
+	return FLOW_TIME + 1.0 * perk("flow")
 
 
-## A cleared wave wins the run one perk at random (never past its cap);
-## it pops up and flies into the tray without stopping play.
-func _grant_perk() -> void:
-	if state != State.PLAYING and state != State.STARTING:
+## A cleared wave opens the choice (v8.9): three upgrades, at least one
+## that changes how a run plays, and you pick one. The run holds while you
+## choose: nothing comes, the wave's clock stands still, and the room keeps
+## breathing behind the panel.
+func _open_choice() -> void:
+	if state != State.PLAYING:
 		return
-	var ids := Perks.offer(perks, lives < LIVES, _rng)
+	var ids := Perks.offer(perks, lives < _max_lives(), _rng)
 	if ids.is_empty():
+		if _quick_left > 0:
+			_quick_left = 0
+			_begin_wave(Loc.t("quick.sub"))
 		return
-	var id := ids[0]
+	_choice = ids
+	_set_state(State.CHOOSING)
+	slingshot.cancel()
+	_touch = -1
+	_aim_queued = false
+	var levels: Array[int] = []
+	for id in ids:
+		levels.append(perk(id))
+	var head := Loc.t("choice.head") % director.wave
+	if _quick_left > 0:
+		head = Loc.t("choice.quick") % [QUICK_PICKS - _quick_left + 1, QUICK_PICKS]
+	hud.open_choice(ids, levels, perks, head, choose)
+
+
+func choosing() -> bool:
+	return state == State.CHOOSING
+
+
+## The upgrades on offer (empty while no choice is open).
+func choice_ids() -> Array[String]:
+	var out: Array[String] = []
+	if state == State.CHOOSING:
+		out = _choice.duplicate()
+	return out
+
+
+## The pick: the upgrade is taken, its icon flies from the card to the tray
+## and play picks up where it stood.
+func choose(id: String) -> void:
+	if state != State.CHOOSING or not _choice.has(id):
+		return
+	var from := hud.choice_card_pos(_choice.find(id))
+	_choice.clear()
+	hud.close_choice()
+	_set_state(State.PLAYING)
+	_take_perk(id, from)
+	if _quick_left > 0:
+		_quick_left -= 1
+		if _quick_left > 0:
+			_open_choice()
+		else:
+			_begin_wave(Loc.t("quick.sub"))
+
+
+func _take_perk(id: String, from := Vector2.INF) -> void:
 	perks[id] = perk(id) + 1
-	if id == "knot" and lives < LIVES:
+	if id == "knot" and lives < _max_lives():
 		lives += 1
 		hud.bar.lives = lives
 		hud.bar.knot_shake = 1.0
+	if id == "glass" and lives > _max_lives():
+		# The glass costs a knot at once (never the last one).
+		lives = maxi(1, _max_lives())
+		hud.bar.lives = lives
+		hud.bar.knot_shake = 1.0
 	_apply_perks()
-	hud.perk_toast(id, perks[id])
+	_show_mult()
+	hud.perk_toast(id, perks[id], from)
 	# A single soft chime, a note of the cadence's chord still ringing.
 	Sfx.note(7, -6.0)
 	Sfx.haptic_pattern("light")
@@ -2451,6 +2924,119 @@ func _grant_perk() -> void:
 func _apply_perks() -> void:
 	slingshot.rack_slots = _ammo_cap() - 1
 	slingshot.long_sight = perk("sight") > 0
+	# The aim guide and every ball fired from now on: Vegg-mester's walls
+	# and Stor kule's size.
+	Ball.bounce = 1.0 if perk("walls") > 0 else Ball.WALL_BOUNCE
+	Ball.grow_all = float(BIG_GROW[mini(perk("big"), 2)])
+	hud.bar.max_lives = _max_lives()
+
+
+## Splitt: a ball's first hit throws off a piece (two at level 2), fanned
+## out from its rebound. The pieces are balls of the same shot, a little
+## smaller, and do not split again. One piece goes toward the middle of
+## the field, where the enemies are.
+func _split_ball(b: Ball, t: Target) -> void:
+	var dir := b.vel.normalized() if b.vel.length() > 1.0 else Vector2.UP
+	var speed := maxf(b.vel.length(), SPLIT_SPEED * layout.scale)
+	var dirs: Array[Vector2] = []
+	if perk("split") >= 2:
+		dirs = [dir.rotated(-SPLIT_SPREAD), dir.rotated(SPLIT_SPREAD)]
+	else:
+		var a := dir.rotated(-SPLIT_SPREAD)
+		var c := dir.rotated(SPLIT_SPREAD)
+		var inward := layout.center_x - b.pos.x
+		dirs = [a if a.x * inward >= c.x * inward else c]
+	var made := 0
+	for d in dirs:
+		for f in balls:
+			if f.active:
+				continue
+			var at := b.pos + d * Ball.RADIUS
+			at.x = clampf(at.x, Ball.RADIUS, layout.size.x - Ball.RADIUS)
+			f.fire(at, d * speed, false, b.shot_id)
+			f.fragment = true
+			f.grow = b.grow - 3.0
+			f.touch(t.get_instance_id())
+			made += 1
+			break
+	if made == 0:
+		return
+	if _shots.has(b.shot_id):
+		_shots[b.shot_id].balls += made
+	fx.sparks(b.pos, Pal.GOLD_LIGHT, 6)
+	Sfx.play("release", 1.45, -8.0)
+
+
+## Rikosjett: when the ball takes an enemy down, it turns on to the nearest
+## other one in reach (once, or twice at level 2), fast enough to get there
+## and aimed where that one will be by then (its sway and the ball's drop
+## allowed for).
+func _ricochet(b: Ball, t: Target) -> void:
+	var best: Target = null
+	var bd := RICOCHET_REACH * layout.scale
+	for o in targets:
+		if o == t or not o.is_solid() or not b.can_touch(o.get_instance_id()):
+			continue
+		var d := o.pos.distance_to(b.pos)
+		if d < bd:
+			bd = d
+			best = o
+	if best == null:
+		return
+	var speed := maxf(b.vel.length(), RICOCHET_SPEED * layout.scale)
+	var fly := bd / speed
+	var aim := best.pos + best.vel * fly - Vector2(0.0, 0.5 * Ball.GRAVITY * fly * fly)
+	b.vel = (aim - b.pos).normalized() * speed
+	b.w = 0.0
+	b.ricochets += 1
+	fx.ring(b.pos, Pal.GOLD_LIGHT, 22.0)
+	fx.sparks(b.pos, Pal.GOLD_LIGHT, 5)
+	Sfx.play("whoosh", 1.35, -6.0)
+
+
+## Smell: a kill bursts. The nearest enemy in reach (two at level 2) is
+## knocked away from it and takes a blow, scored as a chain reaction.
+## Those blows do not burst again.
+func _blast(at: Vector2, t: Target) -> void:
+	var lv := mini(perk("blast"), 2)
+	var r: float = BLAST_R[lv] * layout.scale
+	var near: Array = []
+	for o in targets:
+		if o == t or not o.is_solid():
+			continue
+		var d := o.pos.distance_to(at) - o.radius
+		if d < r:
+			near.append([d, o])
+	near.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	fx.ring(at, Pal.GOLD_LIGHT, r)
+	fx.shock(at, 8.0, r * 1.5, 0.35)
+	Sfx.play("burst", 0.75, -5.0)
+	for i in mini(int(BLAST_MAX[lv]), near.size()):
+		var o: Target = near[i][1]
+		if not o.is_hittable():
+			continue
+		var dir := (o.pos - at).normalized() if o.pos.distance_to(at) > 1.0 else Vector2.DOWN
+		o.vel += dir * 260.0 * layout.scale
+		_chain_hit(o, dir * 160.0, o.pos - dir * o.radius, 420.0, 1)
+
+
+## Frost: a hit freezes what it struck and those hanging right by it. For
+## a moment they stop sinking, stop dodging and hang still, frosted over;
+## once thawed, frost cannot take them again for a while (so the lowest
+## can never be held for good). The Spinneren shakes it off.
+func _freeze_near(at: Vector2, t: Target) -> void:
+	var lv := mini(perk("freeze"), 2)
+	var r: float = FREEZE_R[lv] * layout.scale
+	var n := 0
+	for o in targets:
+		if not o.is_hittable() or o.kind == Target.Kind.BOSS:
+			continue
+		if o == t or o.pos.distance_to(at) - o.radius < r:
+			o.freeze(float(FREEZE_TIME[lv]))
+			n += 1
+	if n > 0:
+		fx.glitter(at, Target.ICE, 10, 1.0)
+		Sfx.play("metal", 1.9, -12.0)
 
 
 ## Magnet: a ball bends gently toward the nearest enemy ahead of it.
@@ -3024,7 +3610,7 @@ func _begin_flow() -> void:
 
 ## Real time, so slow motion doesn't stretch it.
 func _flow_tick(delta: float) -> void:
-	var rd := delta / maxf(Engine.time_scale, 0.001)
+	var rd := Motion.rd
 	if flow_t > 0.0:
 		flow_t -= rd
 		flow = maxf(0.0, flow_t / _flow_time())
@@ -3050,7 +3636,7 @@ func _end_flow(quiet: bool) -> void:
 # ---------------------------------------------------------------- scoring
 
 func _mult() -> int:
-	return 1 + mini(streak / 3, 3) + (1 if flow_t > 0.0 else 0)
+	return 1 + mini(streak / 3, 3) + (1 if flow_t > 0.0 else 0) + perk("glass")
 
 
 ## The pill shows what a hit is worth: the streak multiplier, doubled in
@@ -3059,8 +3645,8 @@ func _show_mult() -> void:
 	hud.bar.set_mult(_mult() * _surge())
 
 
-## Points fly to the counter as gold grains; every EXTRA_LIFE_EVERY points
-## returns a lost knot.
+## Points fly to the counter as gold grains; every so many points a lost
+## knot comes back (see _life_step).
 func _add_score(n: int, from := Vector2.INF) -> void:
 	score += n
 	hud.bar.score = score
@@ -3070,14 +3656,22 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 	if from != Vector2.INF:
 		fx.tokens(from, Vector2(layout.center_x, layout.score_baseline - 16.0), clampi(2 + n / 25, 2, 8))
 	while score >= _next_life_at:
-		_next_life_at += EXTRA_LIFE_EVERY
-		if lives < LIVES:
+		_next_life_at += _life_step()
+		if lives < _max_lives():
 			lives += 1
 			hud.bar.lives = lives
 			hud.bar.knot_shake = 1.0
 			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18, false, 2)
 			Sfx.play("clear", 1.1)
 			Sfx.haptic(25, 0.5)
+
+
+## Points to the next knot back: EXTRA_LIFE_EVERY in wave 1, a quarter
+## more for each wave after (3 000 in wave 5, 4 875 in wave 10). Until v8.9
+## it was always 1 500; with upgrades a late run scored so fast that a lost
+## knot was back within two seconds, and knots stopped mattering.
+func _life_step() -> int:
+	return roundi(EXTRA_LIFE_EVERY * (1.0 + EXTRA_LIFE_WAVE * (director.wave - 1)))
 
 
 func _mark_hit(b: Ball) -> void:
@@ -3115,6 +3709,7 @@ func _finish_ball(b: Ball) -> void:
 			Sfx.haptic(16, 0.4)
 	else:
 		streak = 0
+		_mock_miss(s)
 		if flow_t <= 0.0:
 			flow = maxf(0.0, flow - FLOW_MISS)
 		if overload_t <= 0.0:
@@ -3124,6 +3719,37 @@ func _finish_ball(b: Ball) -> void:
 	_show_mult()
 
 
+## A ball came within `gap` px of `t` without touching it: the closest of
+## its shot is the one that will laugh first if the shot misses.
+func _near_miss(b: Ball, t: Target, gap: float) -> void:
+	if not _shots.has(b.shot_id):
+		return
+	var s: Dictionary = _shots[b.shot_id]
+	if gap < float(s.get("near_gap", INF)):
+		s.near_gap = gap
+		s.near = t
+
+
+## A shot missed: the one it came closest to laughs (once its fright has
+## passed), then up to three neighbours one after another, the first
+## elbowing it. Not one that is being aimed at (see Target.mock).
+func _mock_miss(s: Dictionary) -> void:
+	var lead: Target = s.get("near", null)
+	if lead == null or not is_instance_valid(lead) or not lead.is_hittable():
+		return
+	lead.mock(0.55)
+	var near: Array = []
+	for o in targets:
+		if o != lead and o.is_hittable() and not o.aimed:
+			var d := o.pos.distance_to(lead.pos)
+			if d < 240.0 * layout.scale:
+				near.append([d, o])
+	near.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	for i in mini(3, near.size()):
+		var o: Target = near[i][1]
+		o.mock(0.7 + 0.14 * i, lead if i == 0 else null)
+
+
 func _grant(kind: int) -> void:
 	if ammo.size() >= _ammo_cap():
 		ammo[mini(1, ammo.size() - 1)] = kind
@@ -3131,6 +3757,24 @@ func _grant(kind: int) -> void:
 		ammo.append(kind)
 	else:
 		ammo.insert(1, kind)
+
+
+## A press that came while the last ball was leaving takes the pouch the
+## moment it is free, at the pull the finger has by then.
+func _take_queued_aim() -> void:
+	if not _aim_queued:
+		return
+	if _touch == -1 or not (state == State.MAIN_MENU or state == State.STARTING or state == State.PLAYING):
+		_aim_queued = false
+		return
+	if slingshot.begin_aim():
+		_aim_queued = false
+		_aim_start = _time
+		slingshot.drag(_drag_off)
+	elif not slingshot.is_launching():
+		# No ball after all: the press is dropped.
+		_aim_queued = false
+		_touch = -1
 
 
 func _update_ammo(delta: float) -> void:
@@ -3167,6 +3811,7 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 		for b in balls:
 			if not b.active:
 				b.fire(pos, vel.rotated(a), kind == Ammo.PIERCE or overload_t > 0.0, _shot_seq)
+				b.grow = Ball.grow_all
 				fired += 1
 				break
 	_shots[_shot_seq] = {"balls": fired, "hit": false}
@@ -3218,7 +3863,10 @@ func _notification(what: int) -> void:
 			if state == State.PLAYING or state == State.STARTING:
 				_pause()
 			elif state == State.RESUMING:
-				# Backgrounded mid-countdown: fall back to the pause menu.
+				# Backgrounded mid-countdown: back to the pause menu, with the
+				# countdown called off and the menu free to answer.
+				hud.cancel_countdown()
+				hud.locked = false
 				_set_state(State.PLAYING)
 				_pause()
 		NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -3252,7 +3900,17 @@ func _unhandled_input(e: InputEvent) -> void:
 			if slingshot.begin_aim():
 				_touch = e.index
 				_origin = e.position
+				_drag_off = Vector2.ZERO
 				_aim_start = _time
+				_aim_queued = false
+			elif slingshot.is_launching() and ammo.size() > 1:
+				# The last ball is still leaving the pouch (a twentieth of a
+				# second): this press is kept, and takes the next ball.
+				_touch = e.index
+				_origin = e.position
+				_drag_off = Vector2.ZERO
+				_aim_start = _time
+				_aim_queued = true
 			elif _deny_cd <= _time:
 				# No ball loaded: a short "not yet" instead of silence.
 				_deny_cd = _time + 0.5
@@ -3260,9 +3918,19 @@ func _unhandled_input(e: InputEvent) -> void:
 				Sfx.haptic_pattern("error")
 		elif not e.pressed and e.index == _touch:
 			_touch = -1
-			_release_hold = _time - _aim_start if _aim_start >= 0.0 else -1.0
-			_aim_start = -1.0
-			slingshot.release()
+			if _aim_queued:
+				# Lifted before the pouch could be taken: nothing to let go of.
+				_aim_queued = false
+				_aim_start = -1.0
+			elif e.canceled:
+				# The system took the touch away (a gesture from the edge, the
+				# notification shade, a call): that is not a release.
+				_aim_start = -1.0
+				slingshot.abort()
+			else:
+				_release_hold = _time - _aim_start if _aim_start >= 0.0 else -1.0
+				_aim_start = -1.0
+				slingshot.release()
 		elif e.pressed and not in_aim_zone and e.position.y > layout.top_bar_h and state != State.MAIN_MENU:
 			# Double-tap on the open field pauses. Taps there never aim, so
 			# this can't collide with shooting.
@@ -3274,4 +3942,11 @@ func _unhandled_input(e: InputEvent) -> void:
 				_last_tap = now
 				_last_tap_pos = e.position
 	elif e is InputEventScreenDrag and e.index == _touch:
-		slingshot.drag(e.position - _origin)
+		# A finger that moves up past where it began takes its starting
+		# point with it: sliding up first is a way to make room for a longer
+		# pull, never a dead stretch of screen.
+		if e.position.y < _origin.y:
+			_origin.y = e.position.y
+		_drag_off = e.position - _origin
+		if not _aim_queued:
+			slingshot.drag(_drag_off)

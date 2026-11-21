@@ -199,7 +199,7 @@ func rope_style() -> Rope:
 func _tremble() -> Vector2:
 	var j := Vector2.ZERO
 	if tele_t > 0.0:
-		j = Vector2(randf_range(-1.8, 1.8), randf_range(-1.0, 1.0))
+		j = Vector2(look_dice.randf_range(-1.8, 1.8), look_dice.randf_range(-1.0, 1.0))
 	if not soft and _ring_t < 0.16:
 		j += _ring_dir * sin(_ring_t * 110.0) * 2.2 * (1.0 - _ring_t / 0.16)
 	if temper == Temper.TIMID and phase == Phase.HANGING and startle_t <= 0.0:
@@ -213,22 +213,33 @@ func _tremble() -> Vector2:
 		j += Vector2(sin(_clock * 47.0), cos(_clock * 41.0)) * (1.1 if panicked() else 0.7)
 	var ew := evolve_warning()
 	if ew > 0.0 and phase == Phase.HANGING:
-		j += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * 1.8 * ew
+		j += Vector2(look_dice.randf_range(-1.0, 1.0), look_dice.randf_range(-1.0, 1.0)) * 1.8 * ew
 	return j
 
 
 func _update_eye(delta: float) -> void:
 	_closed_t = maxf(0.0, _closed_t - delta)
+	dizzy_t = maxf(0.0, dizzy_t - delta)
+	# The propeller turns with the breeze, and fast when it moves or falls.
+	var spin_k := 14.0 if phase == Phase.FALLING or not is_nan(_queued_x) else 4.5
+	_prop = fposmod(_prop + delta * spin_k * (0.4 if Prefs.reduced_motion else 1.0), TAU)
+	# Now and then, left alone, it winks at you.
+	_wink_t = maxf(0.0, _wink_t - delta)
+	_wink_in -= delta
+	if _wink_in <= 0.0:
+		_wink_in = look_dice.randf_range(7.0, 15.0)
+		if calm_for_fun() and trait_kind != Trait.SHY:
+			_wink_t = 0.5
 	_blink_in -= delta
 	if _blink_in <= 0.0:
 		_blink_t = 0.26 if trait_kind == Trait.SLEEPY else 0.13
 		match trait_kind:
 			Trait.JITTERY:
-				_blink_in = randf_range(1.0, 2.6)
+				_blink_in = look_dice.randf_range(1.0, 2.6)
 			Trait.SLEEPY:
-				_blink_in = randf_range(4.0, 8.0)
+				_blink_in = look_dice.randf_range(4.0, 8.0)
 			_:
-				_blink_in = randf_range(3.0, 7.0)
+				_blink_in = look_dice.randf_range(3.0, 7.0)
 	if _blink_in > 2.0 and morale > 0.5:
 		# Nervous: they blink more.
 		_blink_in -= delta
@@ -239,7 +250,7 @@ func _update_eye(delta: float) -> void:
 		_admire_t = maxf(0.0, _admire_t - delta)
 		_vain_in -= delta
 		if _vain_in <= 0.0:
-			_vain_in = randf_range(6.0, 10.0)
+			_vain_in = look_dice.randf_range(6.0, 10.0)
 			if not aimed and not incoming:
 				_admire_t = 1.3
 	var goal_open := 0.42 if (squint or tele_t > 0.0) else 1.0
@@ -271,6 +282,11 @@ func _update_eye(delta: float) -> void:
 		# Sinking for the team: eyes down, on the line.
 		goal = Vector2(0.0, 0.85).rotated(-body_rot)
 		quick = 0.3
+	elif seeing_stars():
+		# Seeing stars: the eye rolls round. (After the tells above: a move
+		# being shown always shows.)
+		goal = Vector2.from_angle(_clock * (4.0 if Prefs.reduced_motion else 8.0)) * 0.62
+		quick = 0.5
 	_pupil = _pupil.lerp(goal, Pal.damp(quick, delta))
 
 
@@ -288,7 +304,20 @@ func color() -> Color:
 	# separates into layers and the front row reads first.
 	var sd := seen_depth()
 	var back := maxf(0.0, -sd)
-	base = base.darkened(0.4 * back).lerp(Color("2A3140"), 0.14 * back).lightened(0.08 * maxf(0.0, sd))
+	# v8.8: the haze is the room's own colour (read once a frame), and
+	# whoever hangs in the lamp's light catches a little more of it.
+	if back > 0.0:
+		var frame := Engine.get_process_frames()
+		if frame != _haze_frame:
+			_haze_frame = frame
+			_haze = Pal.world("low")
+		base = base.darkened(0.2 * back).lerp(_haze, 0.38 * back)
+	var lamp := Vector2(field_w * 0.32, anchor.y - 63.0)
+	var lit := clampf(1.0 - pos.distance_to(lamp) / (_screen_h * 0.55), 0.0, 1.0)
+	base = base.lightened(0.1 * maxf(0.0, sd) + 0.06 * lit)
+	if frozen_t > 0.0:
+		# Frosted over (Frost), thawing in its last moments.
+		base = base.lerp(ICE, 0.5 * minf(1.0, frozen_t / 0.4))
 	var ew := evolve_warning()
 	if ew > 0.0:
 		# About to harden: a quickening pale pulse.
@@ -302,20 +331,28 @@ func color() -> Color:
 func _base_color() -> Color:
 	if golden:
 		return Pal.GOLD.lerp(Pal.GOLD_LIGHT, 0.5 + 0.5 * sin(_clock * 7.0))
-	# The current colour theme (they change, harmoniously, wave by wave).
-	var base := Pal.kind_color(kind)
-	if variant != Var.STD:
-		base = base.lerp(VARIANT_TINT[variant], 0.75)
+	# The colour of its kind (and variant) in the world this wave is played
+	# in: one family of hues for all of them (see Pal's colour harmony).
+	var base := Pal.kind_color(kind, variant)
 	if _stance_k > 0.0 and stance != Stance.CALM:
-		base = base.lerp(STANCE_TINT[stance], 0.4 * _stance_k)
+		if stance == Stance.VETERAN:
+			# Seasoned: deeper in its own colour (it used to turn navy, whatever
+			# family it came from).
+			base = base.lerp(Color.from_hsv(base.h, minf(1.0, base.s * 1.15), base.v * 0.45), 0.4 * _stance_k)
+		else:
+			base = base.lerp(STANCE_TINT[stance], 0.4 * _stance_k)
 	if kind != Kind.SHIELD and kind != Kind.BOSS and kind != Kind.MIRROR:
 		# Each individual a shade of its own: hue, saturation and value drift
 		# a little around the theme's colour, never far enough to blur kinds.
-		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.3, 1.0), clampf(base.v + _val_shift, 0.2, 1.0))
+		# (No floor under the saturation: it used to be 0.3, which turned the
+		# Legen's pearl a pale yellow and made the pastels stronger than set.)
+		base = Color.from_hsv(fposmod(base.h + _hue_shift, 1.0), clampf(base.s + _hue_shift, 0.0, 1.0), clampf(base.v + _val_shift, 0.2, 1.0))
 	return base
 
 
 const SHADOW_OFF := Vector2(5.0, 6.0)
+static var _haze := Color()        # the room's haze this frame (see color)
+static var _haze_frame := -1
 const B_JELLY := 0.0
 const B_SHADOW := 4.0
 const B_CORD := 8.0
@@ -351,6 +388,12 @@ static func _dirs(seg: int) -> PackedVector2Array:
 			a.append(Vector2.from_angle(i * TAU / seg))
 		_dir_cache[seg] = a
 	return _dir_cache[seg]
+
+
+## The world's light for the creatures' edges (shaders/lit.gdshader).
+static func set_sky(col: Color) -> void:
+	if _lit:
+		_lit.set_shader_parameter("sky", Vector3(col.r, col.g, col.b))
 
 
 static func set_view(v: Vector2) -> void:
@@ -412,7 +455,6 @@ func _draw_rope(ci: RID) -> void:
 	# like its body (see color), so strings crossing in two planes read as
 	# one behind the other.
 	var sd := seen_depth()
-	var ds := depth_scale()
 	match style:
 		Rope.BUNGEE:
 			# Elastic: thick, thinner the more it is stretched.
@@ -427,7 +469,7 @@ func _draw_rope(ci: RID) -> void:
 			# Only a dark core here; the links are drawn on the face layer.
 			hw = 0.7
 			band = B_WIRE
-	hw *= ds
+	hw *= rope_scale()
 	_r_pts.resize(m * 2)
 	_r_uv.resize(m * 2)
 	var run := 0.0
@@ -571,8 +613,10 @@ func _mesh_colors(col: Color) -> void:
 		_m_col.resize(n)
 	_m_col.fill(col)
 	if _m_mem > 0:
-		var mem := col.darkened(0.55)
-		mem.a = col.a * (0.88 if soft else 1.0)
+		# The face plate: a light tint of its own colour (v8.6; it used to be
+		# a dark recess), so the face reads on it in dark lines.
+		var mem := col.lerp(Color(1.0, 0.97, 0.92), 0.62)
+		mem.a = col.a
 		for i in _m_mem:
 			_m_col[i] = mem
 	if _m_dim.x >= 0:

@@ -37,6 +37,10 @@ const MOOD_FROM := 2
 const FINALE_AT := 0.8
 const BOSS_EVERY := 3
 const WARMUP := 90.0            # s over which the early descent eases up to full
+const LATE_FROM := 5.0          # intensity from which the descent climbs faster (see descent)
+const LATE_SLOPE := 5.0         # ... by this much more per unit of intensity (px/s)
+const DESCENT_MAX := 110.0      # px/s before layout scale: from here the descent climbs at
+const DESCENT_PAST := 0.7       # ... this share of its rate, with no ceiling (v8.9)
 # Pacing inside a wave: a build-up, a short peak (a flurry), then a breath.
 enum Pulse { BUILD, PEAK, RELAX }
 
@@ -70,6 +74,13 @@ var skill_shift := 0
 var pulse_t := 12.0
 var pulse_len := 12.0
 var _rng := RandomNumberGenerator.new()
+
+
+## Seeds the director's own rolls (pulse lengths, wave moods and styles)
+## from the run's seed, so the daily challenge really is the same run for
+## everyone, and a test can replay a run.
+func reseed(run_seed: int) -> void:
+	_rng.seed = run_seed ^ 0x5EED
 
 
 func reset() -> void:
@@ -286,6 +297,26 @@ func next_wave() -> void:
 	roll_style()
 
 
+## Picks a run up as wave `w` begins, `t` seconds in (a run saved at that
+## point, or a quick start): the wave's quota from nothing, the clock, the
+## record of shots and the events as they stood.
+func resume_at(w: int, t: float, acc := 0.55, n_shots := 0, n_hits := 0, events := 0, event_in := EVENT_EVERY) -> void:
+	wave = maxi(1, w)
+	elapsed = maxf(0.0, t)
+	accuracy = clampf(acc, 0.0, 1.0)
+	shots = maxi(0, n_shots)
+	hits = clampi(n_hits, 0, shots)
+	event_count = maxi(0, events)
+	next_event = elapsed + clampf(event_in, 8.0, EVENT_EVERY)
+	wave_state = Wave.SPAWNING
+	wave_spawned = 0
+	wave_killed = 0
+	wave_break = 0.0
+	finale_done = false
+	extra_quota = 0
+	roll_style()
+
+
 func intensity() -> float:
 	# Time drives it, and each wave reached adds its own weight.
 	return elapsed / 45.0 + (wave - 1) * 0.2
@@ -314,13 +345,27 @@ func descent(scale: float) -> float:
 	# average player is not overrun in wave 1 or 2 while still finding the
 	# aim; it has no effect after that.
 	var warm := lerpf(0.8, 1.0, clampf(elapsed / WARMUP, 0.0, 1.0))
-	return minf(7.5 + 9.8 * pow(i, 0.85), 72.0) * lerpf(0.9, 1.15, aggression()) * warm * scale
+	# Past LATE_FROM (about wave 5 for a run that goes well) the pressure
+	# climbs faster. Until v8.0 the curve levelled off at 72, which no run
+	# reached: a new pull was refused for 0.8 s after every shot and a full
+	# pull was out of reach. With a responsive slingshot good players get
+	# there, and the game must go on getting harder where they are. Until
+	# v8.9 it then stopped at DESCENT_MAX (about seven minutes in); with
+	# upgrades to pick, a good run outlasted that, so past it the descent
+	# goes on climbing, more slowly, with no ceiling.
+	var late := LATE_SLOPE * maxf(0.0, i - LATE_FROM)
+	var d := 7.5 + 9.8 * pow(i, 0.85) + late
+	if d > DESCENT_MAX:
+		d = DESCENT_MAX + (d - DESCENT_MAX) * DESCENT_PAST
+	return d * lerpf(0.9, 1.15, aggression()) * warm * scale
 
 
-## Targets allowed on the field at once.
+## Targets allowed on the field at once. Past intensity 8 the field holds
+## one more for every 2 (up to 26), so the late game keeps filling up (v8.9).
 func alive_cap() -> int:
 	var d := -2 if wave_mood == WaveMood.CALM else (2 if wave_mood == WaveMood.CHAOS else 0)
-	return maxi(4, mini(6 + int(2.0 * intensity()), 22) + d)
+	var top := 22 + clampi(int((intensity() - 8.0) / 2.0), 0, 4)
+	return maxi(4, mini(6 + int(2.0 * intensity()), top) + d)
 
 
 ## The field never runs thin: below this many targets the spawner hurries,
@@ -346,8 +391,14 @@ func spawn_interval(boss_alive: bool) -> float:
 	return t
 
 
+## Seconds for the rack to win a ball back. This is what sets the pace of
+## fire over time: about a ball a second, a little quicker late in a run.
+## (Up to v7.57 it read 0.88 falling to 0.6 s, but a new pull was refused
+## for 0.8 s after every shot, so the rack stayed full and that wait was
+## the real limit: about a shot a second. With the pouch free at once, the
+## reload carries that limit openly, and a full rack is a burst to spend.)
 func reload_time() -> float:
-	return maxf(0.6, 0.88 - 0.05 * intensity())
+	return maxf(0.9, 1.0 - 0.02 * intensity())
 
 
 ## Returns an event when one is due; formation and rush alternate and every

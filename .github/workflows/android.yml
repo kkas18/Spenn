@@ -16,11 +16,49 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The tests play two whole bot runs; a run that goes well lasts up to
+    # twelve minutes of game time.
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      # The version before the v8 upgrade stays downloadable for good. The
+      # "spenn-latest" release still holds its APK (built from a4113e8 on
+      # main) until this run replaces it further down, so it is copied to a
+      # release of its own first, tagged at that commit. Done once.
+      - name: Keep the original (v7.57) APK
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          KEEP=spenn-v7.57-original
+          ORIGINAL=a4113e8cb8ddcf976c6f134dde20e75a4a2855e5
+          # A failed lookup stops the build here: nothing may be built over
+          # spenn-latest before the original is known to be safe.
+          TAGS=$(gh release list --limit 100 --json tagName -q '.[].tagName')
+          if grep -qx "$KEEP" <<<"$TAGS"; then
+            echo "Already kept."
+            exit 0
+          fi
+          if ! grep -qx spenn-latest <<<"$TAGS"; then
+            echo "No spenn-latest release to keep a copy of."
+            exit 0
+          fi
+          NOTES=$(gh release view spenn-latest --json body -q .body)
+          case "$NOTES" in
+            *"${ORIGINAL::7}"*) ;;
+            *) echo "::warning::spenn-latest no longer holds the v7.57 build; nothing copied."; exit 0 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/original"
+          gh release download spenn-latest -p spenn.apk -D "$RUNNER_TEMP/original"
+          mv "$RUNNER_TEMP/original/spenn.apk" "$RUNNER_TEMP/original/spenn-v7.57-original.apk"
+          gh release create "$KEEP" --target "$ORIGINAL" --latest=false \
+            --title "Spenn v7.57 – originalen før oppgraderingen" \
+            --notes "Spillet slik det var før den helhetlige oppgraderingen (v8). Bygget fra ${ORIGINAL::7}. Samme signatur som nyere bygg, så den kan installeres over dem (og omvendt) uten å miste lagret fremgang." \
+            "$RUNNER_TEMP/original/spenn-v7.57-original.apk"
 
       - uses: actions/setup-java@v4
         with:
@@ -101,7 +139,7 @@ jobs:
           ~/godot/godot --headless --path . --quit-after 120 2>&1 | tee /tmp/boot.log
           if grep -E "SCRIPT ERROR|Parse Error|ERROR:" /tmp/boot.log; then exit 1; fi
 
-      - name: Gameplay tests (soak and bot runs)
+      - name: Tests (session flow, saves, timing, physics, soak and bot runs)
         run: SEEDS="1 2" tools/tests/run.sh ~/godot/godot
 
       - name: Export signed APK

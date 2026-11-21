@@ -54,7 +54,7 @@ func skip() -> void:
 func _process(delta: float) -> void:
 	if _t < 0.0:
 		return
-	_t += delta / maxf(Engine.time_scale, 0.001)
+	_t += Motion.rd
 	if not _accent_done and _t >= _tl.accent:
 		_accent_done = true
 		Sfx.play("reveal")

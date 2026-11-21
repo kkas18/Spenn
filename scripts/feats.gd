@@ -1,6 +1,6 @@
 class_name Feats
 extends RefCounted
-## Achievements: fourteen feats kept for good (Prefs.feats, id -> the day
+## Achievements: fifteen feats kept for good (Prefs.feats, id -> the day
 ## it was won), each with an engraved glyph and a line saying how
 ## (Loc "feat.<id>": "NAME|how"). The game checks them as you play (see
 ## Game._feat) and shows a brass card the first time each is won.
@@ -20,6 +20,7 @@ const LIST := [
 	["five", "clock"],      # last five minutes
 	["sharp", "aim"],       # 90 % hits over 40 shots or more in a run
 	["team", "arrows"],     # break a sinker while its partner baits
+	["week", "calendar"],   # play seven days in a row
 ]
 
 

@@ -2667,3 +2667,231 @@ v7.55, med to endringer.
    (under −90 dB).
 4. **Tester:** testpakken passerer. Seks runder med middels bot gir median 178 s (v7.55:
    168 s), altså ingen endring i balansen.
+
+## v8.0 – Helhetlig oppgradering, trinn 0 og 1: stabilitet, kontroll og jevn flyt
+
+Fra v8 føres planen, funnene og målingene i [OPPGRADERING.md](OPPGRADERING.md), og en kort
+endringslogg i [CHANGELOG.md](CHANGELOG.md). Originalen (v7.57) er tatt vare på som
+`spenn-v7.57-original`. Her står bare hovedlinjene.
+
+1. **Gjennomgang av hele prosjektet** ga 14 feil som måtte rettes. De viktigste:
+   - Hvert treff fikk sanntidsklokkene til å hoppe 0,83 s. Overload varte derfor ca. 2,5 s
+     (ikke 5), flyt ca. 3 s (ikke 7), og risting, kamerabevegelse og sakte film utløst av
+     treff ble kuttet. Klokken er rettet (`Motion.rd`), og varighetene er satt til det som
+     faktisk er spilt.
+   - Pausemenyen låste seg hvis appen ble lagt i bakgrunnen midt i nedtellingen.
+   - En avbrutt berøring fyrte av et skudd.
+   - Et nytt drag ble avvist i 0,8 s etter hvert skudd. Nå styrer ladetiden skuddtakten.
+   - Full kraft var utenfor rekkevidde fra lomma (51–67 %). Draglengden følger nå plassen
+     på skjermen.
+   - Siktelinjen viste feil bane etter veggtreff, og snorkutt ble ikke alltid registrert.
+   - Kropper ristet i tette felt og kunne fly over bjelken.
+   - En avkuttet lagringsfil mistet fremgang uten varsel.
+2. **Testene spilte et annet spill:** uten vindu var feltet et kvadrat på 1280 × 1280 og
+   alle botskudd på full kraft. Balansetallene i v7.50–v7.57 gjaldt derfor ikke telefon.
+   Testene spiller nå på en skjerm formet som en telefon, med egen lagringsfil og fast frø.
+3. **Nye tester:** `layout`, `flow`, `save`, `timing` og `physics`, i tillegg til `soak` og
+   `bot`. `balance.sh` måler tre ferdighetsnivåer.
+4. **Balanse:** ladetiden er ca. 1 s per kule (før 0,6–0,88 s bak en lås på 0,8 s),
+   overload lades 15 % saktere per bølge fra bølge 5, og nedstigningen fortsetter å øke
+   etter intensitet 5 (før flatet den ut på et nivå ingen runde nådde). Bot, median
+   overlevelse: svak 190 s (før 182 s), middels 289 s (før 194 s), god 326 s (før 196 s).
+   En svak spiller varer altså som før, og dyktighet lønner seg.
+5. **Ytelse:** små prikker, buer og streker tegnes samlet (`Ink`). Et ansikt tegnes på
+   92 µs mot 165 µs før, med samme bilde.
+6. **Siktelinjen** har større prikker med mørk kant.
+7. **v8.0.1 – samme frø, samme runde:** to runder på samme frø skilte lag etter 15–45 s.
+   Oppdragene trakk fra rundens terninger (nå har de egne), og en kontroll av kryssede
+   snorer fulgte motorens objektnummer (nå fiendens plass i spillet). Ny test: `repeat`.
+
+## v8.1 – Lys og liv: nytt visuelt uttrykk
+
+Ønsket var et visuelt oppløftende spill med bedre design, effekter og animasjoner.
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Fra mørkt rom til lyssatt scene.** Bakteppet (`shaders/backdrop.gdshader`) har fem
+   verdener (`Pal.WORLDS`: Blåtime, Dyphav, Nordlys, Skumring, Morgen) som skifter med
+   bølgen: dyp farge øverst, drivende fargeslør, lys over linjen, gulv som speiler veggen.
+   Veggens lysstyrke holdes under ca. 0,3, så tekst, gullkule og figurer står klart.
+2. **Figurene** har litt rikere farger (`Pal.vivid`) og kantlys fra verdenen
+   (`sky` i `shaders/lit.gdshader`).
+3. **Rommet svarer:** `Backdrop.pulse` lyser opp veggen ved treff, `Fx.glitter` kaster
+   lysglimt ved en knust fiende, kula har lys og lengre hale.
+4. **Feiring:** lysflom og konfetti (`Fx.confetti`) ved ryddet bølge og ny rekord.
+5. **Sikte og tall:** små prikker mellom siktelinjens åtte, poengtall som spretter inn.
+6. **Fiendenes egne terninger** (`Target.dice`): effekter og bildefrekvens kan ikke
+   lenger endre hva fiendene gjør. Dagens utfordring er dermed lik på alle telefoner.
+7. **Tester:** `repeat` spiller det andre spillet med færre effekter. Hele pakken passerer.
+
+## v8.2 – Én runde til
+
+Ønsket var et spill man spiller om og om igjen. Detaljene står i
+[OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Resultatskjermen ser fremover:** nærmeste uløste oppdrag («2 av 3») og neste kule
+   med en linje som fylles av det runden ga (`Game._next_goals`, `GameOver._goals`).
+2. **Rekordtempo:** rekordrundens poengsum ved starten av hver bølge lagres (`Prefs.pace`),
+   og bølgekortet sier om du ligger foran eller bak (`Game._note_pace`).
+3. **Oppdrag med tak** (`Meta.MISSIONS`, femte tall) og bytte etter åtte uløste runder
+   (`Meta.STALE_RUNS`). Før vokste kravene til de var umulige, og ruten ble aldri ledig.
+4. **Tre nye kuler:** Is, Ametyst og Perlemor.
+5. **Tester:** `save` kontrollerer takene og byttet. Hele pakken passerer.
+
+## v8.3 – Rettferdig og tilpasset
+
+Fiendenes triks ble gjennomgått for rettferdighet, og innstillingene for kontroll og
+tilgjengelighet kom på plass. Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og
+[CHANGELOG.md](CHANGELOG.md).
+
+1. **Minste reaksjonstid** (`Target.REACT_MIN` 0,16 s, `REACT_MIN_FLIGHT` 0,10 s). Sent i
+   en runde ble reaksjonstiden ganget ned til 0,02–0,06 s, kortere enn det smale blikket
+   (varselet) rekker å vises. Rytme-trikset krever også at fienden har sett på deg så lenge.
+2. **Innstillinger:** draglengde (`Prefs.pull`, `Layout.pull_scale` 0,78 / 1 / 1,28),
+   kamerabevegelse for seg (`Prefs.camera`) og større tekst (`Prefs.big_text`, `Hud.ts`).
+3. **Treff-stopp etter tyngde** (`Fx.hitstop(weight)`: 0,6 for treff, 1 for knust, 1,5 for
+   sjef) og **haptikk** der en svak vibrasjon ikke kutter en sterk (`Sfx._take_haptic`).
+4. **Feiring og liv:** papirdusj bak poengsummen ved ny rekord (`GameOver._draw_paper`), og
+   menyen skifter verden hvert 12. sekund.
+5. **Balanse:** uendret innenfor spredningen (svak 165 → 197 s, middels 293 → 283 s, god
+   286 → 308 s på de samme åtte frøene).
+6. **Tester:** `timing` låser minste reaksjonstid, treff-stoppets tyngde og haptikkens
+   rekkefølge. `flow` og `layout` dekker de nye innstillingene. Hele pakken passerer.
+
+## v8.4 – Farger og figurer
+
+Ønsket var fargeharmoni og kulere, morsommere fiender. Detaljene står i
+[OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Farger etter regel** (`Pal.HARMONY`, `Pal.STAGE`, `Pal.KIND_LCH`, `Pal.oklch`): hver
+   verden har en scenefarge, en figurfamilie (±29° rundt sitt sentrum, 80–140° fra
+   scenen) og en lampe. Fargene settes i OKLCH, så en type har samme lyshet i alle
+   verdener. Familiene holdes mellom 132° og 350°, og scenen på den kalde siden
+   (`Pal.cool_hue`). Erstatter de fem håndplukkede settene (`THEMES`) og verdenene fra
+   v8.1 (`WORLDS`).
+2. **Varianter** er nyanser av sin type (`Pal.VARIANT_LCH`), og veteranen blir dypere i
+   sin egen farge i stedet for marineblå.
+3. **Figurenes utseende** (`Target.Hat`, `dizzy_t`, `_wink_t`, `calm_for_fun`): hatter på
+   Vaktene, briller på Dykkeren og Skyggen, stjerner etter et treff de tåler og når de er
+   slått ut, svette for de siste, døsing, blunk og fryd. Bare utseende, trukket fra
+   `look_dice`.
+4. **Tester:** ny test `colours` låser fargereglene (kontrast mot veggen, avstand til gull
+   og korall, minste forskjell mellom typer, lik lyshet i alle verdener). Hele pakken
+   passerer, og `physics`, `repeat` og botrundene gir de samme tallene som i v8.3. Det
+   viser at det nye ikke endrer hva figurene gjør.
+
+## v8.5 – Kom tilbake
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Dager på rad** (`Prefs.streak`, `streak_best`, `streak_day`, `note_day`,
+   `streak_alive`; `Meta.yesterday`): telles når en runde startes, vises ved rekorden på
+   menyen og på et kort i dagens første runde (`Game.STREAK_CARD_AT`). Prestasjonen
+   `week` for sju dager. Ingen varsler eller straff.
+2. **Hjelpeside** (`Hud._fill_help`, `Hud.HELP`, glyfen `help`) bak en ?-knapp på menyen.
+3. **Prestasjonene** vurdert mot de nye nivåene: ingen endring nødvendig.
+4. **Tester:** `save` kontrollerer telling over månedsskifte, skuddår og nyttår, at en
+   tilbakestilt klokke ikke endrer noe, og at tallene lagres.
+
+
+## v8.6 – Myke farger, ekte figurer
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Farger** (`Pal.STAGE`, `Pal.KIND_LCH`): lysere vegg med omtrent halvparten så sterk
+   farge, lysere og mykere figurer. Midten av ringene er en lys plate
+   (`TargetLook._mesh_colors`).
+2. **Kontur** (`lit.gdshader`: `outline`, `outline_dark`; `Target.OUTLINE_PX`,
+   `OUTLINE_DARK`): en mørk kant regnet ut fra normalens lengde. Den følger
+   deformasjonen og koster ingen skripttid.
+3. **Ansikter** (`Target.CAST`, `_eye`, `_eye_one`, `_brows`, `_mouth`, `_rest_mouth`,
+   `_signature`, `_beak`, `_moustache`): to øyne, bryn, munn og et kjennetegn per type.
+   Fargen hentes én gang per tegning (`_fc_col`). Rolige ansikter tegnes på nytt hvert
+   2.–4. bilde etter enhetsnivå (`FACE_EVERY`), travle hvert bilde.
+4. **Samlingen** (`Hud._coll_persona`; `persona.0`–`persona.15` i `Loc`).
+5. **Tekst på veggen** (`Hud.halo_string`, `Hud.halo_lines`; mørk kant på poengene i
+   `Fx`; tettere `_soft_band`).
+6. **Tester:** `colours` krever nå 0,06 mellom typer med samme form (`SHAPE`) og 0,035
+   mellom alle typer. Hele pakken passerer, og botrundene gir de samme tallene som i v8.5.
+
+## v8.7 – Liv i rekkene
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4c) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Svaiing** (`Target._sway_want`, `_sway_step`, styringen i `_body_step`; `SWAY_PX`,
+   `SWAY_KIND`, `SWAY_TEMPER`, `sway_level` fra `Game._sway_level`): en bane
+   x = A·sin(fase) rundt kroken, med motvekt for tauets trekk og luftens brems, og et fast
+   grep tilbake på banen. Fanges opp fra der kroppen er etter et støt (`_sway_free`).
+   Bredden begrenses av naboene (`slide_lo`/`slide_hi`), av høyden i feltet (`_low`) og av
+   `danger`. Rytme og fase regnes fra `rope_clock` og `slot` (`_hash01`), uten terninger.
+2. **Takt:** en rekke følger lederens fase (`form_off`), og en jublende flokk følger
+   `cheer_phase` (`cheer_t`, `CHEER_TIME`, `CHEER_W`) etter en tapt knute (`Game._breach`).
+3. **Innganger** (`Target.Entry`, `begin_entry`, `Game._begin_entry`): SWING (sideveis fart
+   ved start), BUNGEE (mykt tau i `_bungee_t`), RAIL (kroken glir fra kanten), THUD
+   (`thud`: skinna rister, `fx.puff`, småfiender skvetter).
+4. **Erting:** `Target.mock` og `_mock_now` (le og dulte), `Game._near_miss` (den skuddet
+   kom nærmest) og `_mock_miss` (koret etter et bom). Skallfiendene vugger i `taunt`.
+5. **Tester:** hele pakken passerer. Balansen er målt tre ganger med `balance.sh`.
+
+## v8.8 – Dybde
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4d) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Rader** (`Target.Rank`, `RANK_DEPTH`, `RANK_SCALE`, `_apply_rank`, `set_rank`): én
+   terning ved spawn velger bakerst (28 %), midten (42 %) eller fremst (30 %).
+   Størrelsen ligger i `radius`, så treffsonen følger. Bakerste rad henger fra den bakre
+   skinnen (`REAR_DROP`) med tilsvarende kortere tau. Vokteren, Spinneren og rekkene
+   henger i midten.
+2. **Parallakse** (`set_parallax`, `RANK_PAR`, `RANK_AIM`; `Game._update_depth`,
+   `AIM_PAR_PX`): nodens `position` forskyver bare tegningen, mens fysikken bruker `pos`.
+   Veggen (`Backdrop.aim`), den bakre skinnen (`Rail.rear_off`) og støvkornene
+   (`NearLayer`, `scripts/near.gd`) følger hver sin faktor.
+3. **Utseende:** disen tar veggens farge (`Pal.world("low")`, lest én gang per bilde),
+   lampens lys (`color`), tynnere tau bak (`rope_scale`). Størrelsessvingen fra helningen
+   er 4 % (`depth_scale`).
+4. **Tester:** hele pakken passerer. `repeat` bruker nå oppdrag som ikke kan nås på 100 s.
+   Balansen er målt to ganger, og ytelsen i et fast felt.
+
+## v8.9 – Bygg din runde
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Valget** (`Game._open_choice`, `choose`, `choosing`, `choice_ids`, `_take_perk`;
+   `State.CHOOSING`): `_clear_wave` åpner valget etter 1,4 s spilltid i stedet for å gi en
+   tilfeldig oppgradering. I `CHOOSING` går ikke `_pace` (direktøren, bølgepausen og
+   tiden står stille), og spretterten kan ikke trekkes. Fysikken går videre, så kuler i
+   lufta flyr ferdig.
+2. **Tilbudet** (`Perks.offer`, `SHAPERS`, `PAIRS`, `partner`): tre ulike kort, minst ett
+   fra `SHAPERS` så lenge noen er igjen. `partner` finner en oppgradering runden har som
+   kortet passer med.
+3. **Panelet** (`Hud.open_choice`, `close_choice`, `choice_open`, `choice_card_pos`,
+   `PerkCard`): tre kort tegnet for hånd (ikon, navn, `perk.<id>.c`, nivåprikker,
+   «Passer med»). Låst i 0,45 s etter at det åpnes. Ikonet flyr fra kortet til raden
+   (`perk_toast` med `from`). Kort i overlegget venter mens et panel er oppe.
+4. **Effektene** (`Game._split_ball`, `_ricochet`, `_blast`, `_freeze_near`,
+   `_update_aim_slow`; `Ball.grow`, `fragment`, `ricochets`, `Ball.bounce`, `grow_all`;
+   `Target.frozen_t`, `freeze`; `Fx.set_aim_time`): konstantene står øverst i `game.gd`
+   (`AIM_SLOW`, `BIG_GROW`, `SPLIT_*`, `RICOCHET_*`, `BLAST_*`, `FREEZE_*`).
+   Glasskanon er `_max_lives` og ett ledd i `_mult`, Vegg-mester er `Ball.bounce` og
+   dobbel betaling i `_skill`.
+5. **Balanse** (`Director.DESCENT_PAST`, `alive_cap`; `Game.EXTRA_LIFE_WAVE`,
+   `_life_step`): synkefarten stiger videre etter `DESCENT_MAX`, feltet rommer opptil 26,
+   og en knute fra poeng koster mer for hver bølge. Fem målerunder, se trinn 9.
+6. **Tester:** ny test `perks`. Testoppsettet velger automatisk (`auto_pick`,
+   `pick_upgrade`), og botspilleren har sin egen rekkefølge (`PICK`). Hele pakken
+   passerer.
+
+## v8.10 – Raske økter
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9b) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Lagring** (`Game._save_run`, `_save_lives`, `_drop_run_save`, `_apply_save`,
+   `continue_run`; `Prefs.run_save`, `RUN_SAVE`, `saved_run`): `_begin_wave` (bølgens
+   start, skilt ut fra `_wave_tick`) lagrer runden. `Director.resume_at` setter bølgen,
+   klokka og skuddtallene når runden tas opp igjen.
+2. **Hurtigstart** (`QUICK_WAVE`, `QUICK_ELAPSED` = 65 s, `QUICK_PICKS`, `_quick_left`;
+   `Prefs.quick_start`, `QUICK_UNLOCK`, `quick_unlocked`): `_start_run` starter på bølge
+   3. Valgene kommer etter hverandre i `choose`, og `_begin_wave` begynner bølgen.
+3. **Menyen** (`Hud._place_menu_modes`, `_menu_modes`, `ContinueBtn`, `_m_quick`;
+   `TitleLetters.short`, `Game._menu_avoid`): knappen og bryteren, og tittelen henger
+   høyere når knappen vises.
+4. **Tester:** ny test `sessions`. Hele pakken passerer.
