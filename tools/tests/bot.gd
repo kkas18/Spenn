@@ -32,6 +32,10 @@ var rng := RandomNumberGenerator.new()
 var frame := 0
 var skill := "medium"
 var trace := 0                  # TRACE=n: a line of the run's state every n frames (to compare two runs)
+# The upgrade it takes after a wave: the first of these on offer. The ones
+# that change a run first, the plain numbers after, the risky one last.
+const PICK := ["knot", "split", "ricochet", "blast", "freeze", "big", "slowmo", "walls", "magnet",
+	"rack", "reload", "heavy", "flow", "charge", "sight", "edge", "glass"]
 
 
 func _configure() -> void:
@@ -47,6 +51,17 @@ func _configure() -> void:
 	trace = int(_env("TRACE", "0"))
 	# A fresh player to the enemies every run, so runs compare.
 	prefs.habits = {}
+
+
+func pick_upgrade(ids: Array) -> String:
+	var best: String = ids[0]
+	var at := PICK.size()
+	for id: String in ids:
+		var i := PICK.find(id)
+		if i >= 0 and i < at:
+			at = i
+			best = id
+	return best
 
 
 func _test() -> void:

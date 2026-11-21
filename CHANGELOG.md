@@ -4,6 +4,82 @@ Kort oversikt over hva som er endret i den helhetlige oppgraderingen (v8). Plane
 og målingene står i [OPPGRADERING.md](OPPGRADERING.md). Historikken før v8 står i
 [PLAN.md](PLAN.md).
 
+## v8.9 – Bygg din runde
+
+Etter hver bølge velger du nå selv én av tre oppgraderinger. Før fikk du én tilfeldig.
+De fleste av de nye endrer hvordan du spiller, og noen passer godt sammen, så to runder
+kan bli ganske ulike.
+
+### Nytt
+
+- **Du velger etter hver bølge.** Når en bølge er renset, kommer tre kort, og runden står
+  stille mens du velger: ingen tid går, ingenting kommer, og spretterten kan ikke trekkes.
+  - Minst ett av kortene endrer hvordan du spiller.
+  - Kortet viser hva oppgraderingen gjør og hvilket nivå du får.
+  - Når du allerede har en oppgradering som passer, står det på kortet («Passer med
+    Splitt»).
+- **Åtte nye oppgraderinger:**
+  - **Splitt:** kulas første treff deler den i to (i tre på nivå 2).
+  - **Rikosjett:** når kula skyter ned en fiende, hopper den videre til den nærmeste (to
+    ganger på nivå 2).
+  - **Smell:** en fiende du skyter ned, smeller. Den nærmeste får et treff og dyttes unna
+    (de to nærmeste på nivå 2, og smellet når lenger).
+  - **Frost:** et treff fryser fienden og de som henger tett inntil. De slutter å synke
+    og flytte seg i 1,5 sekunder (2,5 på nivå 2), og etterpå tåler de frost i 3 sekunder.
+    Spinneren rister det av seg.
+  - **Fokus:** tiden går saktere mens du sikter (80 % fart, 70 % på nivå 2).
+  - **Stor kule:** kulene er større og treffer bredere, men lades 10 % saktere per nivå.
+  - **Vegg-mester:** kulene mister ikke fart i veggen, og veggskudd gir dobbelt så mye.
+  - **Glasskanon:** +1 på multiplikatoren, men én knute mindre resten av runden.
+- **De ni gamle** er med som før: Tunge kuler, Skarp egg, Lang flyt, Større stativ,
+  Rask lading, Langt sikte, Magnetkule, Superlading og Ny knute.
+- **Slik spiller du** har fått en linje om oppgraderingene.
+
+### Rettferdig
+
+- **Et trykk i det første halve sekundet velger ingenting.** Det kan være ment for siste
+  skudd.
+- **Siktelinjen følger oppgraderingene.** Med Vegg-mester og Stor kule viser den sprett
+  der kula faktisk spretter.
+- **Splitt og Rikosjett virker ikke på gjennomslagskuler.** De går gjennom alt fra før.
+  Det gjelder også under overbelastning, der alle kuler går gjennom.
+- **Kort som kommer mens et panel er oppe, venter.** Før kunne et kort gå sin tid bak
+  pausemenyen uten å bli sett. Nå vises det når panelet lukkes.
+
+### Balanse
+
+Oppgraderingene gjør deg sterkere, og et endeløst spill må likevel bli vanskeligere til
+slutt. Derfor er tre ting endret:
+
+- **En knute du vinner tilbake med poeng, koster mer jo lenger ut du er:** 1 500 poeng i
+  bølge 1, 3 000 i bølge 5 og 4 875 i bølge 10. Før var det alltid 1 500. Med
+  oppgraderinger scoret en sen runde så raskt at en tapt knute var tilbake på under to
+  sekunder, og da betydde knutene nesten ingenting.
+- **Vanskelighetsgraden har ikke lenger tak.** Synkefarten sluttet å øke etter om lag sju
+  minutter. Nå fortsetter den å stige, litt saktere enn før.
+- **Feltet kan romme flere fiender sent i runden:** opptil 26 samtidig, mot 22 før.
+
+Målt med botspillerne på de samme åtte frøene (median overlevelse):
+
+| Spiller | v8.8 | v8.9 |
+|---|---|---|
+| Svak | 215 s | 245 s |
+| Middels | 248 s | 465 s |
+| God | 348 s | 304 s |
+
+- **En middels botspiller varer klart lengre,** fordi oppgraderingene passer en jevn
+  stil. Runden ender likevel når farten tar igjen.
+- **Den gode botspilleren varer kortere** fordi den alltid velger de nye oppgraderingene
+  først. I v8.8 fikk den ofte Skarp egg og kuttet 40–180 snorer per runde, nå nesten
+  ingen. Folk velger det som passer dem.
+- **Målingene spriker mer enn før,** fordi en runde enten tar av eller ender tidlig.
+  Hvordan balansen ble funnet, står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9).
+
+### Ytelse
+
+Uendret: 6,9–7,0 ms per bilde i både v8.8 og v8.9, i et fast, travelt felt målt i omganger
+på samme maskin. Med Splitt kan det være opptil ti kuler i lufta (før seks).
+
 ## v8.8 – Dybde
 
 Feltet har fått dybde, som i et 2.5D-spill. Under panseret er spillet fortsatt 2D, med

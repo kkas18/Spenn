@@ -13,6 +13,7 @@
 #   flow           a whole session: menu, play, pause, resume, restart, losing
 #   save           the stored progress survives damage and interrupted writes
 #   timing         real time and game time (hit-stop, slow motion, overload)
+#   perks          the choice after a wave, and what each upgrade does
 #   physics        frame-rate independence, no tunnelling, nothing stuck
 #   repeat         one seed is one run, whatever missions are held
 #   soak           a crowded late game under fire: no leaks
@@ -68,6 +69,7 @@ run_test flow 300
 # complaints about those are expected.
 run_test save 120 'ConfigFile parse error|config_file.cpp'
 run_test timing 300
+run_test perks 300
 run_test physics 600
 run_test repeat 300
 run_test soak 600

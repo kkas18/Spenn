@@ -261,6 +261,13 @@ var leader: Target = null
 var is_leader := false
 var form_off := 0.0
 var stun_t := 0.0
+## Frost (an upgrade, v8.9): while it lasts the enemy hangs still, frosted.
+## It does not sink, dodge, slide, sway or tease; it can still be hit and
+## still swings from a blow.
+var frozen_t := 0.0
+var frost_rest := 0.0          # from a freeze until frost can take it again
+const FROST_REST := 3.0        # s after a thaw before it can be frozen again
+const ICE := Color("BFE6FF")
 var hurry := false             # one of a wave's last few: sinks faster, shaking
 var patched := false           # Legen's bubble: soaks the next blow
 var wants_heal := false        # Legen asks the game for someone to mend
@@ -630,6 +637,8 @@ func spawn(k: Kind, anchor_pos: Vector2, start_len: float, target_len: float, wa
 	is_leader = false
 	form_off = 0.0
 	stun_t = 0.0
+	frozen_t = 0.0
+	frost_rest = 0.0
 	hurry = false
 	patched = false
 	wants_heal = false
@@ -1787,6 +1796,16 @@ func _depth_sort() -> void:
 		parent.move_child(self, dest)
 
 
+## Frost: held still for `secs`; not again until FROST_REST after the thaw.
+func freeze(secs: float) -> void:
+	if frozen_t > 0.0 or frost_rest > 0.0:
+		return
+	frozen_t = secs
+	frost_rest = secs + FROST_REST
+	tele_t = 0.0
+	_lunge_left = 0.0
+
+
 func startle(from: Vector2) -> void:
 	if startle_t > 0.0 or _closed_t > 0.0:
 		return
@@ -1804,6 +1823,8 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 	_pluck_cd = maxf(0.0, _pluck_cd - dt)
 	struck_t = maxf(0.0, struck_t - dt)
 	stun_t = maxf(0.0, stun_t - dt)
+	frozen_t = maxf(0.0, frozen_t - dt)
+	frost_rest = maxf(0.0, frost_rest - dt)
 	_jolt_cd = maxf(0.0, _jolt_cd - dt)
 	flash_t = maxf(0.0, flash_t - dt)
 	fray_t = maxf(0.0, fray_t - dt)
@@ -1835,7 +1856,9 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				if _dropping:
 					_dropping = false
 					_land()
-				if scared:
+				if frozen_t > 0.0:
+					pass
+				elif scared:
 					# Overload: it scrambles back up its string, away from you.
 					length = maxf(60.0 * (_screen_h / 1280.0), length - 35.0 * dt)
 				elif golden:
@@ -1846,7 +1869,7 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 					length += descent * speed_mul() * pace * (1.9 if rush_t > 0.0 else 1.0) * _speed_bonus * (2.0 if hurry else 1.0) * (0.55 if charm == Charm.BALLOON else 1.0) * (1.0 + 0.35 * anger) * (1.3 if stance == Stance.FURIOUS else 1.0) * dt
 				goal_length = length
 				_evolve_step(dt)
-			if panicked():
+			if panicked() or (frozen_t > 0.0 and rope_host == null):
 				tele_t = 0.0
 				_lunge_left = 0.0
 				_order_drop = 0.0
@@ -1860,12 +1883,13 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 				_ride_step()
 			else:
 				_brain(dt)
-			_charm_step(dt)
-			_arm_step(dt)
-			_smart_step(dt)
-			_mood_step(dt)
-			_stance_step(dt)
-			_move_anchor(dt)
+			if frozen_t <= 0.0:
+				_charm_step(dt)
+				_arm_step(dt)
+				_smart_step(dt)
+				_mood_step(dt)
+				_stance_step(dt)
+				_move_anchor(dt)
 			if _lunge_left > 0.0:
 				var step_len := minf(_lunge_left, 340.0 * dt)
 				length += step_len
@@ -1874,7 +1898,8 @@ func step(dt: float, descent: float, danger_y: float, danger_band: float, screen
 			_sway_step(dt)
 			_body_step(dt)
 			_z_step(dt)
-			_tease(dt)
+			if frozen_t <= 0.0:
+				_tease(dt)
 			if nemesis > 0:
 				smug = maxf(smug, 0.75)
 			_soft_step(dt)
@@ -2938,7 +2963,7 @@ static func _hash01(n: int) -> float:
 ## with something else (arriving, a move, a lunge, an acrobatic swing).
 func _sway_want() -> float:
 	if kind == Kind.ROD or acro != Acro.NONE or rope_host != null or playdead > 0.0 or scared or golden \
-			or stun_t > 0.0 or _lunge_left > 0.0 or tele_t > 0.0 or _tell_t > 0.0 or not is_nan(_queued_x) \
+			or frozen_t > 0.0 or stun_t > 0.0 or _lunge_left > 0.0 or tele_t > 0.0 or _tell_t > 0.0 or not is_nan(_queued_x) \
 			or _dropping or not _attached or _order_drop > 0.0:
 		return 0.0
 	var sc := _screen_h / 1280.0

@@ -58,6 +58,7 @@ const TOKEN_POOL := 40
 const TOKEN_TIME := 0.5
 var _slow_left := 0.0
 var _base_scale := 1.0           # sustained slow time (overload), under everything else
+var _aim_scale := 1.0            # game time while aiming (Fokus), also under everything else
 var _punch := 0.0
 # Focus: the camera leans in on a point for a big moment (a boss falling,
 # the last kill of a wave), easing in and back out over real time.
@@ -731,6 +732,13 @@ func focus(at: Vector2, amount: float, dur := 0.9) -> void:
 		_focus_rot = deg_to_rad(-side * clampf(amount * 18.0, 0.3, 1.5))
 
 
+## Game time while you aim (Fokus, v8.9; 1 when not): it slows the game
+## under the other effects, like overload's.
+func set_aim_time(scale: float) -> void:
+	_aim_scale = scale
+	_apply_time()
+
+
 ## Sustained slow time (overload): the floor the other effects work under.
 func set_base_time(scale: float) -> void:
 	_base_scale = scale
@@ -753,6 +761,7 @@ func reset_time() -> void:
 	_slow_left = 0.0
 	_slow_scale = 1.0
 	_base_scale = 1.0
+	_aim_scale = 1.0
 	_hitstop_live = false
 	_punch = 0.0
 	_focus_t = -1.0
@@ -766,7 +775,7 @@ func _apply_time() -> void:
 	if _held >= 0.0:
 		Engine.time_scale = _held
 		return
-	Engine.time_scale = 0.02 if _hitstop_live else minf(_base_scale, _slow_scale if _slow_left > 0.0 else 1.0)
+	Engine.time_scale = 0.02 if _hitstop_live else minf(minf(_base_scale, _aim_scale), _slow_scale if _slow_left > 0.0 else 1.0)
 
 
 func clear() -> void:

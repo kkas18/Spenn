@@ -2850,3 +2850,32 @@ Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 4d) og [CHANGELOG.md
    er 4 % (`depth_scale`).
 4. **Tester:** hele pakken passerer. `repeat` bruker nå oppdrag som ikke kan nås på 100 s.
    Balansen er målt to ganger, og ytelsen i et fast felt.
+
+## v8.9 – Bygg din runde
+
+Detaljene står i [OPPGRADERING.md](OPPGRADERING.md) (trinn 9) og [CHANGELOG.md](CHANGELOG.md).
+
+1. **Valget** (`Game._open_choice`, `choose`, `choosing`, `choice_ids`, `_take_perk`;
+   `State.CHOOSING`): `_clear_wave` åpner valget etter 1,4 s spilltid i stedet for å gi en
+   tilfeldig oppgradering. I `CHOOSING` går ikke `_pace` (direktøren, bølgepausen og
+   tiden står stille), og spretterten kan ikke trekkes. Fysikken går videre, så kuler i
+   lufta flyr ferdig.
+2. **Tilbudet** (`Perks.offer`, `SHAPERS`, `PAIRS`, `partner`): tre ulike kort, minst ett
+   fra `SHAPERS` så lenge noen er igjen. `partner` finner en oppgradering runden har som
+   kortet passer med.
+3. **Panelet** (`Hud.open_choice`, `close_choice`, `choice_open`, `choice_card_pos`,
+   `PerkCard`): tre kort tegnet for hånd (ikon, navn, `perk.<id>.c`, nivåprikker,
+   «Passer med»). Låst i 0,45 s etter at det åpnes. Ikonet flyr fra kortet til raden
+   (`perk_toast` med `from`). Kort i overlegget venter mens et panel er oppe.
+4. **Effektene** (`Game._split_ball`, `_ricochet`, `_blast`, `_freeze_near`,
+   `_update_aim_slow`; `Ball.grow`, `fragment`, `ricochets`, `Ball.bounce`, `grow_all`;
+   `Target.frozen_t`, `freeze`; `Fx.set_aim_time`): konstantene står øverst i `game.gd`
+   (`AIM_SLOW`, `BIG_GROW`, `SPLIT_*`, `RICOCHET_*`, `BLAST_*`, `FREEZE_*`).
+   Glasskanon er `_max_lives` og ett ledd i `_mult`, Vegg-mester er `Ball.bounce` og
+   dobbel betaling i `_skill`.
+5. **Balanse** (`Director.DESCENT_PAST`, `alive_cap`; `Game.EXTRA_LIFE_WAVE`,
+   `_life_step`): synkefarten stiger videre etter `DESCENT_MAX`, feltet rommer opptil 26,
+   og en knute fra poeng koster mer for hver bølge. Fem målerunder, se trinn 9.
+6. **Tester:** ny test `perks`. Testoppsettet velger automatisk (`auto_pick`,
+   `pick_upgrade`), og botspilleren har sin egen rekkefølge (`PICK`). Hele pakken
+   passerer.

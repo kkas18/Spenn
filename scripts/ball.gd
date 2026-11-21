@@ -23,6 +23,9 @@ var hits := 0                  # targets hit during this shot
 var kills := 0                 # ... and killed
 var banks := 0                 # side-wall bounces so far (bank shots)
 var skilled := 0               # bit per skill shot already paid for this ball
+var grow := 0.0                # px on the radius (Stor kule; a Splitt piece is smaller)
+var fragment := false          # a piece split off another ball (it does not split again)
+var ricochets := 0             # times it has jumped on to the next enemy (Rikosjett)
 var spin := 0.0                # visual rotation (rad)
 # Real spin (rad/s): set by friction at contacts (walls, bodies, other
 # balls), it bends the flight a touch (Magnus) and changes the next bounce.
@@ -41,6 +44,11 @@ const TEX_SOFT := preload("res://assets/particles/soft.png")
 
 ## Overload: every ball in flight burns with a halo (set by the game).
 static var hot := false
+## The run's upgrades (v8.9), for every ball and for the aim guide: how
+## much speed a side wall gives back (Vegg-mester keeps it all) and how
+## much bigger the balls are (Stor kule).
+static var bounce := WALL_BOUNCE
+static var grow_all := 0.0
 var _halo: Node2D
 
 
@@ -76,6 +84,9 @@ func fire(p: Vector2, v: Vector2, is_special: bool, shot := 0) -> void:
 	kills = 0
 	banks = 0
 	skilled = 0
+	grow = 0.0
+	fragment = false
+	ricochets = 0
 	spin = 0.0
 	w = 0.0
 	_touched.clear()
@@ -123,18 +134,19 @@ func step(dt: float, l: Layout) -> bool:
 		_touched[id] -= dt
 		if _touched[id] <= 0.0:
 			_touched.erase(id)
-	if pos.x < RADIUS:
-		pos.x = RADIUS
+	var r := RADIUS + grow
+	if pos.x < r:
+		pos.x = r
 		if vel.x < -60.0:
 			banks += 1
 			_wall(Vector2.RIGHT)
-		vel.x = absf(vel.x) * WALL_BOUNCE
-	elif pos.x > l.size.x - RADIUS:
-		pos.x = l.size.x - RADIUS
+		vel.x = absf(vel.x) * bounce
+	elif pos.x > l.size.x - r:
+		pos.x = l.size.x - r
 		if vel.x > 60.0:
 			banks += 1
 			_wall(Vector2.LEFT)
-		vel.x = -absf(vel.x) * WALL_BOUNCE
+		vel.x = -absf(vel.x) * bounce
 	if pos.y < l.rail_y + RADIUS + 3.0 and vel.y < 0.0:
 		pos.y = l.rail_y + RADIUS + 3.0
 		# The rail soaks up most of the blow; the ball is spent and fades.
@@ -162,6 +174,7 @@ static func trace(p: Vector2, v: Vector2, wind: float, l: Layout, max_t: float, 
 	var out := PackedVector2Array()
 	var t := 0.0
 	var w := 0.0
+	var r := RADIUS + grow_all
 	while t < max_t:
 		t += dt
 		v.y += GRAVITY * dt
@@ -172,18 +185,18 @@ static func trace(p: Vector2, v: Vector2, wind: float, l: Layout, max_t: float, 
 			w *= exp(-0.5 * dt)
 		if walls:
 			var n := Vector2.ZERO
-			if p.x < RADIUS:
-				p.x = RADIUS
+			if p.x < r:
+				p.x = r
 				n = Vector2.RIGHT
-			elif p.x > l.size.x - RADIUS:
-				p.x = l.size.x - RADIUS
+			elif p.x > l.size.x - r:
+				p.x = l.size.x - r
 				n = Vector2.LEFT
 			if n != Vector2.ZERO:
 				if spin and v.dot(n) < -60.0:
-					var imp := grip(v, w, n, Vector2.ZERO, (1.0 + WALL_BOUNCE) * absf(v.dot(n)), MU_WALL, 0.0)
+					var imp := grip(v, w, n, Vector2.ZERO, (1.0 + bounce) * absf(v.dot(n)), MU_WALL, 0.0)
 					v += imp
 					w += grip_spin(n, imp)
-				v.x = n.x * absf(v.x) * WALL_BOUNCE
+				v.x = n.x * absf(v.x) * bounce
 		out.append(p)
 		if p.y < l.rail_y + RADIUS:
 			break
@@ -194,7 +207,7 @@ static func trace(p: Vector2, v: Vector2, wind: float, l: Layout, max_t: float, 
 ## ball's surface, trading some speed for spin (or spin for speed), and it
 ## knocks against the wall, louder the harder it hits.
 func _wall(n: Vector2) -> void:
-	var jn := (1.0 + WALL_BOUNCE) * absf(vel.dot(n))
+	var jn := (1.0 + bounce) * absf(vel.dot(n))
 	friction(n, Vector2.ZERO, jn, MU_WALL, 0.0)
 	impact(n)
 	Sfx.play("wood", clampf(1.5 - absf(vel.x) / 2400.0, 1.1, 1.5), linear_to_db(clampf(absf(vel.x) / 1400.0, 0.12, 0.6)) - 6.0)
@@ -247,9 +260,10 @@ func _draw() -> void:
 	# The tail: ten fading segments in the ball's own colour, tapering to
 	# nothing (its light is drawn in the halo, on the additive layer).
 	var tail: Color = Meta.skin_colors(Prefs.skin)[1]
+	var r := RADIUS + grow
 	for i in TRAIL:
 		var k := 1.0 - float(i) / TRAIL
-		draw_line(_trail[i], _trail[i + 1], Color(tail, 0.5 * k * k), RADIUS * 1.6 * k, true)
+		draw_line(_trail[i], _trail[i + 1], Color(tail, 0.5 * k * k), r * 1.6 * k, true)
 	# Stretch along the flight (speed) or squash against a fresh contact.
 	# R·S·R⁻¹ keeps the lighting world-aligned while the shape deforms.
 	var axis := vel.angle()
@@ -262,11 +276,11 @@ func _draw() -> void:
 		sy = 1.0 + 0.18 * k
 	var deform := Transform2D(axis, Vector2.ZERO) * Transform2D(0.0, Vector2(sx, sy), 0.0, Vector2.ZERO) * Transform2D(-axis, Vector2.ZERO)
 	draw_set_transform_matrix(Transform2D(0.0, pos + Pal.SHADOW_OFFSET * 1.8) * deform)
-	Pal.soft_shadow(self, Vector2.ZERO, Vector2(RADIUS, RADIUS), 0.8)
+	Pal.soft_shadow(self, Vector2.ZERO, Vector2(r, r), 0.8)
 	draw_set_transform_matrix(Transform2D(0.0, pos + Pal.SHADOW_OFFSET * 0.8) * deform)
-	Pal.disc(self, Vector2.ZERO, RADIUS, Pal.SHADOW)
+	Pal.disc(self, Vector2.ZERO, r, Pal.SHADOW)
 	draw_set_transform_matrix(Transform2D(0.0, pos) * deform)
-	draw_ball(self, Vector2.ZERO, RADIUS, special, spin, vel.normalized(), false)
+	draw_ball(self, Vector2.ZERO, r, special, spin, vel.normalized(), false)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -279,7 +293,7 @@ func _draw_halo() -> void:
 	# and in overload every ball burns.
 	var c: Color = Meta.skin_colors(Prefs.skin)[2]
 	var a := (0.5 if hot else (0.28 if special else 0.16)) * modulate.a
-	var r := RADIUS * (3.4 if hot else (2.6 if special else 2.2))
+	var r := (RADIUS + grow) * (3.4 if hot else (2.6 if special else 2.2))
 	var fast := clampf(vel.length() / 1400.0, 0.0, 1.0)
 	for i in range(1, TRAIL, 2):
 		var k := 1.0 - float(i) / TRAIL

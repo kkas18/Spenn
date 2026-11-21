@@ -23,6 +23,7 @@ Stabilitet og spillfølelse kommer først, deretter bilde og lyd, så utvidelser
 | 6 | Grensesnitt og tilgjengelighet: draglengde, kamera, tekststørrelse (v8.3), hjelpeside (v8.5), kontroll av farge og lyd, skjermformer | Ferdig |
 | 7 | Kode og motor | Vurdert: ytelse målt per del, motoren blir på 4.3 (se beslutninger) |
 | 8 | Sluttkontroll og levering | Ferdig for denne runden (v8.5). Det som gjenstår, er å prøve spillet på en telefon |
+| 9 | Varig moro for voksne: bygg din runde (v8.9), raske økter (v8.10), mål som varer | v8.9 ferdig, v8.10 neste |
 
 Rekkefølgen følger det du har bedt om underveis. Etter v8.0 ba du om et visuelt løft og
 et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som får deg til
@@ -30,7 +31,9 @@ et spill man vil spille om og om igjen, så det visuelle (trinn 2) og det som f�
 du om fargeharmoni og kulere, morsommere fiender. Det ble trinn 4 (v8.4). Etter v8.5 ba
 du om mykere farger og fiender med hver sin karakter. Det ble v8.6, som en fortsettelse
 av trinn 4. Deretter ba du om fiender som svaier og erter, og om mer dybde, som i et
-2.5D-spill. Det ble v8.7 og v8.8.
+2.5D-spill. Det ble v8.7 og v8.8. Etter v8.8 sa du at spillet er for voksne som kjeder
+seg hjemme eller på vei til jobben, og at det ikke blir særlig gøy i lengden. Det er
+trinn 9: først v8.9 (bygg din runde), så v8.10 (raske økter).
 
 ## Gjennomgangen: hva som ble funnet
 
@@ -613,6 +616,165 @@ skripttid per bilde over 600 bilder, beste av tre, versjonene i omganger.
 - **Én feil er rettet underveis:** disens farge ble slått opp for hver fiende ved hver
   fargeberegning, og det kostet 0,6 ms per bilde. Den slås nå opp én gang per bilde.
 
+### Trinn 9 – Varig moro: bygg din runde (v8.9, ferdig)
+
+Etter v8.8 sa du at spillet er ment for voksne som kjeder seg hjemme eller på vei til
+jobben, at det må være et profesjonelt produkt, og at det ikke blir særlig gøy i lengden.
+Jeg foreslo tre steg, og du ba meg starte med de to første:
+
+1. **Bygg din runde (v8.9):** du velger én av tre oppgraderinger etter hver bølge, og
+   flere av dem endrer hvordan du spiller.
+2. **Raske økter (v8.10):** hurtigstart og «fortsett der du slapp», så en kort tur til
+   jobben holder til en god runde.
+3. **Mål som varer:** opplåsinger, en ukentlig utfordring og et resultatkort du kan dele.
+   Dette er ikke bestilt ennå.
+
+**Hvorfor dette først:** i en runde som varer flere minutter, er det valgene som gjør at
+to runder blir ulike. Før kom én tilfeldig oppgradering per bølge, og de fleste var tall
+(15 % raskere lading, én kule til). Nå bestemmer du retningen selv, og flere av valgene
+endrer hvordan du sikter og hva du sikter på.
+
+#### Valget
+
+- **Når:** 1,4 sekunder etter at en bølge er renset (spilltid, etter feiringen) kommer
+  tre kort over et dempet felt.
+- **Runden står stille mens du velger.** Ingen tid går i runden, pausen før neste bølge
+  teller ikke, ingenting kommer, og spretterten kan ikke trekkes. Rommet lever videre bak
+  panelet: kuler som er i lufta, flyr ferdig, og konfettien faller.
+- **Et trykk i det første halve sekundet velger ingenting,** så et trykk som var ment for
+  siste skudd, ikke velger for deg.
+- **Minst ett av kortene endrer hvordan du spiller** (Splitt, Rikosjett, Smell, Fokus,
+  Stor kule, Frost eller Vegg-mester), så lenge noen av dem er igjen.
+- **Kortet** viser ikon, navn og hva oppgraderingen gjør med tall. Øverst til høyre står
+  «NY» eller «NIVÅ 2», med en prikk for hvert nivå: de du har, den du får (lys) og de som
+  er igjen. Når du allerede har en oppgradering som passer, står det nederst med en
+  stjerne («Passer med Splitt»).
+- **Valgt:** ikonet flyr fra kortet til raden øverst til venstre, og spillet fortsetter
+  der det sto. Pausen før neste bølge er da om lag 1,5 sekunder.
+- **Ny knute** tilbys bare når du har mistet en, som før.
+
+#### De åtte nye
+
+| Oppgradering | Nivå 1 | Nivå 2 |
+|---|---|---|
+| Splitt | Kulas første treff deler den i to | I tre |
+| Rikosjett | Når kula skyter ned en fiende, hopper den videre til den nærmeste innen 320 punkter | To hopp |
+| Smell | En fiende du skyter ned, smeller: den nærmeste innen 100 punkter får et treff og dyttes unna | De to nærmeste innen 130 punkter |
+| Frost | Et treff fryser fienden og de som henger innen 70 punkter i 1,5 s | 100 punkter, 2,5 s |
+| Fokus | Tiden går i 80 % fart mens du sikter | 70 % |
+| Stor kule | Kulene er 4 punkter større i radius (17 mot 13), lading 10 % saktere | 8 punkter større, 21 % saktere |
+| Vegg-mester | Kulene mister ikke fart i veggen, veggskudd gir dobbelt | (ett nivå) |
+| Glasskanon | +1 på multiplikatoren, én knute mindre resten av runden | (ett nivå) |
+
+Detaljer som er valgt med vilje:
+
+- **Splitt:** bitene er litt mindre kuler (radius 10) fra samme skudd. Skuddet teller
+  som treff eller bom først når alle bitene er ute av spill. Én bit går mot midten av
+  feltet, der fiendene er. Bitene deler seg ikke igjen.
+- **Rikosjett:** kula sikter dit fienden vil være når den kommer fram, med fall og
+  bevegelse regnet med, og flyr minst 950 punkter per sekund.
+- **Smell:** treffene fra smellet regnes som kjedereaksjon og gir poeng som det. De
+  smeller ikke videre, så ett skudd kan ikke rydde hele feltet.
+- **Frost:** en frossen fiende kan treffes og svinger av et treff, men synker ikke,
+  unnviker ikke, glir ikke langs skinnen, svaier ikke og erter ikke. Den er blålig og tiner
+  de siste 0,4 sekundene. Et varsel den var i gang med, avbrytes, så den varsler på nytt
+  før den flytter seg. **Etter at den har tint, tåler den frost i 3 sekunder,** så de
+  laveste kan ikke holdes frosset hele tiden. Spinneren rister det av seg.
+- **Fokus:** farten glir ned og opp over om lag 0,2 sekunder, så et raskt skudd knapt
+  bremses. Overbelastning og flyt måles i ekte tid, som før.
+- **Stor kule og Vegg-mester** gjelder også siktelinjen, så den viser sprett der kula
+  faktisk spretter. Kula i lomma er også større.
+- **Glasskanon:** knuten forsvinner med det samme (aldri den siste). En knute du vinner
+  tilbake med poeng eller Ny knute, fyller bare opp til to. Der den tredje knuten var,
+  vises en glassrute.
+- **Gjennomslagskuler** (og alle kuler under overbelastning) deler seg ikke og hopper
+  ikke videre. De går gjennom alt fra før.
+
+#### Passer sammen
+
+Disse parene står på kortet når du har den andre: Splitt og Smell, Splitt og Rikosjett,
+Splitt og Stor kule, Smell og Frost, Frost og Skarp egg, Vegg-mester og Langt sikte,
+Vegg-mester og Magnetkule, Fokus og Langt sikte, Fokus og Skarp egg, Glasskanon og Lang
+flyt, Glasskanon og Superlading, Rikosjett og Magnetkule, Stor kule og Tunge kuler.
+
+#### Tester
+
+- **Ny test, `perks`:** et renset felt åpner valget med tre ulike kort, minst ett som
+  endrer spillet. Runden står stille (ingen tid, ingen skudd), et trykk i første øyeblikk
+  velger ingenting, og kortet du velger, blir tatt, går til raden, og neste bølge kommer.
+  Deretter prøves hver av de åtte på fiender hengt opp for hånd: bitene fra Splitt,
+  hoppet fra Rikosjett (og ingen hopp etter et treff som ikke dreper), treffet fra Smell
+  (og ikke på en som henger lenger unna), Frost (synker ikke, tiner etter 1,5 s, tåler
+  ikke ny frost med en gang, og synker igjen), størrelse, lading og vegg for Stor
+  kule og Vegg-mester, knuten og multiplikatoren for Glasskanon, og farten under sikting
+  for Fokus.
+- **Alle tester** som spiller runder, velger automatisk (første kort). Botspilleren
+  velger det som endrer spillet først og Glasskanon sist.
+- **Testen fant en feil i selve testen, ikke i spillet:** fiendene som ble hengt opp,
+  spratt fortsatt i tauet da kula kom. De henger nå i ro før skuddet.
+
+#### Balanse
+
+Målt med botspillerne på de samme åtte frøene og tre nivåer (median overlevelse). Det tok
+fem målerunder å komme hit, og hver av dem lærte meg noe:
+
+| Spiller | v8.8 | 1. Første forsøk | 2. Oppgraderinger dempet | 3. Uten tak | 4. Fokus dempet | 5. Knutene (v8.9) |
+|---|---|---|---|---|---|---|
+| Svak | 215 s | 252 s | 235 s | 235 s | 250 s | 245 s |
+| Middels | 248 s | 3 av 6 til taket | 3 av 5 til taket | 445 s | 521 s | 465 s |
+| God | 348 s | ikke målt | ikke målt | 412 s | 304 s | 304 s |
+
+«Til taket» betyr at roboten fortsatt var i live etter 12 minutter, der målingen stopper.
+Runde 1 og 2 ble stoppet før de gode spillerne var målt, fordi svaret allerede var klart.
+
+1. **Første forsøk** var altfor lett for en middels spiller. Frost kunne holde de laveste
+   fiendene frosset hele tiden (man skyter jo alltid den laveste), og Rikosjett ga nesten
+   sikre ekstra treff.
+2. **Oppgraderingene dempet:** Frost varer kortere, og en fiende som har tint, tåler frost
+   i 3 sekunder. Rikosjett hopper bare etter et drap og har kortere rekkevidde, og Smell
+   treffer én (to på nivå 2). Den svake spilleren ble som i v8.8, men middels gikk
+   fortsatt til taket.
+3. **Uten tak:** synkefarten sluttet å stige etter om lag sju minutter, og et godt bygg
+   holdt unna i det uendelige. Nå stiger den videre, og feltet rommer flere fiender.
+   Rundene ender, men middels holdt fortsatt ut nesten dobbelt så lenge.
+4. **Hvem bærer runden?** De samme fire middels-rundene ble spilt uten én oppgradering om
+   gangen. Uten Smell og uten Frost var de like lange, uten Fokus klart kortere (tre av
+   fire). Den som sikter jevnt og rolig, spilte i praksis hele spillet i sakte film.
+   Fokus er dempet fra 65 og 50 % til 80 og 70 % fart, og stigningen etter taket er
+   brattere. Middels ble likevel ikke kortere, og god ble kortere: målingene spriker
+   mer enn før.
+5. **Knutene:** en sen runde med oppgraderinger scoret om lag 800 poeng i sekundet, så en
+   tapt knute kom tilbake på under to sekunder. Nå koster den mer for hver bølge.
+
+**v8.9:** svak 245 s (+14 %), middels 465 s (+88 %) og god 304 s (−13 %), mot 215, 248 og
+348 s i v8.8. Snittet av de tre er 338 s, mot 270 s.
+
+- **Knuteprisen flyttet lite.** De fleste svake og gode rundene ender av at tre fiender
+  når linjen tett etter hverandre, ikke av at knutene tar slutt.
+- **Den gode botspilleren varer kortere enn i v8.8** fordi den alltid velger de nye
+  oppgraderingene først. I v8.8 fikk den ofte Skarp egg og kuttet 40–180 snorer per
+  runde, nå 0–8.
+- **Den middels botspilleren passer de nye oppgraderingene best.** Den sikter jevnt og
+  treffer godt, og hvert treff gir mer.
+- **Jeg har stoppet justeringen her.** Endringene er riktige i seg selv: ingen tak, frost
+  med hvile og knuter som koster mer sent i runden. Videre finjustering mot roboter
+  blir å jage støy. Det viktigste neste signalet er hvordan det føles når du spiller selv.
+- **Målingene spriker mer enn før.** Med oppgraderinger tar en runde enten av eller
+  ender tidlig, så åtte runder per nivå er få. Medianen for ett nivå kan flytte seg
+  20–30 % mellom to målinger uten at noe er endret i spillet.
+- **Botspillerne er ikke folk.** De velger alltid på samme måte (det som endrer spillet
+  først) og skyter alltid den laveste fienden. Den gode treffer sjeldnere enn i v8.8 (om
+  lag 58 mot 68 %), trolig fordi den skyter så raskt at mange skudd går mot fiender som
+  bitene fra Splitt allerede har tatt. Tallene viser retningen, ikke hvor lenge du vil
+  vare.
+
+#### Ytelse
+
+I det faste, travle feltet (21 fiender holdt der de henger, ingen skudd) er skripttiden
+per bilde den samme: 6,95, 6,96 og 6,92 ms i v8.8 og 7,04, 6,94 og 6,90 ms i v8.9, målt
+i omganger på samme maskin. Med Splitt kan det være opptil ti kuler i lufta (før seks).
+Hver kule sjekkes mot hver fiende, og det koster lite.
+
 ### Trinn 5 – Lyd
 
 - Effektene tilpasses at det ikke er musikk under runden. Endringene holdes små og kan
@@ -763,6 +925,15 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 ## Beslutninger
 
+- **Du velger selv, men minst ett kort endrer spillet (v8.9).** Tre tilfeldige kort kunne
+  gitt tre tall-oppgraderinger på rad, og da blir valget kjedelig. Med minst én som
+  endrer hvordan du spiller, blir to runder ulike.
+- **Runden står stille mens du velger (v8.9).** Valget skal være et valg, ikke et kappløp
+  mot klokka. Rommet lever videre bak panelet, så det føles ikke som en pause.
+- **Vanskelighetsgraden har ikke lenger tak (v8.9).** Med oppgraderinger å velge klarte en
+  god runde å holde unna i det uendelige når synkefarten nådde taket etter om lag sju
+  minutter. I et endeløst spill skal det alltid bli vanskeligere til slutt, så farten
+  fortsetter å stige etter taket, saktere enn før.
 - **Lyssatt scene i stedet for mørkt rom (v8.1).** Det gamle uttrykket var bevisst
   dempet: nesten svart vegg, én lampe, matte emaljefarger. Du ba om noe mer oppløftende.
   Retningen jeg har valgt, er å beholde materialene og figurene og endre lyset.
@@ -810,6 +981,15 @@ Tallene er median, med laveste og høyeste runde i parentes.
 
 **Kjente feil**
 
+- **Resultatskjermen viser ikke hvilke oppgraderinger runden hadde.** Det passer å ta med
+  sammen med resultatkortet du kan dele (steg 3).
+- **Gjennomslagskuler deler seg ikke og hopper ikke videre** (Splitt og Rikosjett). Det
+  gjelder også alle kuler under overbelastning.
+- **En frossen Skygge eller en fiende med spøkelsesmerke** blir værende som den var da
+  den frøs, også usynlig, til frosten slipper. Den synker heller ikke så lenge.
+- **Balansen er målt med botspillere som alltid velger på samme måte** (det som endrer
+  spillet først, Glasskanon sist) og som ikke bruker veggskudd med vilje. Folk velger
+  annerledes, så tallene viser retningen, ikke hvor lenge du vil vare.
 - **Poengtekster kan overlappe hverandre** når to kommer på samme sted (for eksempel
   «Dobbelttreff» og poengsummen).
 - **Det nye uttrykket er ikke sett på en telefon.** Farger, lysstyrke og effekter er

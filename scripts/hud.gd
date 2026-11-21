@@ -74,6 +74,12 @@ var _coll_box: VBoxContainer
 var _help: Control                 # how to play
 var _help_box: VBoxContainer
 var _coll_tab := 0
+var _choice: Control               # the upgrade choice after a wave (v8.9)
+var _choice_box: VBoxContainer
+var _choice_head: Label
+var _choice_title: Label
+var _choice_cards: Array[PerkCard] = []
+var _choice_cb := Callable()
 var _coll_pick := -1               # the enemy shown in the collection's detail card
 var _coll_name: Label
 var _coll_persona: Label           # who it is (v8.6): its character in a line
@@ -106,6 +112,7 @@ func _ready() -> void:
 	_build_menu_bar()
 	_build_pause()
 	_build_settings()
+	_build_choice()
 	var sp := _panel()
 	_stats = sp[0]
 	_stats_box = sp[1]
@@ -132,9 +139,11 @@ func _ready() -> void:
 
 func setup(layout: Layout) -> void:
 	l = layout
-	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins, _coll, _help]:
+	for c: Control in [bar, overlay, _scrim, _pause, _settings, _over, intro_seq, _stats, _skins, _coll, _help, _choice]:
 		c.position = Vector2.ZERO
 		c.size = l.size
+	for c: PerkCard in _choice_cards:
+		c.custom_minimum_size.x = minf(640.0, l.size.x - 2.0 * Tok.SPACE_LG)
 	bar.size = Vector2(l.size.x, l.top_bar_h)
 	var touch := maxf(88.0, Tok.TOUCH_MIN_DP * l.dp)
 	_b_resume.custom_minimum_size = Vector2(minf(500.0, l.size.x - 180.0), touch + 8.0)
@@ -373,13 +382,59 @@ func wave_pace(line: String, ahead: bool) -> void:
 	overlay.wave_ahead = ahead
 
 
-## A perk won: its card pops up, then flies into the tray (top left).
-func perk_toast(id: String, level: int) -> void:
+## A perk won: its card pops up, then flies into the tray (top left). One
+## picked from the choice (`from`: where its card's icon was) only flies.
+func perk_toast(id: String, level: int, from := Vector2.INF) -> void:
 	if not perk_order.has(id):
 		perk_order.append(id)
 	perk_levels[id] = level
 	overlay.toast_id = id
-	overlay.toast_t = 0.0
+	overlay.toast_from = from
+	overlay.toast_t = 0.0 if from == Vector2.INF else 1.4
+
+
+## The choice after a wave (v8.9): `ids` on offer, the level each already
+## has, the run's perks (for the "goes with" line) and the wave just won.
+## `cb` gets the id picked. A moment passes before a card answers, so a
+## tap meant for the last shot never picks one.
+func open_choice(ids: Array[String], levels: Array[int], owned: Dictionary, wave: int, cb: Callable) -> void:
+	_choice_cb = cb
+	_choice_head.text = Loc.t("choice.head") % wave
+	_choice_title.text = Loc.t("choice.title")
+	_choice_head.add_theme_font_size_override("font_size", ts(16))
+	_choice_title.add_theme_font_size_override("font_size", ts(Tok.TYPE_DISPLAY - 24))
+	for i in _choice_cards.size():
+		var c := _choice_cards[i]
+		c.visible = i < ids.size()
+		if c.visible:
+			c.set_perk(ids[i], levels[i], Perks.partner(ids[i], owned))
+	scrim_to(0.8, 0.25)
+	_open_panel(_choice, _choice_box, 0.06)
+	locked = true
+	Motion.after(0.45, func() -> void: locked = false)
+	Sfx.play("panel")
+
+
+func close_choice() -> void:
+	if _choice == null or not _choice.visible:
+		return
+	_choice_cb = Callable()
+	_close_panel(_choice)
+	scrim_to(0.0, 0.25)
+
+
+## Where card `i`'s icon sits on the screen (INF while no choice is open).
+func choice_card_pos(i: int) -> Vector2:
+	if i < 0 or i >= _choice_cards.size() or not _choice.visible:
+		return Vector2.INF
+	var c := _choice_cards[i]
+	return c.get_global_transform() * c.icon_center()
+
+
+func _pick_card(i: int) -> void:
+	if not _choice.visible or i >= _choice_cards.size() or not _choice_cb.is_valid():
+		return
+	_choice_cb.call(_choice_cards[i].id)
 
 
 ## Drops any card showing or waiting (a run ended).
@@ -409,7 +464,13 @@ func intro(name: String, desc: String) -> void:
 
 ## A panel is up: cards and enemy intros hold back so nothing overlaps it.
 func modal_open() -> bool:
-	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible or _coll.visible
+	return _pause.visible or _settings.visible or _over.visible or _stats.visible or _skins.visible or _coll.visible or choice_open()
+
+
+## The choice is up (and not on its way out: the icon picked flies out of
+## it as it fades).
+func choice_open() -> bool:
+	return _choice != null and _choice.visible and _choice.mouse_filter != Control.MOUSE_FILTER_IGNORE
 
 
 func intro_busy() -> bool:
@@ -735,6 +796,34 @@ func _build_pause() -> void:
 	col.add_child(_pause_hint)
 
 
+## The choice after a wave (v8.9): a quiet header straight on the dimmed
+## field, then the three cards, which are the panel.
+func _build_choice() -> void:
+	var cb := _panel(true)
+	_choice = cb[0]
+	_choice_box = cb[1]
+	_choice_box.add_theme_constant_override("separation", Tok.SPACE_MD)
+	_choice_head = label(16, Tok.PRIMARY, _font_caps)
+	_choice_title = label(Tok.TYPE_DISPLAY - 24, Tok.TEXT_PRIMARY, _font_display)
+	for lb: Label in [_choice_head, _choice_title]:
+		lb.add_theme_color_override("font_outline_color", Color(Tok.BACKGROUND, 0.7))
+		lb.add_theme_constant_override("outline_size", 8)
+	var head := VBoxContainer.new()
+	head.add_theme_constant_override("separation", 0)
+	head.add_child(_choice_head)
+	head.add_child(_choice_title)
+	_choice_box.add_child(head)
+	_choice_box.add_child(_spacer(Tok.SPACE_XS))
+	for i in Perks.OFFER:
+		var c := PerkCard.new()
+		c.hud = self
+		c.theme_type_variation = &"RowButton"
+		c.custom_minimum_size = Vector2(640, 140)
+		c.pressed.connect(func() -> void: _act(func() -> void: _pick_card(i)))
+		_choice_cards.append(c)
+		_choice_box.add_child(c)
+
+
 ## Settings: a header with a back button, then grouped glass cards
 ## (sound, game, accessibility, language), each row a label on the left
 ## and its control on the right; credits at the foot.
@@ -974,7 +1063,7 @@ func _fill_stats(box: VBoxContainer) -> void:
 ## How to play: a few short parts, each with its glyph, in the panels'
 ## quieter voice. Words only: everything it names is on screen in play.
 const HELP := [["help.shoot", "pull"], ["help.pause", "clock"], ["help.line", "shield"], ["help.read", "eye"],
-	["help.charge", "bolt"], ["help.trick", "bank"], ["help.daily", "calendar"]]
+	["help.charge", "bolt"], ["help.perks", "perk:split"], ["help.trick", "bank"], ["help.daily", "calendar"]]
 
 
 func _fill_help(box: VBoxContainer) -> void:
@@ -1015,7 +1104,10 @@ class HelpGlyph extends Control:
 		var c := size * 0.5
 		draw_circle(c, 21.0, Tok.PRIMARY_LO, true, -1.0, true)
 		draw_arc(c, 21.0, 0.0, TAU, 40, Tok.PRIMARY, 1.6, true)
-		Hud.glyph(self, glyph, c, 0.95, Tok.PRIMARY_HI)
+		if glyph.begins_with("perk:"):
+			Perks.draw_icon(self, glyph.substr(5), c, 1.0, 0.62)
+		else:
+			Hud.glyph(self, glyph, c, 0.95, Tok.PRIMARY_HI)
 
 
 ## Skins: each a button with a swatch; locked ones show what they cost.
@@ -1293,6 +1385,119 @@ class CodexTile extends UIButton:
 			var f := hud.display_font()
 			var base := c.y + (f.get_ascent(34) - f.get_descent(34)) * 0.5
 			draw_string(f, Vector2(0, base), "?", HORIZONTAL_ALIGNMENT_CENTER, size.x, 34, Tok.TEXT_FAINT)
+
+
+## One upgrade on offer (v8.9): its icon in a brass ring, its name and what
+## it does, how far it goes (the levels it has, the one it gets and those
+## left), and, when the run has one it works well with, which.
+class PerkCard extends UIButton:
+	const PAD := 22.0
+	const IR := 38.0               # the icon ring's radius
+	const TEXT_X := 124.0
+	var hud: Hud
+	var id := ""
+	var level := 0                 # the level it has now (it gets level + 1)
+	var partner := ""              # a perk the run has that it goes with ("" if none)
+	var _box: StyleBoxFlat
+
+	func _ready() -> void:
+		super()
+		_box = StyleBoxFlat.new()
+		_box.set_corner_radius_all(22)
+		_box.shadow_size = 14
+		_box.shadow_offset = Vector2(0, 6)
+		_box.anti_aliasing = true
+		resized.connect(queue_redraw)
+
+	func set_perk(p: String, lv: int, with: String) -> void:
+		id = p
+		level = lv
+		partner = with
+		custom_minimum_size.y = _need_h()
+		queue_redraw()
+
+	func icon_center() -> Vector2:
+		return Vector2(PAD + IR, size.y * 0.5)
+
+	func _text_w() -> float:
+		var w := size.x if size.x > 0.0 else custom_minimum_size.x
+		return w - TEXT_X - PAD
+
+	func _need_h() -> float:
+		if hud == null:
+			return 140.0
+		var disp := hud.display_font()
+		var body := hud._font_body
+		var nfs := Hud.ts(30)
+		var dfs := Hud.ts(20)
+		var h := PAD + disp.get_height(nfs) + 4.0
+		h += body.get_multiline_string_size(Loc.t("perk." + id + ".c"), HORIZONTAL_ALIGNMENT_LEFT, _text_w(), dfs).y
+		if partner != "":
+			h += 6.0 + hud.body_font().get_height(Hud.ts(18))
+		return maxf(132.0, h + PAD)
+
+	func _draw() -> void:
+		if hud == null or id == "":
+			return
+		var mode := get_draw_mode()
+		var down := mode == DRAW_PRESSED or mode == DRAW_HOVER_PRESSED
+		_box.bg_color = Color("161A22")
+		_box.border_color = Tok.PRIMARY_HI if down else Tok.PRIMARY_LO
+		_box.set_border_width_all(3 if down else 2)
+		_box.shadow_color = Color(0, 0, 0, 0.42)
+		draw_style_box(_box, Rect2(Vector2(3, 3), size - Vector2(6, 6)))
+		var ic := icon_center()
+		draw_circle(ic, IR, Tok.SURFACE_LO, true, -1.0, true)
+		draw_arc(ic, IR, 0.0, TAU, 48, Tok.PRIMARY, 2.0, true)
+		Perks.draw_icon(self, id, ic, 1.0, 1.25)
+		var disp := hud.display_font()
+		var body := hud._font_body
+		var caps := hud.caps_font()
+		var nfs := Hud.ts(30)
+		var dfs := Hud.ts(20)
+		var w := _text_w()
+		var y := PAD + disp.get_ascent(nfs)
+		# The level on offer, top right: NEW, or LEVEL 2 with a pip for each
+		# level (those it has, the one it gets lit, those left open).
+		# All on one row with the name, above the description.
+		var cap := int(Perks.MAX.get(id, 1))
+		var tfs := Hud.ts(13)
+		var row := y - 8.0
+		var end := size.x - PAD
+		if cap > 1 and cap <= 3:
+			for k in cap:
+				var p := Vector2(end - 6.0 - (cap - 1 - k) * 17.0, row - tfs * 0.38)
+				if k < level:
+					draw_circle(p, 5.5, Tok.PRIMARY_LO, true, -1.0, true)
+				elif k == level:
+					draw_circle(p, 5.5, Tok.PRIMARY_HI, true, -1.0, true)
+				else:
+					draw_arc(p, 5.5, 0.0, TAU, 20, Tok.TEXT_FAINT, 1.5, true)
+			end -= cap * 17.0 + 4.0
+		var tag := Loc.t("choice.new") if level == 0 else Loc.t("choice.level") % (level + 1)
+		if id == "knot":
+			tag = ""
+		var tw := caps.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, tfs).x
+		if tag != "":
+			draw_string(caps, Vector2(end - tw, row), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, tfs, Tok.PRIMARY)
+		draw_string(disp, Vector2(TEXT_X, y), Loc.t("perk." + id), HORIZONTAL_ALIGNMENT_LEFT, end - tw - 12.0 - TEXT_X, nfs, Tok.TEXT_PRIMARY)
+		y += disp.get_descent(nfs) + 4.0 + body.get_ascent(dfs)
+		var desc := Loc.t("perk." + id + ".c")
+		draw_multiline_string(body, Vector2(TEXT_X, y), desc, HORIZONTAL_ALIGNMENT_LEFT, w, dfs, -1, Tok.TEXT_SECONDARY)
+		if partner != "":
+			var bh := body.get_multiline_string_size(desc, HORIZONTAL_ALIGNMENT_LEFT, w, dfs).y
+			var bb := hud.body_font()
+			var pfs := Hud.ts(18)
+			var py := y - body.get_ascent(dfs) + bh + 6.0 + bb.get_ascent(pfs)
+			_star(Vector2(TEXT_X + 8.0, py - pfs * 0.36), 7.0)
+			draw_string(bb, Vector2(TEXT_X + 22.0, py), Loc.t("choice.with") % Loc.t("perk." + partner), HORIZONTAL_ALIGNMENT_LEFT, w - 22.0, pfs, Tok.PRIMARY_HI)
+
+	func _star(c: Vector2, r: float) -> void:
+		var pts := PackedVector2Array()
+		for k in 10:
+			var a := -PI * 0.5 + k * PI / 5.0
+			pts.append(c + Vector2(cos(a), sin(a)) * (r if k % 2 == 0 else r * 0.45))
+		draw_colored_polygon(pts, Tok.PRIMARY_HI)
 
 
 ## An achievement: an engraved brass disc with its glyph (dim, with no
@@ -2265,6 +2470,7 @@ class TopBar extends Control:
 	var mult := 1
 	var streak := 0
 	var lives := 3
+	var max_lives := 3             # Glasskanon gives one up (v8.9)
 	var phase := 1
 	var progress := 0.0
 	var remaining := 0             # kills still needed this wave
@@ -2968,6 +3174,12 @@ class TopBar extends Control:
 			if i == lives and knot_shake > 0.0:
 				c.x += sin(knot_shake * 40.0) * 4.0 * knot_shake
 			var t: float = _knot_t[i]
+			if i >= max_lives:
+				# Given up for Glasskanon: a pane of glass where the knot was.
+				var g := Color(Tok.PRIMARY_HI, 0.5)
+				_i.draw_polyline(PackedVector2Array([c + Vector2(0, -10), c + Vector2(8, 0), c + Vector2(0, 10), c + Vector2(-8, 0), c + Vector2(0, -10)]), g, 1.5, true)
+				_i.draw_polyline(PackedVector2Array([c + Vector2(-2, -6), c + Vector2(2, 0), c + Vector2(-1, 6)]), g, 1.0, true)
+				continue
 			if i < lives:
 				var k := clampf(t / 0.35, 0.0, 1.0)
 				var sc := lerpf(1.6, 1.0, Motion.ease_value(Motion.Ease.EMPHASIZED, k))
@@ -3028,6 +3240,7 @@ class Overlay extends Control:
 	var toast_t := 99.0
 	var names_t := 99.0            # the perk names tag (tap on the tray)
 	var toast_id := ""
+	var toast_from := Vector2.INF  # where a picked card's icon was: the toast only flies
 	var _toast_box: StyleBoxFlat
 	var menu_a := 0.0
 	var intro_name := ""
@@ -3172,8 +3385,8 @@ class Overlay extends Control:
 		var size := Vector2(minf(420.0, l.size.x - 40.0), 96)
 		var pop := Motion.ease_value(Motion.Ease.EMPHASIZED, clampf(toast_t / 0.3, 0.0, 1.0))
 		var text_a := pop * (1.0 - clampf((toast_t - 1.35) / 0.15, 0.0, 1.0))
-		var icon0 := home + Vector2(-size.x * 0.5 + 48.0, 0.0)
-		if text_a > 0.0:
+		var icon0 := home + Vector2(-size.x * 0.5 + 48.0, 0.0) if toast_from == Vector2.INF else toast_from
+		if text_a > 0.0 and toast_from == Vector2.INF:
 			var sc := lerpf(0.85, 1.0, pop)
 			draw_set_transform(home, 0.0, Vector2(sc, sc))
 			for b in [[_toast_box, text_a]]:
@@ -3358,8 +3571,10 @@ class Overlay extends Control:
 
 	func _process(delta: float) -> void:
 		var rd := Motion.rd
-		card_t += rd
-		if not card_queue.is_empty() and not card_busy():
+		# A card waits while a panel is up (it would play out unseen).
+		if not hud.modal_open():
+			card_t += rd
+		if not card_queue.is_empty() and not card_busy() and not hud.modal_open():
 			var c: Array = card_queue.pop_front()
 			card_title = c[0]
 			card_sub = c[1]

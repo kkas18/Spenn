@@ -30,6 +30,10 @@ var label := "test"
 var checks := 0
 var fails := 0
 var _finished := false
+## The upgrade choice after a wave (v8.9) is made at once, by
+## `pick_upgrade` (the first card unless a test says otherwise). A test of
+## the choice itself turns this off.
+var auto_pick := true
 
 
 func _initialize() -> void:
@@ -70,6 +74,18 @@ func _run() -> void:
 ## The test's steps (override).
 func _test() -> void:
 	pass
+
+
+## Every frame, before the game's: an open upgrade choice is answered.
+func _process(_delta: float) -> bool:
+	if auto_pick and game != null and is_instance_valid(game) and game.choosing():
+		game.choose(pick_upgrade(game.choice_ids()))
+	return false
+
+
+## Which upgrade to take of those on offer (override).
+func pick_upgrade(ids: Array) -> String:
+	return ids[0]
 
 
 static func _env(key: String, fallback: String) -> String:

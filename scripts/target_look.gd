@@ -315,6 +315,9 @@ func color() -> Color:
 	var lamp := Vector2(field_w * 0.32, anchor.y - 63.0)
 	var lit := clampf(1.0 - pos.distance_to(lamp) / (_screen_h * 0.55), 0.0, 1.0)
 	base = base.lightened(0.1 * maxf(0.0, sd) + 0.06 * lit)
+	if frozen_t > 0.0:
+		# Frosted over (Frost), thawing in its last moments.
+		base = base.lerp(ICE, 0.5 * minf(1.0, frozen_t / 0.4))
 	var ew := evolve_warning()
 	if ew > 0.0:
 		# About to harden: a quickening pale pulse.

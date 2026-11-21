@@ -5,10 +5,10 @@ extends Node2D
 ## it. Also lives, streaks, chains, collisions and scoring. All nodes are created once
 ## in _ready(); targets, balls and effects are pooled.
 
-enum State { BOOT, INTRO, MAIN_MENU, STARTING, PLAYING, PAUSED, RESUMING, DEATH, GAME_OVER, RESTARTING }
+enum State { BOOT, INTRO, MAIN_MENU, STARTING, PLAYING, PAUSED, RESUMING, DEATH, GAME_OVER, RESTARTING, CHOOSING }
 
 const MAX_TARGETS := 28
-const MAX_BALLS := 6
+const MAX_BALLS := 10            # a triple fan that splits (Splitt, v8.9) can have nine in the air
 const AMMO_CAP := 5
 const SUBSTEP := 1.0 / 120.0
 # Ball vs body: an impulse exchange between masses. The ball is mass 1; a
@@ -22,7 +22,8 @@ const RIGID_MU := 0.12
 const PLATE_E := 0.7
 const LIVES := 3
 const CUT_SPEED := 1400.0      # a rising ball this fast severs a string near its hook
-const EXTRA_LIFE_EVERY := 1500
+const EXTRA_LIFE_EVERY := 1500   # points for a lost knot back in wave 1 ...
+const EXTRA_LIFE_WAVE := 0.25    # ... and a quarter more for each wave after (v8.9)
 const CHAIN_WINDOW := 1.2
 const CLOSE_CALL := 0.55       # danger above this when killed = close call
 const RESCUE := 0.85           # ... and above this, a rescue ("SAVED!")
@@ -123,6 +124,17 @@ const LONG_FLIGHT := 0.85      # s in the air before the kill: a long shot
 # freshly struck target slamming a neighbour this hard hurts it.
 const CRUSH_SPEED := 220.0
 const KNOCK_SPEED := 240.0
+# The upgrades that change a run (v8.9, see Perks), by level (0, 1, 2).
+const AIM_SLOW := [1.0, 0.8, 0.7]      # Fokus: game time while you aim
+const BIG_GROW := [0.0, 4.0, 8.0]      # Stor kule: px on a ball's radius
+const SPLIT_SPREAD := 0.42             # Splitt: rad between a ball and its piece
+const SPLIT_SPEED := 650.0             # ... the pieces fly at least this fast (px/s, × scale)
+const RICOCHET_REACH := 320.0          # Rikosjett: px (× scale) to the next enemy
+const RICOCHET_SPEED := 950.0          # ... and at least this fast (px/s, × scale)
+const BLAST_R := [0.0, 100.0, 130.0]   # Smell: px (× scale) a kill's burst reaches
+const BLAST_MAX := [0, 1, 2]           # ... and the most it strikes
+const FREEZE_R := [0.0, 70.0, 100.0]   # Frost: px (× scale) around a hit
+const FREEZE_TIME := [0.0, 1.5, 2.5]   # ... and for how long (s); see Target.FROST_REST
 
 var layout: Layout
 var director := Director.new()
@@ -138,6 +150,8 @@ var flow := 0.0                 # 0..1: the meter, or what is left of flow
 var flow_t := 0.0               # real seconds of flow left
 var flows := 0                  # flow streaks this run
 var perks := {}                 # upgrades picked this run: id -> level
+var _choice: Array[String] = [] # the upgrades on offer while the choice is open
+var _aim_slow := 1.0            # Fokus: the game time while aiming, eased
 var _aim_start := -1.0          # game time the current pull began
 var _release_hold := -1.0       # how long the last pull was held
 var _tactic_told := 0
@@ -389,6 +403,9 @@ func _clear_field() -> void:
 	_shots.clear()
 	_intro_queue.clear()
 	perks.clear()
+	_choice.clear()
+	_aim_slow = 1.0
+	hud.close_choice()
 	hud.perk_order.clear()
 	hud.perk_levels = {}
 	_apply_perks()
@@ -854,6 +871,7 @@ func _process(delta: float) -> void:
 		_menu_world_t = 0.0
 	_update_tilt(delta)
 	_update_depth()
+	_update_aim_slow()
 	_update_ammo(delta)
 	_take_queued_aim()
 	_update_eyes()
@@ -904,6 +922,17 @@ func _update_depth() -> void:
 	rail.rear_off = v * (float(Target.RANK_PAR[b]) - 1.0) + _aim_par * float(Target.RANK_AIM[b])
 	backdrop.aim = _aim_par
 	near.position = v * 1.5 - _aim_par * 0.6
+
+
+## Fokus: game time slows while you aim, eased in and out over a moment of
+## real time (so a quick shot is hardly slowed at all).
+func _update_aim_slow() -> void:
+	var want := 1.0
+	if perk("slowmo") > 0 and slingshot.is_aiming() and (state == State.PLAYING or state == State.STARTING):
+		want = float(AIM_SLOW[mini(perk("slowmo"), 2)])
+	if _aim_slow != want:
+		_aim_slow = move_toward(_aim_slow, want, Motion.rd / 0.18)
+		fx.set_aim_time(_aim_slow)
 
 
 ## Where gravity points in the phone's frame (m/s²): the smoothed gravity
@@ -1213,7 +1242,7 @@ func _clear_wave() -> void:
 	Sfx.haptic_pattern("record")
 	_charge(0.12)
 	director.end_wave()
-	fx.after(1.4, _grant_perk)
+	fx.after(1.4, _open_choice)
 
 
 ## The balls in flight light what they pass (warm, fading as a spent ball
@@ -1492,7 +1521,7 @@ func _step(dt: float) -> void:
 			var hi := 2 if b.pos.y < layout.rail_y + layout.play_h * 0.3 else 0
 			Sfx.harp(fi + hi, -2.0 if b.hits > 0 else 0.0)
 		var gp := backdrop.gold_pos()
-		if gp != Vector2.INF and b.pos.distance_to(gp) < Ball.RADIUS + 14.0:
+		if gp != Vector2.INF and b.pos.distance_to(gp) < Ball.RADIUS + b.grow + 14.0:
 			_catch_gold(backdrop.catch_gold())
 		if stage.visible:
 			stage.flinch(b.pos)
@@ -1740,7 +1769,7 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	b.hits += 1
 	_mark_hit(b)
 	var impulse: Vector2
-	var contact := b.pos - n * Ball.RADIUS
+	var contact := b.pos - n * (Ball.RADIUS + b.grow)
 	var closing := b.vel.length()
 	if b.special:
 		# Pierce: punches through, losing some speed to each body.
@@ -1808,6 +1837,16 @@ func _on_hit(b: Ball, t: Target, n: Vector2, cp: Vector2, rr: float) -> void:
 	if killed:
 		_charge(CHARGE_KILL * (2.0 if kind == Target.Kind.BOSS else 1.0))
 		_read_skills(b, hit_at, was_close)
+	# The upgrades that act on a hit (v8.9).
+	if perk("freeze") > 0:
+		_freeze_near(hit_at, t)
+	if killed and perk("blast") > 0:
+		_blast(hit_at, t)
+	if not b.special:
+		if perk("split") > 0 and not b.fragment and b.hits == 1:
+			_split_ball(b, t)
+		if killed and b.ricochets < perk("ricochet"):
+			_ricochet(b, t)
 
 
 ## Which skill shots this kill was: off a wall, after a long flight, the
@@ -1833,6 +1872,8 @@ func _skill(s: Skill, at: Vector2, n := 1) -> void:
 	if s == Skill.BANK and skill_counts[s] >= 3:
 		_feat("bank")
 	var pts: int = SKILL_POINTS[s] * n * _mult() * _surge()
+	if s == Skill.BANK and perk("walls") > 0:
+		pts *= 2
 	_add_score(pts, at)
 	var text := Loc.t(SKILL_KEY[s])
 	var rescue := s == Skill.CLUTCH and _close_danger >= RESCUE
@@ -2635,29 +2676,77 @@ func _ammo_cap() -> int:
 
 
 func _reload_time() -> float:
-	return director.reload_time() * pow(0.85, perk("reload"))
+	return director.reload_time() * pow(0.85, perk("reload")) * pow(1.1, perk("big"))
+
+
+## Knots a run can hold: Glasskanon takes one away.
+func _max_lives() -> int:
+	return LIVES - perk("glass")
 
 
 func _flow_time() -> float:
 	return FLOW_TIME + 1.0 * perk("flow")
 
 
-## A cleared wave wins the run one perk at random (never past its cap);
-## it pops up and flies into the tray without stopping play.
-func _grant_perk() -> void:
-	if state != State.PLAYING and state != State.STARTING:
+## A cleared wave opens the choice (v8.9): three upgrades, at least one
+## that changes how a run plays, and you pick one. The run holds while you
+## choose: nothing comes, the wave's clock stands still, and the room keeps
+## breathing behind the panel.
+func _open_choice() -> void:
+	if state != State.PLAYING:
 		return
-	var ids := Perks.offer(perks, lives < LIVES, _rng)
+	var ids := Perks.offer(perks, lives < _max_lives(), _rng)
 	if ids.is_empty():
 		return
-	var id := ids[0]
+	_choice = ids
+	_set_state(State.CHOOSING)
+	slingshot.cancel()
+	_touch = -1
+	_aim_queued = false
+	var levels: Array[int] = []
+	for id in ids:
+		levels.append(perk(id))
+	hud.open_choice(ids, levels, perks, director.wave, choose)
+
+
+func choosing() -> bool:
+	return state == State.CHOOSING
+
+
+## The upgrades on offer (empty while no choice is open).
+func choice_ids() -> Array[String]:
+	var out: Array[String] = []
+	if state == State.CHOOSING:
+		out = _choice.duplicate()
+	return out
+
+
+## The pick: the upgrade is taken, its icon flies from the card to the tray
+## and play picks up where it stood.
+func choose(id: String) -> void:
+	if state != State.CHOOSING or not _choice.has(id):
+		return
+	var from := hud.choice_card_pos(_choice.find(id))
+	_choice.clear()
+	hud.close_choice()
+	_set_state(State.PLAYING)
+	_take_perk(id, from)
+
+
+func _take_perk(id: String, from := Vector2.INF) -> void:
 	perks[id] = perk(id) + 1
-	if id == "knot" and lives < LIVES:
+	if id == "knot" and lives < _max_lives():
 		lives += 1
 		hud.bar.lives = lives
 		hud.bar.knot_shake = 1.0
+	if id == "glass" and lives > _max_lives():
+		# The glass costs a knot at once (never the last one).
+		lives = maxi(1, _max_lives())
+		hud.bar.lives = lives
+		hud.bar.knot_shake = 1.0
 	_apply_perks()
-	hud.perk_toast(id, perks[id])
+	_show_mult()
+	hud.perk_toast(id, perks[id], from)
 	# A single soft chime, a note of the cadence's chord still ringing.
 	Sfx.note(7, -6.0)
 	Sfx.haptic_pattern("light")
@@ -2666,6 +2755,119 @@ func _grant_perk() -> void:
 func _apply_perks() -> void:
 	slingshot.rack_slots = _ammo_cap() - 1
 	slingshot.long_sight = perk("sight") > 0
+	# The aim guide and every ball fired from now on: Vegg-mester's walls
+	# and Stor kule's size.
+	Ball.bounce = 1.0 if perk("walls") > 0 else Ball.WALL_BOUNCE
+	Ball.grow_all = float(BIG_GROW[mini(perk("big"), 2)])
+	hud.bar.max_lives = _max_lives()
+
+
+## Splitt: a ball's first hit throws off a piece (two at level 2), fanned
+## out from its rebound. The pieces are balls of the same shot, a little
+## smaller, and do not split again. One piece goes toward the middle of
+## the field, where the enemies are.
+func _split_ball(b: Ball, t: Target) -> void:
+	var dir := b.vel.normalized() if b.vel.length() > 1.0 else Vector2.UP
+	var speed := maxf(b.vel.length(), SPLIT_SPEED * layout.scale)
+	var dirs: Array[Vector2] = []
+	if perk("split") >= 2:
+		dirs = [dir.rotated(-SPLIT_SPREAD), dir.rotated(SPLIT_SPREAD)]
+	else:
+		var a := dir.rotated(-SPLIT_SPREAD)
+		var c := dir.rotated(SPLIT_SPREAD)
+		var inward := layout.center_x - b.pos.x
+		dirs = [a if a.x * inward >= c.x * inward else c]
+	var made := 0
+	for d in dirs:
+		for f in balls:
+			if f.active:
+				continue
+			var at := b.pos + d * Ball.RADIUS
+			at.x = clampf(at.x, Ball.RADIUS, layout.size.x - Ball.RADIUS)
+			f.fire(at, d * speed, false, b.shot_id)
+			f.fragment = true
+			f.grow = b.grow - 3.0
+			f.touch(t.get_instance_id())
+			made += 1
+			break
+	if made == 0:
+		return
+	if _shots.has(b.shot_id):
+		_shots[b.shot_id].balls += made
+	fx.sparks(b.pos, Pal.GOLD_LIGHT, 6)
+	Sfx.play("release", 1.45, -8.0)
+
+
+## Rikosjett: when the ball takes an enemy down, it turns on to the nearest
+## other one in reach (once, or twice at level 2), fast enough to get there
+## and aimed where that one will be by then (its sway and the ball's drop
+## allowed for).
+func _ricochet(b: Ball, t: Target) -> void:
+	var best: Target = null
+	var bd := RICOCHET_REACH * layout.scale
+	for o in targets:
+		if o == t or not o.is_solid() or not b.can_touch(o.get_instance_id()):
+			continue
+		var d := o.pos.distance_to(b.pos)
+		if d < bd:
+			bd = d
+			best = o
+	if best == null:
+		return
+	var speed := maxf(b.vel.length(), RICOCHET_SPEED * layout.scale)
+	var fly := bd / speed
+	var aim := best.pos + best.vel * fly - Vector2(0.0, 0.5 * Ball.GRAVITY * fly * fly)
+	b.vel = (aim - b.pos).normalized() * speed
+	b.w = 0.0
+	b.ricochets += 1
+	fx.ring(b.pos, Pal.GOLD_LIGHT, 22.0)
+	fx.sparks(b.pos, Pal.GOLD_LIGHT, 5)
+	Sfx.play("whoosh", 1.35, -6.0)
+
+
+## Smell: a kill bursts. The nearest enemy in reach (two at level 2) is
+## knocked away from it and takes a blow, scored as a chain reaction.
+## Those blows do not burst again.
+func _blast(at: Vector2, t: Target) -> void:
+	var lv := mini(perk("blast"), 2)
+	var r: float = BLAST_R[lv] * layout.scale
+	var near: Array = []
+	for o in targets:
+		if o == t or not o.is_solid():
+			continue
+		var d := o.pos.distance_to(at) - o.radius
+		if d < r:
+			near.append([d, o])
+	near.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	fx.ring(at, Pal.GOLD_LIGHT, r)
+	fx.shock(at, 8.0, r * 1.5, 0.35)
+	Sfx.play("burst", 0.75, -5.0)
+	for i in mini(int(BLAST_MAX[lv]), near.size()):
+		var o: Target = near[i][1]
+		if not o.is_hittable():
+			continue
+		var dir := (o.pos - at).normalized() if o.pos.distance_to(at) > 1.0 else Vector2.DOWN
+		o.vel += dir * 260.0 * layout.scale
+		_chain_hit(o, dir * 160.0, o.pos - dir * o.radius, 420.0, 1)
+
+
+## Frost: a hit freezes what it struck and those hanging right by it. For
+## a moment they stop sinking, stop dodging and hang still, frosted over;
+## once thawed, frost cannot take them again for a while (so the lowest
+## can never be held for good). The Spinneren shakes it off.
+func _freeze_near(at: Vector2, t: Target) -> void:
+	var lv := mini(perk("freeze"), 2)
+	var r: float = FREEZE_R[lv] * layout.scale
+	var n := 0
+	for o in targets:
+		if not o.is_hittable() or o.kind == Target.Kind.BOSS:
+			continue
+		if o == t or o.pos.distance_to(at) - o.radius < r:
+			o.freeze(float(FREEZE_TIME[lv]))
+			n += 1
+	if n > 0:
+		fx.glitter(at, Target.ICE, 10, 1.0)
+		Sfx.play("metal", 1.9, -12.0)
 
 
 ## Magnet: a ball bends gently toward the nearest enemy ahead of it.
@@ -3265,7 +3467,7 @@ func _end_flow(quiet: bool) -> void:
 # ---------------------------------------------------------------- scoring
 
 func _mult() -> int:
-	return 1 + mini(streak / 3, 3) + (1 if flow_t > 0.0 else 0)
+	return 1 + mini(streak / 3, 3) + (1 if flow_t > 0.0 else 0) + perk("glass")
 
 
 ## The pill shows what a hit is worth: the streak multiplier, doubled in
@@ -3274,8 +3476,8 @@ func _show_mult() -> void:
 	hud.bar.set_mult(_mult() * _surge())
 
 
-## Points fly to the counter as gold grains; every EXTRA_LIFE_EVERY points
-## returns a lost knot.
+## Points fly to the counter as gold grains; every so many points a lost
+## knot comes back (see _life_step).
 func _add_score(n: int, from := Vector2.INF) -> void:
 	score += n
 	hud.bar.score = score
@@ -3285,14 +3487,22 @@ func _add_score(n: int, from := Vector2.INF) -> void:
 	if from != Vector2.INF:
 		fx.tokens(from, Vector2(layout.center_x, layout.score_baseline - 16.0), clampi(2 + n / 25, 2, 8))
 	while score >= _next_life_at:
-		_next_life_at += EXTRA_LIFE_EVERY
-		if lives < LIVES:
+		_next_life_at += _life_step()
+		if lives < _max_lives():
 			lives += 1
 			hud.bar.lives = lives
 			hud.bar.knot_shake = 1.0
 			fx.popup(Loc.t("popup.extraKnot"), Vector2(layout.size.x - 90.0, layout.top_bar_h + 40.0), Pal.INK, 18, false, 2)
 			Sfx.play("clear", 1.1)
 			Sfx.haptic(25, 0.5)
+
+
+## Points to the next knot back: EXTRA_LIFE_EVERY in wave 1, a quarter
+## more for each wave after (3 000 in wave 5, 4 875 in wave 10). Until v8.9
+## it was always 1 500; with upgrades a late run scored so fast that a lost
+## knot was back within two seconds, and knots stopped mattering.
+func _life_step() -> int:
+	return roundi(EXTRA_LIFE_EVERY * (1.0 + EXTRA_LIFE_WAVE * (director.wave - 1)))
 
 
 func _mark_hit(b: Ball) -> void:
@@ -3432,6 +3642,7 @@ func _on_launched(pos: Vector2, vel: Vector2, kind: int) -> void:
 		for b in balls:
 			if not b.active:
 				b.fire(pos, vel.rotated(a), kind == Ammo.PIERCE or overload_t > 0.0, _shot_seq)
+				b.grow = Ball.grow_all
 				fired += 1
 				break
 	_shots[_shot_seq] = {"balls": fired, "hit": false}

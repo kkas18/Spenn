@@ -190,10 +190,11 @@ func ball_contacts() -> void:
 				continue
 			var d := c.pos - a.pos
 			var dist := d.length()
-			if dist >= Ball.RADIUS * 2.0 or dist < 0.001:
+			var reach := Ball.RADIUS * 2.0 + a.grow + c.grow
+			if dist >= reach or dist < 0.001:
 				continue
 			var n := d / dist
-			var pen := Ball.RADIUS * 2.0 - dist
+			var pen := reach - dist
 			a.pos -= n * pen * 0.5
 			c.pos += n * pen * 0.5
 			var vn := (a.vel - c.vel).dot(n)
@@ -234,9 +235,9 @@ func collide(b: Ball) -> void:
 				Sfx.play("twang", 1.2, -6.0)
 				Sfx.haptic(8, 0.2)
 			continue
-		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + 7.0:
+		if t.charm != Target.Charm.NONE and b.pos.distance_to(t.charm_pos()) < Ball.RADIUS + b.grow + 7.0:
 			g._break_charm(t)
-		var rdv := t.rope_contact(b.pos, before, b.vel, Ball.RADIUS)
+		var rdv := t.rope_contact(b.pos, before, b.vel, Ball.RADIUS + b.grow)
 		if rdv != Vector2.ZERO:
 			b.vel += rdv
 			# The string rubs the ball: a touch of spin from the drag.
@@ -247,7 +248,7 @@ func collide(b: Ball) -> void:
 			continue
 		var cp := t.closest_point(b.pos)
 		var d := b.pos - cp
-		var rr := Ball.RADIUS + t.radius
+		var rr := Ball.RADIUS + b.grow + t.radius
 		if t.kind == Target.Kind.SHIELD:
 			rr += 5.0
 		elif t.kind == Target.Kind.BOSS:

@@ -39,7 +39,8 @@ const BOSS_EVERY := 3
 const WARMUP := 90.0            # s over which the early descent eases up to full
 const LATE_FROM := 5.0          # intensity from which the descent climbs faster (see descent)
 const LATE_SLOPE := 5.0         # ... by this much more per unit of intensity (px/s)
-const DESCENT_MAX := 110.0      # px/s before layout scale
+const DESCENT_MAX := 110.0      # px/s before layout scale: from here the descent climbs at
+const DESCENT_PAST := 0.7       # ... this share of its rate, with no ceiling (v8.9)
 # Pacing inside a wave: a build-up, a short peak (a flurry), then a breath.
 enum Pulse { BUILD, PEAK, RELAX }
 
@@ -325,19 +326,26 @@ func descent(scale: float) -> float:
 	# aim; it has no effect after that.
 	var warm := lerpf(0.8, 1.0, clampf(elapsed / WARMUP, 0.0, 1.0))
 	# Past LATE_FROM (about wave 5 for a run that goes well) the pressure
-	# climbs faster, up to a higher ceiling. Until v8.0 the curve levelled
-	# off at 72, which no run reached: a new pull was refused for 0.8 s
-	# after every shot and a full pull was out of reach. With a responsive
-	# slingshot good players get there, and the game must go on getting
-	# harder where they are.
+	# climbs faster. Until v8.0 the curve levelled off at 72, which no run
+	# reached: a new pull was refused for 0.8 s after every shot and a full
+	# pull was out of reach. With a responsive slingshot good players get
+	# there, and the game must go on getting harder where they are. Until
+	# v8.9 it then stopped at DESCENT_MAX (about seven minutes in); with
+	# upgrades to pick, a good run outlasted that, so past it the descent
+	# goes on climbing, more slowly, with no ceiling.
 	var late := LATE_SLOPE * maxf(0.0, i - LATE_FROM)
-	return minf(7.5 + 9.8 * pow(i, 0.85) + late, DESCENT_MAX) * lerpf(0.9, 1.15, aggression()) * warm * scale
+	var d := 7.5 + 9.8 * pow(i, 0.85) + late
+	if d > DESCENT_MAX:
+		d = DESCENT_MAX + (d - DESCENT_MAX) * DESCENT_PAST
+	return d * lerpf(0.9, 1.15, aggression()) * warm * scale
 
 
-## Targets allowed on the field at once.
+## Targets allowed on the field at once. Past intensity 8 the field holds
+## one more for every 2 (up to 26), so the late game keeps filling up (v8.9).
 func alive_cap() -> int:
 	var d := -2 if wave_mood == WaveMood.CALM else (2 if wave_mood == WaveMood.CHAOS else 0)
-	return maxi(4, mini(6 + int(2.0 * intensity()), 22) + d)
+	var top := 22 + clampi(int((intensity() - 8.0) / 2.0), 0, 4)
+	return maxi(4, mini(6 + int(2.0 * intensity()), top) + d)
 
 
 ## The field never runs thin: below this many targets the spawner hurries,

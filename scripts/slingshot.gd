@@ -652,7 +652,7 @@ func _draw_pouch() -> void:
 		_front.draw_line(p, p.lerp(q, 0.55), Color(STITCH, 0.6), 1.0, true)
 	if _ball_in_pouch and has_ball() and not (demo and _demo_ball >= 0.0):
 		var s := ease(_load_anim, -2.0)
-		Ball.draw_ball(_front, pouch, Ball.RADIUS * lerpf(0.4, 1.0, s), _ammo[0] == Ammo.PIERCE, 0.0, Vector2.UP)
+		Ball.draw_ball(_front, pouch, (Ball.RADIUS + Ball.grow_all) * lerpf(0.4, 1.0, s), _ammo[0] == Ammo.PIERCE, 0.0, Vector2.UP)
 		if _ammo[0] == Ammo.TRIPLE:
 			for k in 3:
 				_front.draw_circle(pouch + Vector2.from_angle(-PI * 0.5 + k * TAU / 3.0) * 5.0, 2.2, Pal.GOLD_DARK, true, -1.0, true)
